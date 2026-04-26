@@ -4,29 +4,76 @@ import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { stderr, stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { createSdPlaceholderMessage } from './index.js';
+import { parseArgs } from './args.js';
+import {
+  DEFAULT_SD_CONFIG_PATH,
+  DEFAULT_SD_ENV_PATH,
+  writeDefaultConfig,
+  writeEnvTemplate,
+} from './config.js';
+import { runInteractive, runOneShot } from './repl.js';
+import { createSdRuntime } from './runtime.js';
 
-const helpText = `sd
+export const helpText = `sd
 
-Reserved Snapdragon command. Batteries-included code agent placeholder.
+Batteries-included Snapdragon code agent REPL.
 
 Usage:
-  sd
-  sd --help
-  sd --version
+  sd [options]
+  sd [options] "prompt"
+
+Options:
+  --provider <name>    Provider override (anthropic|openai|openai-compatible|mock)
+  --model <id>         Model override
+  --cwd <path>         Workspace root for coding tools
+  --config <path>      Config file path
+  --session <id>       Resume or create a named session
+  --new-session        Force a new session
+  --no-session         Disable session persistence
+  --setup              Create default config and env template if missing
+  -v, --version        Print version
+  -h, --help           Print help
+
+Defaults:
+  config: ${DEFAULT_SD_CONFIG_PATH}
+  env:    ${DEFAULT_SD_ENV_PATH}
 `;
 
-const handlers = new Map<string, () => string | Promise<string>>([
-  ['--help', () => helpText],
-  ['-h', () => helpText],
-  ['--version', readPackageVersion],
-  ['-v', readPackageVersion],
-]);
+export async function main(argv = process.argv.slice(2)): Promise<void> {
+  const args = parseArgs(argv);
+  if (args.mode === 'help') {
+    stdout.write(helpText);
+    return;
+  }
+  if (args.mode === 'version') {
+    stdout.write(`${await readPackageVersion()}\n`);
+    return;
+  }
+  if (args.mode === 'setup') {
+    await setup(args.configPath);
+    return;
+  }
 
-async function main(argv = process.argv.slice(2)): Promise<void> {
-  const [command = ''] = argv;
-  const handler = handlers.get(command) || createSdPlaceholderMessage;
-  stdout.write(`${await handler()}\n`);
+  const runtime = await createSdRuntime(args);
+  if (args.prompt) {
+    await runOneShot(runtime, args.prompt);
+  } else {
+    await runInteractive(runtime);
+  }
+}
+
+async function setup(configPath: string): Promise<void> {
+  const wroteConfig = await writeDefaultConfig(configPath);
+  const wroteEnv = await writeEnvTemplate();
+  stdout.write(
+    [
+      wroteConfig ? `Created ${configPath}` : `Config already exists: ${configPath}`,
+      wroteEnv
+        ? `Created ${DEFAULT_SD_ENV_PATH}`
+        : `Env file already exists: ${DEFAULT_SD_ENV_PATH}`,
+      '',
+    ].join('\n'),
+  );
 }
 
 async function readPackageVersion(): Promise<string> {
@@ -50,7 +97,7 @@ export function isDirectEntrypoint(metaUrl: string, entrypoint = process.argv[1]
 
 if (isDirectEntrypoint(import.meta.url)) {
   main().catch((error) => {
-    stderr.write(`${String(error)}\n`);
+    stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
   });
 }

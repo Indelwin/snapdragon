@@ -56,6 +56,27 @@ test('agent accepts multimodal content blocks', async () => {
   ]);
 });
 
+test('agent forwards provider stream events and reasoning requests', async () => {
+  const mock = mockProvider({ chunkSize: 2 });
+  mock.enqueue('seen');
+  const agent = await createCodingReplAgent({
+    provider: mock.handler,
+    cwd: process.cwd(),
+    reasoning: { enabled: true, effort: 'high' },
+  });
+  const streamEvents: string[] = [];
+  agent.subscribe((event) => {
+    if (event.type === 'provider_event') streamEvents.push(event.event.kind);
+  });
+
+  await agent.prompt('stream this');
+
+  assert.deepEqual(mock.history()[0].reasoning, { enabled: true, effort: 'high' });
+  assert.ok(streamEvents.includes('started'));
+  assert.ok(streamEvents.includes('text'));
+  assert.ok(streamEvents.includes('done'));
+});
+
 test('agent persists user, assistant, and tool messages into a session', async () => {
   const mock = mockProvider();
   mock.enqueueResponse({
