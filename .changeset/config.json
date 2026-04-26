@@ -1,0 +1,19 @@
+{
+  "$schema": "https://unpkg.com/@changesets/config@3.1.4/schema.json",
+  "changelog": "@changesets/cli/changelog",
+  "commit": false,
+  "fixed": [
+    [
+      "@snapdragon-ai/core",
+      "@snapdragon-ai/host",
+      "@snapdragon-ai/tools",
+      "@snapdragon-ai/agent",
+      "@snapdragon-ai/repl"
+    ]
+  ],
+  "linked": [],
+  "access": "public",
+  "baseBranch": "main",
+  "updateInternalDependencies": "patch",
+  "ignore": ["@snapdragon-ai/example-basic-agent", "@snapdragon-ai/example-coding-repl"]
+}
