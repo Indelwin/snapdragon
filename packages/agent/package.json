@@ -1,6 +1,6 @@
 {
   "name": "@snapdragon-ai/agent",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Embeddable Snapdragon agent loop for chat, coding tools, and REPL-backed tool use.",
   "type": "module",
   "main": "./dist/index.js",
@@ -22,8 +22,8 @@
     "test": "node --test --import tsx test/*.test.ts"
   },
   "dependencies": {
-    "@snapdragon-ai/host": "0.1.0",
-    "@snapdragon-ai/tools": "0.1.0"
+    "@snapdragon-ai/host": "0.1.1",
+    "@snapdragon-ai/tools": "0.1.1"
   },
   "devDependencies": {
     "tsx": "^4.20.3"
