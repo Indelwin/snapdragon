@@ -21,7 +21,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
     "clean": "rm -rf dist",
-    "typecheck": "tsc -b tsconfig.build.json --pretty false"
+    "typecheck": "tsc -b tsconfig.build.json --pretty false",
+    "test": "node --test --import tsx test/*.test.ts"
   },
   "license": "MIT"
 }
