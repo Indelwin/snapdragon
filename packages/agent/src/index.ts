@@ -1,47 +1,27 @@
-import type {
-  LlmChatResponse,
-  Message,
-  Profile,
-  StreamingChatHandler,
-  ToolCall,
-} from '@snapdragon-ai/host';
-import {
-  codingToolset,
-  replToolset,
-  ToolRegistry,
-  type ToolRegistryOptions,
-  type Toolset,
-} from '@snapdragon-ai/tools';
+import type { LlmChatResponse, Message, Profile, StreamingChatHandler } from '@snapdragon-ai/host';
+import { codingToolsets, replToolset, ToolRegistry } from '@snapdragon-ai/tools';
 import { parseToolArgs } from './tool-args.js';
+import type {
+  AgentEvent,
+  AgentEventListener,
+  AgentOptions,
+  AgentPromptInput,
+  AgentSession,
+  CodingAgentOptions,
+  PromptOptions,
+  SnapdragonAgentArgs,
+} from './types.js';
 
-export type AgentEvent =
-  | { type: 'run_start'; runId: string }
-  | { type: 'message'; message: Message }
-  | { type: 'tool_start'; call: ToolCall }
-  | { type: 'tool_end'; call: ToolCall; content: string; isError: boolean }
-  | { type: 'run_end'; runId: string; response: LlmChatResponse };
-
-export type AgentEventListener = (event: AgentEvent) => void | Promise<void>;
-
-export interface AgentOptions {
-  provider: StreamingChatHandler;
-  cwd?: string;
-  systemPrompt?: string;
-  tools?: ToolRegistry | Toolset[];
-  profile?: Profile;
-  maxTurns?: number;
-  temperature?: number;
-  maxTokens?: number;
-}
-
-export interface PromptOptions {
-  runId?: string;
-  signal?: AbortSignal;
-}
-
-export interface CodingAgentOptions extends Omit<AgentOptions, 'tools'> {
-  codingTools?: Omit<ToolRegistryOptions, 'cwd'>;
-}
+export type {
+  AgentEvent,
+  AgentEventListener,
+  AgentOptions,
+  AgentPromptInput,
+  AgentSession,
+  CodingAgentOptions,
+  PromptOptions,
+  SnapdragonAgentArgs,
+} from './types.js';
 
 export class SnapdragonAgent {
   readonly messages: Message[] = [];
@@ -53,18 +33,10 @@ export class SnapdragonAgent {
   #maxTurns: number;
   #temperature?: number;
   #maxTokens?: number;
+  #session?: AgentSession;
   #listeners = new Set<AgentEventListener>();
 
-  private constructor(args: {
-    provider: StreamingChatHandler;
-    cwd: string;
-    registry: ToolRegistry;
-    systemPrompt: string;
-    profile?: Profile;
-    maxTurns: number;
-    temperature?: number;
-    maxTokens?: number;
-  }) {
+  private constructor(args: SnapdragonAgentArgs) {
     this.#provider = args.provider;
     this.cwd = args.cwd;
     this.registry = args.registry;
@@ -73,6 +45,8 @@ export class SnapdragonAgent {
     this.#maxTurns = args.maxTurns;
     this.#temperature = args.temperature;
     this.#maxTokens = args.maxTokens;
+    this.#session = args.session;
+    if (args.session) this.messages.push(...args.session.messages());
   }
 
   static async create(options: AgentOptions): Promise<SnapdragonAgent> {
@@ -90,6 +64,7 @@ export class SnapdragonAgent {
       maxTurns: options.maxTurns ?? 32,
       temperature: options.temperature,
       maxTokens: options.maxTokens,
+      session: options.session,
     });
   }
 
@@ -98,11 +73,11 @@ export class SnapdragonAgent {
     return () => this.#listeners.delete(listener);
   }
 
-  async prompt(input: string, options: PromptOptions = {}): Promise<LlmChatResponse> {
+  async prompt(input: AgentPromptInput, options: PromptOptions = {}): Promise<LlmChatResponse> {
     const runId = options.runId ?? `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     await this.#emit({ type: 'run_start', runId });
     const userMessage: Message = { role: 'user', content: input };
-    this.messages.push(userMessage);
+    await this.#appendMessage(userMessage);
     await this.#emit({ type: 'message', message: userMessage });
 
     for (let turn = 0; turn < this.#maxTurns; turn += 1) {
@@ -132,7 +107,7 @@ export class SnapdragonAgent {
         tool_calls: response.tool_calls,
         thinking: response.thinking,
       };
-      this.messages.push(assistantMessage);
+      await this.#appendMessage(assistantMessage);
       await this.#emit({ type: 'message', message: assistantMessage });
 
       if (!response.tool_calls || response.tool_calls.length === 0) {
@@ -151,7 +126,7 @@ export class SnapdragonAgent {
           content: result.content,
           tool_call_id: call.id,
         };
-        this.messages.push(toolMessage);
+        await this.#appendMessage(toolMessage);
         await this.#emit({ type: 'message', message: toolMessage });
         await this.#emit({
           type: 'tool_end',
@@ -171,6 +146,11 @@ export class SnapdragonAgent {
     return [...system, ...this.messages];
   }
 
+  async #appendMessage(message: Message): Promise<void> {
+    this.messages.push(message);
+    if (this.#session) await this.#session.appendMessage(message);
+  }
+
   async #emit(event: AgentEvent): Promise<void> {
     for (const listener of this.#listeners) await listener(event);
   }
@@ -182,14 +162,18 @@ export async function createAgent(options: AgentOptions): Promise<SnapdragonAgen
 
 export async function createCodingReplAgent(options: CodingAgentOptions): Promise<SnapdragonAgent> {
   const cwd = options.cwd ?? process.cwd();
-  const registry = new ToolRegistry({ cwd, session: options.codingTools?.session });
-  await registry.registerMany([codingToolset({ cwd }), replToolset()]);
+  const registry = new ToolRegistry({ cwd, session: codingSession(options) });
+  await registry.registerMany([...codingToolsets({ cwd }), replToolset()]);
   return SnapdragonAgent.create({
     ...options,
     cwd,
     tools: registry,
     systemPrompt: options.systemPrompt ?? defaultCodingSystemPrompt(),
   });
+}
+
+function codingSession(options: CodingAgentOptions): Map<string, unknown> | undefined {
+  return options.codingTools ? options.codingTools.session : undefined;
 }
 
 function defaultSystemPrompt(): string {

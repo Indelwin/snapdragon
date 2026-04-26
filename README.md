@@ -12,6 +12,8 @@ The core is in Rust, so I can work on optimising the ECS system as much as possi
 | --- | --- |
 | `@snapdragon-ai/core` | Bundle, signature, schedule, and component-facing types. |
 | `@snapdragon-ai/host` | Capability registry and streaming provider adapters. |
+| `@snapdragon-ai/session` | Portable append-only JSONL sessions. |
+| `@snapdragon-ai/config` | Side-effect-free resolved config contracts. |
 | `@snapdragon-ai/tools` | Tool registry, coding tools, and the REPL toolset. |
 | `@snapdragon-ai/agent` | Embeddable chat/coding agent loop. |
 | `@snapdragon-ai/sd` | Batteries included TUI agent for me to test, and use to develop itself! |
@@ -23,6 +25,8 @@ The core is in Rust, so I can work on optimising the ECS system as much as possi
 packages/
   core/
   host/
+  session/
+  config/
   tools/
   agent/
   sd/

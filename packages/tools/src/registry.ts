@@ -1,4 +1,10 @@
 import type { ToolDefinition } from '@snapdragon-ai/host';
+import {
+  applyRegistryConfig,
+  type ToolRegistryConfig,
+  type ToolsetState,
+  toolsetSummary,
+} from './registry-config.js';
 import type { RegisteredTool, Tool, ToolContext, ToolResult, Toolset } from './types.js';
 import { toolToDefinition } from './types.js';
 
@@ -11,6 +17,7 @@ export class ToolRegistry {
   readonly cwd: string;
   readonly session: Map<string, unknown>;
   #tools = new Map<string, RegisteredTool>();
+  #toolsets = new Map<string, ToolsetState>();
 
   constructor(options: ToolRegistryOptions) {
     this.cwd = options.cwd;
@@ -19,6 +26,13 @@ export class ToolRegistry {
 
   async register(toolset: Toolset): Promise<void> {
     const check = toolset.check ? await toolset.check() : { available: true };
+    this.#toolsets.set(toolset.name, {
+      available: check.available,
+      enabled: check.available,
+      unavailableReason: check.available
+        ? undefined
+        : (check.reason ?? `${toolset.name} is unavailable`),
+    });
     for (const tool of toolset.tools) {
       this.#tools.set(tool.name, {
         ...tool,
@@ -32,6 +46,14 @@ export class ToolRegistry {
 
   async registerMany(toolsets: Toolset[]): Promise<void> {
     for (const toolset of toolsets) await this.register(toolset);
+  }
+
+  applyConfig(config: ToolRegistryConfig): void {
+    applyRegistryConfig(this.#tools.values(), this.#toolsets, config);
+  }
+
+  listToolsets(): Array<{ name: string; available: boolean; enabled: boolean; reason?: string }> {
+    return toolsetSummary(this.#toolsets);
   }
 
   list(): RegisteredTool[] {

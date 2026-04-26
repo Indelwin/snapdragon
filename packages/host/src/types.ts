@@ -1,4 +1,5 @@
 import type { JsonObject } from '@snapdragon-ai/core';
+import type { MessageContent } from './content-types.js';
 
 export interface ToolCall {
   id: string;
@@ -14,7 +15,7 @@ export interface ThinkingBlock {
 
 export interface Message {
   role: 'system' | 'user' | 'assistant' | 'tool';
-  content: string;
+  content: MessageContent;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
   thinking?: ThinkingBlock[];
@@ -76,3 +77,16 @@ export type CapabilityHandler<Req = unknown, Resp = unknown> = (
 ) => Promise<Resp> | Resp;
 
 export type EventListener = (payload: unknown, topic: string) => void;
+
+export type {
+  ContentBlock,
+  FileContentBlock,
+  FileSource,
+  ImageContentBlock,
+  ImageDetail,
+  ImageSource,
+  MessageContent,
+  TextContentBlock,
+  ToolResultContentBlock,
+} from './content-types.js';
+export type { ProviderCapabilities, ProviderDescriptor } from './provider-types.js';
