@@ -1,9 +1,15 @@
-import type { LlmChatResponse, Message, Profile, StreamingChatHandler } from '@snapdragon-ai/host';
+import type {
+  LlmChatResponse,
+  Message,
+  Profile,
+  ReasoningRequest,
+  StreamingChatHandler,
+} from '@snapdragon-ai/host';
 import { codingToolsets, replToolset, ToolRegistry } from '@snapdragon-ai/tools';
+import { type AgentEvent, type AgentEventListener, emitProviderEvent } from './events.js';
+import { defaultCodingSystemPrompt, defaultSystemPrompt } from './prompts.js';
 import { parseToolArgs } from './tool-args.js';
 import type {
-  AgentEvent,
-  AgentEventListener,
   AgentOptions,
   AgentPromptInput,
   AgentSession,
@@ -12,16 +18,12 @@ import type {
   SnapdragonAgentArgs,
 } from './types.js';
 
-export type {
-  AgentEvent,
-  AgentEventListener,
-  AgentOptions,
-  AgentPromptInput,
-  AgentSession,
-  CodingAgentOptions,
-  PromptOptions,
-  SnapdragonAgentArgs,
-} from './types.js';
+type ReasoningOptions = Partial<Record<'reasoning', ReasoningRequest>>;
+type AgentOptionsPlus = AgentOptions & ReasoningOptions;
+type CodingOptions = CodingAgentOptions & ReasoningOptions;
+type AgentArgsPlus = SnapdragonAgentArgs & ReasoningOptions;
+
+export type * from './types.js';
 
 export class SnapdragonAgent {
   readonly messages: Message[] = [];
@@ -33,10 +35,11 @@ export class SnapdragonAgent {
   #maxTurns: number;
   #temperature?: number;
   #maxTokens?: number;
+  #reasoning: ReasoningRequest | undefined;
   #session?: AgentSession;
   #listeners = new Set<AgentEventListener>();
 
-  private constructor(args: SnapdragonAgentArgs) {
+  private constructor(args: AgentArgsPlus) {
     this.#provider = args.provider;
     this.cwd = args.cwd;
     this.registry = args.registry;
@@ -45,11 +48,12 @@ export class SnapdragonAgent {
     this.#maxTurns = args.maxTurns;
     this.#temperature = args.temperature;
     this.#maxTokens = args.maxTokens;
+    this.#reasoning = args.reasoning;
     this.#session = args.session;
     if (args.session) this.messages.push(...args.session.messages());
   }
 
-  static async create(options: AgentOptions): Promise<SnapdragonAgent> {
+  static async create(options: AgentOptionsPlus): Promise<SnapdragonAgent> {
     const cwd = options.cwd ?? process.cwd();
     const registry =
       options.tools instanceof ToolRegistry ? options.tools : new ToolRegistry({ cwd });
@@ -64,6 +68,7 @@ export class SnapdragonAgent {
       maxTurns: options.maxTurns ?? 32,
       temperature: options.temperature,
       maxTokens: options.maxTokens,
+      reasoning: options.reasoning,
       session: options.session,
     });
   }
@@ -93,11 +98,12 @@ export class SnapdragonAgent {
           tool_choice: this.registry.listDefinitions().length > 0 ? 'auto' : 'none',
           temperature: this.#temperature,
           max_tokens: this.#maxTokens,
+          reasoning: this.#reasoning,
         },
         {
           runId,
           profile: this.#profile,
-          emit: () => undefined,
+          emit: (event) => emitProviderEvent(this.#listeners, event),
         },
       );
 
@@ -156,11 +162,11 @@ export class SnapdragonAgent {
   }
 }
 
-export async function createAgent(options: AgentOptions): Promise<SnapdragonAgent> {
+export async function createAgent(options: AgentOptionsPlus): Promise<SnapdragonAgent> {
   return SnapdragonAgent.create(options);
 }
 
-export async function createCodingReplAgent(options: CodingAgentOptions): Promise<SnapdragonAgent> {
+export async function createCodingReplAgent(options: CodingOptions): Promise<SnapdragonAgent> {
   const cwd = options.cwd ?? process.cwd();
   const registry = new ToolRegistry({ cwd, session: codingSession(options) });
   await registry.registerMany([...codingToolsets({ cwd }), replToolset()]);
@@ -174,17 +180,4 @@ export async function createCodingReplAgent(options: CodingAgentOptions): Promis
 
 function codingSession(options: CodingAgentOptions): Map<string, unknown> | undefined {
   return options.codingTools ? options.codingTools.session : undefined;
-}
-
-function defaultSystemPrompt(): string {
-  return 'You are a concise, practical assistant. Use tools when they materially help.';
-}
-
-function defaultCodingSystemPrompt(): string {
-  return [
-    'You are a coding agent running inside a local workspace.',
-    'Use the coding tools for file and shell work.',
-    'Use repl_eval when programmatic inspection or repeated tool invocation would be more efficient.',
-    'Keep changes scoped to the user request.',
-  ].join('\n');
 }
