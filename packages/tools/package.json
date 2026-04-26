@@ -14,6 +14,14 @@
       "types": "./dist/toolsets/coding.d.ts",
       "import": "./dist/toolsets/coding.js"
     },
+    "./toolsets/file": {
+      "types": "./dist/toolsets/file.d.ts",
+      "import": "./dist/toolsets/file.js"
+    },
+    "./toolsets/shell": {
+      "types": "./dist/toolsets/shell.d.ts",
+      "import": "./dist/toolsets/shell.js"
+    },
     "./toolsets/repl": {
       "types": "./dist/toolsets/repl.d.ts",
       "import": "./dist/toolsets/repl.js"
@@ -26,11 +34,15 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
+    "test": "node --test --import tsx test/*.test.ts",
     "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },
   "dependencies": {
     "@snapdragon-ai/core": "0.1.1",
     "@snapdragon-ai/host": "0.1.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3"
   },
   "license": "MIT"
 }

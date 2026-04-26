@@ -60,10 +60,22 @@
     "maxFunctionLines": 99
   },
   "packages/agent/src/index.ts": {
-    "lines": 207,
-    "complexity": 42,
-    "crapProxy": 1772,
-    "maxFunctionLines": 12
+    "lines": 191,
+    "complexity": 32,
+    "crapProxy": 1028,
+    "maxFunctionLines": 11
+  },
+  "packages/agent/src/types.ts": {
+    "lines": 59,
+    "complexity": 16,
+    "crapProxy": 264,
+    "maxFunctionLines": 6
+  },
+  "packages/config/src/index.ts": {
+    "lines": 101,
+    "complexity": 49,
+    "crapProxy": 2410,
+    "maxFunctionLines": 10
   },
   "packages/core/src/index.ts": {
     "lines": 99,
@@ -71,11 +83,29 @@
     "crapProxy": 455,
     "maxFunctionLines": 18
   },
+  "packages/host/src/providers/anthropic-format.ts": {
+    "lines": 105,
+    "complexity": 23,
+    "crapProxy": 531,
+    "maxFunctionLines": 22
+  },
+  "packages/host/src/providers/anthropic-stream.ts": {
+    "lines": 185,
+    "complexity": 42,
+    "crapProxy": 1765,
+    "maxFunctionLines": 44
+  },
   "packages/host/src/providers/anthropic.ts": {
-    "lines": 266,
-    "complexity": 100,
-    "crapProxy": 10002,
-    "maxFunctionLines": 186
+    "lines": 103,
+    "complexity": 29,
+    "crapProxy": 845,
+    "maxFunctionLines": 27
+  },
+  "packages/host/src/providers/codex.ts": {
+    "lines": 109,
+    "complexity": 27,
+    "crapProxy": 733,
+    "maxFunctionLines": 22
   },
   "packages/host/src/providers/mock.ts": {
     "lines": 63,
@@ -83,11 +113,35 @@
     "crapProxy": 172,
     "maxFunctionLines": 45
   },
-  "packages/host/src/providers/openai.ts": {
-    "lines": 225,
+  "packages/host/src/providers/openai-compatible.ts": {
+    "lines": 266,
     "complexity": 76,
-    "crapProxy": 5778,
-    "maxFunctionLines": 161
+    "crapProxy": 5783,
+    "maxFunctionLines": 27
+  },
+  "packages/host/src/providers/openai-responses-format.ts": {
+    "lines": 92,
+    "complexity": 33,
+    "crapProxy": 1092,
+    "maxFunctionLines": 29
+  },
+  "packages/host/src/providers/openai-responses.ts": {
+    "lines": 74,
+    "complexity": 13,
+    "crapProxy": 172,
+    "maxFunctionLines": 22
+  },
+  "packages/host/src/providers/responses-stream.ts": {
+    "lines": 191,
+    "complexity": 63,
+    "crapProxy": 3970,
+    "maxFunctionLines": 39
+  },
+  "packages/host/src/providers/shared.ts": {
+    "lines": 100,
+    "complexity": 21,
+    "crapProxy": 451,
+    "maxFunctionLines": 15
   },
   "packages/host/src/registry.ts": {
     "lines": 136,
@@ -102,21 +156,45 @@
     "maxFunctionLines": 24
   },
   "packages/host/src/types.ts": {
-    "lines": 79,
+    "lines": 93,
     "complexity": 29,
-    "crapProxy": 853,
-    "maxFunctionLines": 1
+    "crapProxy": 855,
+    "maxFunctionLines": 15
   },
   "packages/repl/src/cli.ts": {
-    "lines": 122,
+    "lines": 118,
     "complexity": 37,
     "crapProxy": 1370,
     "maxFunctionLines": 34
   },
+  "packages/session/src/records.ts": {
+    "lines": 59,
+    "complexity": 12,
+    "crapProxy": 151,
+    "maxFunctionLines": 11
+  },
+  "packages/session/src/session.ts": {
+    "lines": 120,
+    "complexity": 17,
+    "crapProxy": 294,
+    "maxFunctionLines": 18
+  },
+  "packages/session/src/store.ts": {
+    "lines": 92,
+    "complexity": 13,
+    "crapProxy": 173,
+    "maxFunctionLines": 4
+  },
+  "packages/tools/src/registry-config.ts": {
+    "lines": 81,
+    "complexity": 36,
+    "crapProxy": 1300,
+    "maxFunctionLines": 20
+  },
   "packages/tools/src/registry.ts": {
-    "lines": 86,
-    "complexity": 26,
-    "crapProxy": 679,
+    "lines": 108,
+    "complexity": 30,
+    "crapProxy": 903,
     "maxFunctionLines": 4
   },
   "packages/tools/src/safety.ts": {
@@ -125,17 +203,23 @@
     "crapProxy": 148,
     "maxFunctionLines": 9
   },
-  "packages/tools/src/toolsets/coding.ts": {
-    "lines": 249,
-    "complexity": 47,
-    "crapProxy": 2211,
-    "maxFunctionLines": 46
+  "packages/tools/src/toolsets/file.ts": {
+    "lines": 144,
+    "complexity": 20,
+    "crapProxy": 402,
+    "maxFunctionLines": 30
   },
   "packages/tools/src/toolsets/repl.ts": {
     "lines": 117,
     "complexity": 24,
     "crapProxy": 578,
     "maxFunctionLines": 39
+  },
+  "packages/tools/src/toolsets/shell.ts": {
+    "lines": 104,
+    "complexity": 26,
+    "crapProxy": 678,
+    "maxFunctionLines": 44
   },
   "packages/tools/src/types.ts": {
     "lines": 57,
