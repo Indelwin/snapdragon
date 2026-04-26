@@ -9,7 +9,7 @@
     "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },
   "dependencies": {
-    "@snapdragon-ai/agent": "0.1.0",
-    "@snapdragon-ai/host": "0.1.0"
+    "@snapdragon-ai/agent": "0.1.1",
+    "@snapdragon-ai/host": "0.1.1"
   }
 }

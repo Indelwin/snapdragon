@@ -1,6 +1,6 @@
 {
   "name": "@snapdragon-ai/sd",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Batteries-included Snapdragon code agent CLI.",
   "type": "module",
   "bin": {
