@@ -1,4 +1,4 @@
-import type { JsonObject } from '@snapdragon/core';
+import type { JsonObject } from '@snapdragon-ai/core';
 
 export interface ToolCall {
   id: string;

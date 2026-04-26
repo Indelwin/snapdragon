@@ -17,13 +17,13 @@
     "sourceMap": true,
     "baseUrl": ".",
     "paths": {
-      "@snapdragon/core": ["packages/core/src/index.ts"],
-      "@snapdragon/host": ["packages/host/src/index.ts"],
-      "@snapdragon/host/*": ["packages/host/src/*"],
-      "@snapdragon/tools": ["packages/tools/src/index.ts"],
-      "@snapdragon/tools/*": ["packages/tools/src/*"],
-      "@snapdragon/agent": ["packages/agent/src/index.ts"],
-      "@snapdragon/repl": ["packages/repl/src/index.ts"]
+      "@snapdragon-ai/core": ["packages/core/src/index.ts"],
+      "@snapdragon-ai/host": ["packages/host/src/index.ts"],
+      "@snapdragon-ai/host/*": ["packages/host/src/*"],
+      "@snapdragon-ai/tools": ["packages/tools/src/index.ts"],
+      "@snapdragon-ai/tools/*": ["packages/tools/src/*"],
+      "@snapdragon-ai/agent": ["packages/agent/src/index.ts"],
+      "@snapdragon-ai/repl": ["packages/repl/src/index.ts"]
     }
   }
 }

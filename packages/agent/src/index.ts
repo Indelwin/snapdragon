@@ -4,14 +4,14 @@ import type {
   Profile,
   StreamingChatHandler,
   ToolCall,
-} from '@snapdragon/host';
+} from '@snapdragon-ai/host';
 import {
   codingToolset,
   replToolset,
   ToolRegistry,
   type ToolRegistryOptions,
   type Toolset,
-} from '@snapdragon/tools';
+} from '@snapdragon-ai/tools';
 import { parseToolArgs } from './tool-args.js';
 
 export type AgentEvent =

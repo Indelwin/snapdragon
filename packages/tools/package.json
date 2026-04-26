@@ -1,5 +1,5 @@
 {
-  "name": "@snapdragon/tools",
+  "name": "@snapdragon-ai/tools",
   "version": "0.1.0",
   "description": "Tool registry, coding tools, and REPL toolset for Snapdragon agents.",
   "type": "module",
@@ -29,8 +29,8 @@
     "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },
   "dependencies": {
-    "@snapdragon/core": "0.1.0",
-    "@snapdragon/host": "0.1.0"
+    "@snapdragon-ai/core": "0.1.0",
+    "@snapdragon-ai/host": "0.1.0"
   },
   "license": "MIT"
 }

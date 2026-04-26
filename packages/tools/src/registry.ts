@@ -1,4 +1,4 @@
-import type { ToolDefinition } from '@snapdragon/host';
+import type { ToolDefinition } from '@snapdragon-ai/host';
 import type { RegisteredTool, Tool, ToolContext, ToolResult, Toolset } from './types.js';
 import { toolToDefinition } from './types.js';
 

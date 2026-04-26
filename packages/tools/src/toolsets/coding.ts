@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
-import type { JsonObject } from '@snapdragon/core';
+import type { JsonObject } from '@snapdragon-ai/core';
 import { objectArg, optionalNumberArg, resolveInside, stringArg } from '../safety.js';
 import type { Tool, ToolResult, Toolset } from '../types.js';
 

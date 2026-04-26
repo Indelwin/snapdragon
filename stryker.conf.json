@@ -3,7 +3,7 @@
   "mutate": ["packages/agent/src/tool-args.ts", "!packages/**/*.d.ts"],
   "testRunner": "command",
   "commandRunner": {
-    "command": "npm test --workspace @snapdragon/agent"
+    "command": "npm test --workspace @snapdragon-ai/agent"
   },
   "coverageAnalysis": "off",
   "checkers": [],

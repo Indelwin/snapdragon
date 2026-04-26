@@ -1,5 +1,5 @@
-import type { JsonObject, JsonValue } from '@snapdragon/core';
-import type { ToolDefinition } from '@snapdragon/host';
+import type { JsonObject, JsonValue } from '@snapdragon-ai/core';
+import type { ToolDefinition } from '@snapdragon-ai/host';
 
 export interface ToolContext {
   cwd: string;

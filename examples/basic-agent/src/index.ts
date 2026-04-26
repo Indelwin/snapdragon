@@ -1,5 +1,5 @@
-import { createAgent } from '@snapdragon/agent';
-import { mockProvider } from '@snapdragon/host';
+import { createAgent } from '@snapdragon-ai/agent';
+import { mockProvider } from '@snapdragon-ai/host';
 
 const mock = mockProvider();
 mock.enqueue('hello from snapdragon');

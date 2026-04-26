@@ -2,17 +2,17 @@
 
 Small, portable agent runtime components for building coding and tool-using agents.
 
-This repository is a clean-history monorepo for the public `@snapdragon` packages. It carries forward the kernel and SDK ideas from the prototype repo while keeping the first public shape focused on a compact library, a default coding REPL agent, and small examples.
+This repository is a clean-history monorepo for the public `@snapdragon-ai` packages. It carries forward the kernel and SDK ideas from the prototype repo while keeping the first public shape focused on a compact library, a default coding REPL agent, and small examples.
 
 ## Packages
 
 | Package | Purpose |
 | --- | --- |
-| `@snapdragon/core` | Bundle, signature, schedule, and component-facing types. |
-| `@snapdragon/host` | Capability registry and streaming provider adapters. |
-| `@snapdragon/tools` | Tool registry, coding tools, and the REPL toolset. |
-| `@snapdragon/agent` | Embeddable chat/coding agent loop. |
-| `@snapdragon/repl` | Minimal CLI for the default coding REPL agent. |
+| `@snapdragon-ai/core` | Bundle, signature, schedule, and component-facing types. |
+| `@snapdragon-ai/host` | Capability registry and streaming provider adapters. |
+| `@snapdragon-ai/tools` | Tool registry, coding tools, and the REPL toolset. |
+| `@snapdragon-ai/agent` | Embeddable chat/coding agent loop. |
+| `@snapdragon-ai/repl` | Minimal CLI for the default coding REPL agent. |
 
 ## Layout
 

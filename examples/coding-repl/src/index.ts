@@ -1,5 +1,5 @@
-import { createCodingReplAgent } from '@snapdragon/agent';
-import { mockProvider } from '@snapdragon/host';
+import { createCodingReplAgent } from '@snapdragon-ai/agent';
+import { mockProvider } from '@snapdragon-ai/host';
 
 const mock = mockProvider();
 mock.enqueueResponse({

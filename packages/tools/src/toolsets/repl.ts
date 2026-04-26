@@ -1,5 +1,5 @@
 import { type Context, createContext, Script } from 'node:vm';
-import type { JsonObject } from '@snapdragon/core';
+import type { JsonObject } from '@snapdragon-ai/core';
 import { objectArg, optionalNumberArg, stringArg } from '../safety.js';
 import type { Tool, ToolResult, Toolset } from '../types.js';
 

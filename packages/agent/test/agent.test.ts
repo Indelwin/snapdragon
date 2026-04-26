@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { mockProvider } from '@snapdragon/host';
+import { mockProvider } from '@snapdragon-ai/host';
 import { createCodingReplAgent } from '../src/index.ts';
 import { parseToolArgs } from '../src/tool-args.ts';
 

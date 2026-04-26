@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
-import { createCodingReplAgent } from '@snapdragon/agent';
-import { anthropicProvider, mockProvider, openaiProvider } from '@snapdragon/host';
+import { createCodingReplAgent } from '@snapdragon-ai/agent';
+import { anthropicProvider, mockProvider, openaiProvider } from '@snapdragon-ai/host';
 import { isDirectEntrypoint } from './entrypoint.js';
 
 interface CliArgs {

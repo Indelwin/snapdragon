@@ -1,5 +1,5 @@
 {
-  "name": "@snapdragon/example-coding-repl",
+  "name": "@snapdragon-ai/example-coding-repl",
   "version": "0.1.0",
   "private": true,
   "type": "module",
@@ -9,7 +9,7 @@
     "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },
   "dependencies": {
-    "@snapdragon/agent": "0.1.0",
-    "@snapdragon/host": "0.1.0"
+    "@snapdragon-ai/agent": "0.1.0",
+    "@snapdragon-ai/host": "0.1.0"
   }
 }

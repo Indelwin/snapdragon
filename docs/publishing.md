@@ -1,6 +1,6 @@
 # Publishing
 
-The first release targets npm packages under the `@snapdragon` scope.
+The first release targets npm packages under the `@snapdragon-ai` scope.
 
 Before publishing:
 
