@@ -23,6 +23,7 @@
       "@snapdragon-ai/tools": ["packages/tools/src/index.ts"],
       "@snapdragon-ai/tools/*": ["packages/tools/src/*"],
       "@snapdragon-ai/agent": ["packages/agent/src/index.ts"],
+      "@snapdragon-ai/sd": ["packages/sd/src/index.ts"],
       "@snapdragon-ai/repl": ["packages/repl/src/index.ts"]
     }
   }

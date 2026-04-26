@@ -8,6 +8,7 @@
     "packages/host",
     "packages/tools",
     "packages/agent",
+    "packages/sd",
     "packages/repl",
     "examples/basic-agent",
     "examples/coding-repl"
@@ -25,7 +26,7 @@
     "lint": "biome check . && cargo fmt --all --check",
     "mutation:js": "stryker run",
     "mutation:rust": "bash scripts/quality/mutation-rust.sh",
-    "pack:dry": "npm pack --workspace @snapdragon-ai/core --workspace @snapdragon-ai/host --workspace @snapdragon-ai/tools --workspace @snapdragon-ai/agent --workspace @snapdragon-ai/repl --dry-run",
+    "pack:dry": "npm pack --workspace @snapdragon-ai/core --workspace @snapdragon-ai/host --workspace @snapdragon-ai/tools --workspace @snapdragon-ai/agent --workspace @snapdragon-ai/sd --workspace @snapdragon-ai/repl --dry-run",
     "prepare": "git config core.hooksPath .githooks && chmod +x .githooks/pre-commit .githooks/pre-push scripts/quality/*.sh scripts/quality/*.mjs",
     "quality:crap": "node scripts/quality/crap-analysis.mjs",
     "spec:lint": "node scripts/quality/check-gherkin.mjs",
