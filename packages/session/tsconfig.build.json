@@ -6,10 +6,6 @@
     "rootDir": "src",
     "outDir": "dist"
   },
-  "references": [
-    { "path": "../host/tsconfig.build.json" },
-    { "path": "../session/tsconfig.build.json" },
-    { "path": "../tools/tsconfig.build.json" }
-  ],
+  "references": [{ "path": "../host/tsconfig.build.json" }],
   "include": ["src/**/*.ts"]
 }

@@ -18,6 +18,18 @@
       "types": "./dist/providers/openai.d.ts",
       "import": "./dist/providers/openai.js"
     },
+    "./providers/openai-compatible": {
+      "types": "./dist/providers/openai-compatible.d.ts",
+      "import": "./dist/providers/openai-compatible.js"
+    },
+    "./providers/openai-responses": {
+      "types": "./dist/providers/openai-responses.d.ts",
+      "import": "./dist/providers/openai-responses.js"
+    },
+    "./providers/codex": {
+      "types": "./dist/providers/codex.d.ts",
+      "import": "./dist/providers/codex.js"
+    },
     "./providers/anthropic": {
       "types": "./dist/providers/anthropic.d.ts",
       "import": "./dist/providers/anthropic.js"
@@ -30,10 +42,14 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
+    "test": "node --test --import tsx test/*.test.ts",
     "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },
   "dependencies": {
     "@snapdragon-ai/core": "0.1.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3"
   },
   "license": "MIT"
 }

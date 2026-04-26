@@ -5,6 +5,8 @@ Snapdragon is split into a small portable kernel and host-side SDK packages.
 - `crates/core` contains the Rust/WASI component runtime primitives.
 - `packages/core` exposes bundle and schedule types for JavaScript users.
 - `packages/host` owns provider adapters and capability dispatch.
+- `packages/session` owns portable append-only JSONL sessions.
+- `packages/config` owns resolved config contracts and normalization helpers.
 - `packages/tools` owns the tool registry plus coding and REPL tools.
 - `packages/agent` composes providers and tools into an embeddable loop.
 - `packages/repl` ships the default command-line agent.
