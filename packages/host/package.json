@@ -1,0 +1,39 @@
+{
+  "name": "@snapdragon/host",
+  "version": "0.1.0",
+  "description": "Host runtime primitives and provider adapters for Snapdragon agents.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./providers/mock": {
+      "types": "./dist/providers/mock.d.ts",
+      "import": "./dist/providers/mock.js"
+    },
+    "./providers/openai": {
+      "types": "./dist/providers/openai.d.ts",
+      "import": "./dist/providers/openai.js"
+    },
+    "./providers/anthropic": {
+      "types": "./dist/providers/anthropic.d.ts",
+      "import": "./dist/providers/anthropic.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -b tsconfig.build.json --pretty false"
+  },
+  "dependencies": {
+    "@snapdragon/core": "0.1.0"
+  },
+  "license": "MIT"
+}

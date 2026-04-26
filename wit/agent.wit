@@ -1,0 +1,80 @@
+// Snapdragon v0.1 — two-pipe host/agent contract.
+//
+// 5 imports, 2 exports. The agent is a microkernel; the host is the main
+// character. Everything the agent needs from the outside world flows
+// through one of two pipes:
+//
+//   - call-capability(cap, json) -> result<json, err>  — synchronous
+//     request/response against a host-registered capability handler.
+//     Capabilities (llm.chat, tool.invoke:*, exec.run, memory.*,
+//     profile.get, bundle.fetch, hook.*, ...) are named with versioned
+//     strings; their payload shapes live in `capabilities/*.schema.json`
+//     in the repo, NOT in the WIT.
+//
+//   - emit-event(topic, json)                           — fire-and-forget
+//     observability. Hosts subscribe by topic.
+//
+// Typed wrappers `chat`, `now`, `random` exist as hot-path and
+// replay-essential primitives, semantically equivalent to calls into the
+// capability pipe but first-class to keep the common path tight.
+//
+// Full rationale: Obsidian/Projects/snapdragon/design-v3.md.
+
+package snapdragon:agent@0.1.0;
+
+interface host {
+    /// A chat message.
+    record message {
+        role: string,       // "system" | "user" | "assistant" | "tool"
+        content: string,
+    }
+
+    /// Generic outbound capability call. The agent asks the host to
+    /// satisfy the named capability (e.g. "llm.chat@1",
+    /// "tool.invoke:web_search@1", "exec.run@1", "memory.prefetch@1",
+    /// "profile.get@1", "bundle.fetch@1", "hook.before_llm_request@1").
+    ///
+    /// Request and response are JSON strings matching the capability's
+    /// published schema. Missing capability handlers return an err with
+    /// a structured {"error":"capability_not_provided","cap":"..."}
+    /// payload so the agent can choose to degrade gracefully.
+    call-capability: func(cap: string, request-json: string) -> result<string, string>;
+
+    /// Fire-and-forget event emission. Topics in design-v3 §6.
+    /// Hosts subscribe by topic; the agent does not wait for listeners.
+    emit-event: func(topic: string, payload-json: string);
+
+    /// Typed hot-path wrapper for the main LLM call. Semantically equal to:
+    ///   call-capability("llm.chat@1", {role, messages})
+    /// but skips JSON encoding of the message list in the common path.
+    chat: func(role: string, msgs: list<message>) -> result<string, string>;
+
+    /// Wall clock in unix milliseconds. Separate from WASI clocks so the
+    /// host can substitute a fixed clock for deterministic replay.
+    now: func() -> u64;
+
+    /// Cryptographic randomness. Separate from WASI random so the host
+    /// can substitute a seeded stream for deterministic replay.
+    /// Returns exactly `len` bytes.
+    random: func(len: u32) -> list<u8>;
+}
+
+world agent {
+    import host;
+
+    /// Execute one agent run. Input is JSON matching the loaded program's
+    /// declared top-level input signature. Output is JSON matching its
+    /// declared output signature (or a structured error in the err arm).
+    export run: func(input-json: string) -> result<string, string>;
+
+    /// Execute one in-process local subrun. The request JSON contains
+    /// `{ input, bundle?, profile?, run_id? }`. When `bundle` is
+    /// omitted the currently loaded bundle is reused. Hosts use this
+    /// for lightweight sequential child runs that should stay inside
+    /// the current WASM instance rather than spawn a subprocess.
+    export run-local: func(request-json: string) -> result<string, string>;
+
+    /// Install (or replace) a program bundle. Returns the bundle's CID.
+    /// Must be called before the first `run`.
+    export load-bundle: func(bundle-bytes: list<u8>) -> result<string, string>;
+}

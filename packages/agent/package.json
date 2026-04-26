@@ -1,0 +1,32 @@
+{
+  "name": "@snapdragon/agent",
+  "version": "0.1.0",
+  "description": "Embeddable Snapdragon agent loop for chat, coding tools, and REPL-backed tool use.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -b tsconfig.build.json --pretty false",
+    "test": "node --test --import tsx test/*.test.ts"
+  },
+  "dependencies": {
+    "@snapdragon/host": "0.1.0",
+    "@snapdragon/tools": "0.1.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3"
+  },
+  "license": "MIT"
+}

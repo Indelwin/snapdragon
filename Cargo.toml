@@ -1,0 +1,29 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/core",
+]
+default-members = [
+    "crates/core",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+repository = "https://github.com/Indelwin/snapdragon"
+
+[workspace.dependencies]
+serde      = { version = "1", default-features = false, features = ["alloc", "derive"] }
+serde_json = { version = "1", default-features = false, features = ["alloc"] }
+blake3     = { version = "1", default-features = false }
+
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.release.package.snapdragon-core]
+opt-level = "z"

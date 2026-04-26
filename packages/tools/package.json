@@ -1,0 +1,36 @@
+{
+  "name": "@snapdragon/tools",
+  "version": "0.1.0",
+  "description": "Tool registry, coding tools, and REPL toolset for Snapdragon agents.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./toolsets/coding": {
+      "types": "./dist/toolsets/coding.d.ts",
+      "import": "./dist/toolsets/coding.js"
+    },
+    "./toolsets/repl": {
+      "types": "./dist/toolsets/repl.d.ts",
+      "import": "./dist/toolsets/repl.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "rm -rf dist",
+    "typecheck": "tsc -b tsconfig.build.json --pretty false"
+  },
+  "dependencies": {
+    "@snapdragon/core": "0.1.0",
+    "@snapdragon/host": "0.1.0"
+  },
+  "license": "MIT"
+}

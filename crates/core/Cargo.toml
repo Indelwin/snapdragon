@@ -1,0 +1,23 @@
+[package]
+name         = "snapdragon-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description  = "Snapdragon WASM agent core: signatures, modules, schedules, and runner. no_std+alloc, targets wasm32-wasip2."
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde         = { workspace = true, features = ["std"] }
+serde_json    = { workspace = true, features = ["std"] }
+blake3        = { workspace = true, features = ["std"] }
+wit-bindgen   = { version = "0.36", default-features = false, features = ["macros", "realloc"] }
+
+[features]
+default = ["std"]
+# Opt-in no_std+alloc build. Exercises the hot path for size-constrained
+# hosts (embedded wasm runtimes, pre-p2 shims). Default `std` keeps dev
+# ergonomic on p2 where std is free.
+std = []

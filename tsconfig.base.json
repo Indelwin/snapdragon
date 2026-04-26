@@ -1,0 +1,29 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM"],
+    "strict": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "skipLibCheck": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@snapdragon/core": ["packages/core/src/index.ts"],
+      "@snapdragon/host": ["packages/host/src/index.ts"],
+      "@snapdragon/host/*": ["packages/host/src/*"],
+      "@snapdragon/tools": ["packages/tools/src/index.ts"],
+      "@snapdragon/tools/*": ["packages/tools/src/*"],
+      "@snapdragon/agent": ["packages/agent/src/index.ts"],
+      "@snapdragon/repl": ["packages/repl/src/index.ts"]
+    }
+  }
+}

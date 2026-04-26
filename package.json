@@ -1,0 +1,31 @@
+{
+  "name": "snapdragon-monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/core",
+    "packages/host",
+    "packages/tools",
+    "packages/agent",
+    "packages/repl",
+    "examples/basic-agent",
+    "examples/coding-repl"
+  ],
+  "scripts": {
+    "build": "npm run build:wasm && npm run build --workspaces --if-present",
+    "build:wasm": "bash scripts/build-wasm.sh",
+    "clean": "npm run clean --workspaces --if-present && rm -rf target",
+    "test": "npm run test --workspaces --if-present && cargo test --workspace -- --test-threads=1",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "publish:dry": "npm publish --workspaces --access public --dry-run"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "typescript": "^5.9.2"
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  }
+}
