@@ -1,6 +1,10 @@
 import { strict as assert } from 'node:assert';
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
 import { mockProvider } from '@snapdragon-ai/host';
+import { SessionStore } from '@snapdragon-ai/session';
 import { createCodingReplAgent } from '../src/index.ts';
 import { parseToolArgs } from '../src/tool-args.ts';
 
@@ -29,6 +33,55 @@ test('coding repl agent can call the REPL tool and continue', async () => {
     agent.messages.some(
       (message) => message.role === 'tool' && message.content.includes('repl_eval'),
     ),
+  );
+});
+
+test('agent accepts multimodal content blocks', async () => {
+  const mock = mockProvider();
+  mock.enqueue('seen');
+  const agent = await createCodingReplAgent({
+    provider: mock.handler,
+    cwd: process.cwd(),
+  });
+
+  await agent.prompt([
+    { type: 'text', text: 'describe' },
+    { type: 'image', source: { type: 'url', url: 'https://example.test/a.png' } },
+  ]);
+
+  const user = mock.history()[0].messages.find((message) => message.role === 'user');
+  assert.deepEqual(user?.content, [
+    { type: 'text', text: 'describe' },
+    { type: 'image', source: { type: 'url', url: 'https://example.test/a.png' } },
+  ]);
+});
+
+test('agent persists user, assistant, and tool messages into a session', async () => {
+  const mock = mockProvider();
+  mock.enqueueResponse({
+    content: '',
+    tool_calls: [
+      {
+        id: 'call_1',
+        name: 'repl_eval',
+        args_json: JSON.stringify({ code: '"ok"' }),
+      },
+    ],
+  });
+  mock.enqueue('done');
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-agent-')) });
+  const session = store.create('agent_session');
+
+  const agent = await createCodingReplAgent({
+    provider: mock.handler,
+    cwd: process.cwd(),
+    session,
+  });
+  await agent.prompt('persist this');
+
+  assert.deepEqual(
+    session.messages().map((message) => message.role),
+    ['user', 'assistant', 'tool', 'assistant'],
   );
 });
 

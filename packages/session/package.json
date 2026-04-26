@@ -1,7 +1,7 @@
 {
-  "name": "@snapdragon-ai/agent",
+  "name": "@snapdragon-ai/session",
   "version": "0.1.1",
-  "description": "Embeddable Snapdragon agent loop for chat, coding tools, and REPL-backed tool use.",
+  "description": "Portable append-only JSONL sessions for Snapdragon agents.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -18,13 +18,11 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
-    "typecheck": "tsc -b tsconfig.build.json --pretty false",
-    "test": "node --test --import tsx test/*.test.ts"
+    "test": "node --test --import tsx test/*.test.ts",
+    "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },
   "dependencies": {
-    "@snapdragon-ai/host": "0.1.1",
-    "@snapdragon-ai/session": "0.1.1",
-    "@snapdragon-ai/tools": "0.1.1"
+    "@snapdragon-ai/host": "0.1.1"
   },
   "devDependencies": {
     "tsx": "^4.20.3"
