@@ -1,6 +1,6 @@
 {
   "name": "@snapdragon-ai/repl",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Minimal Snapdragon coding REPL agent CLI.",
   "type": "module",
   "bin": {
@@ -24,8 +24,8 @@
     "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },
   "dependencies": {
-    "@snapdragon-ai/agent": "0.1.0",
-    "@snapdragon-ai/host": "0.1.0"
+    "@snapdragon-ai/agent": "0.1.1",
+    "@snapdragon-ai/host": "0.1.1"
   },
   "license": "MIT"
 }

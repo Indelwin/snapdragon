@@ -1,6 +1,6 @@
 {
   "name": "@snapdragon-ai/host",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Host runtime primitives and provider adapters for Snapdragon agents.",
   "type": "module",
   "main": "./dist/index.js",
@@ -33,7 +33,7 @@
     "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },
   "dependencies": {
-    "@snapdragon-ai/core": "0.1.0"
+    "@snapdragon-ai/core": "0.1.1"
   },
   "license": "MIT"
 }
