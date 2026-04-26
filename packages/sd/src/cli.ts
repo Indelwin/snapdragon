@@ -1,8 +1,9 @@
 #!/usr/bin/env node
+import { realpathSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { stderr, stdout } from 'node:process';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { fileURLToPath } from 'node:url';
 import { createSdPlaceholderMessage } from './index.js';
 
 const helpText = `sd
@@ -39,9 +40,12 @@ async function readPackageVersion(): Promise<string> {
   return 'unknown';
 }
 
-function isDirectEntrypoint(metaUrl: string): boolean {
-  const entrypoint = process.argv[1];
-  return entrypoint !== undefined && pathToFileURL(entrypoint).href === metaUrl;
+export function isDirectEntrypoint(metaUrl: string, entrypoint = process.argv[1]): boolean {
+  try {
+    return realpathSync(entrypoint) === realpathSync(fileURLToPath(metaUrl));
+  } catch {
+    return false;
+  }
 }
 
 if (isDirectEntrypoint(import.meta.url)) {
