@@ -1,8 +1,10 @@
 # Snapdragon
 
-Small, portable agent runtime components for building coding and tool-using agents.
+Inspired by the simplicity, versatility and self modification capabilities of [pi](https://github.com/badlogic/pi-mono) and the power, self-learning and memory of [hermes-agent](https://github.com/nousresearch/hermes-agent), among many other great agents, I wanted to make my own to learn about how they work and try some ideas out
 
-This repository is a clean-history monorepo for the public `@snapdragon-ai` packages. It carries forward the kernel and SDK ideas from the prototype repo while keeping the first public shape focused on a compact library, a default coding REPL agent, and small examples.
+Instead of the normal agent loop, the ehart of Snapdragon is most similar to an ECS (Entity Component System) commonly used in games. Everything from tools, to memory, to context - everything is a Component and/or System. There's really only 1 Entity, and instead of the normal tick driving everything, the cadence is set by tools and calls to providers to get model responses (yes, providers are also registered the same way!) I think this will make it extremely versatile, and with dynamic registration, agents will be able to hot reload themselves with new tools and plugins constantly
+
+The core is in Rust, so I can work on optimising the ECS system as much as possible, and support things like in-process agent delegation easily (for things like RLM with a lot of recursion - no heavy subprocesses if I can avoid it). Right now it's compiled to WASM, so it's extremely portable, and will make it easy to run anywhere. The idea is, any host that can run WASM, can provide whatever components and systems are needed. So it should work on edge devices, in the browser, embedded in other languages, whatever. I'll add examples of this as I get to it!
 
 ## Packages
 
@@ -12,6 +14,7 @@ This repository is a clean-history monorepo for the public `@snapdragon-ai` pack
 | `@snapdragon-ai/host` | Capability registry and streaming provider adapters. |
 | `@snapdragon-ai/tools` | Tool registry, coding tools, and the REPL toolset. |
 | `@snapdragon-ai/agent` | Embeddable chat/coding agent loop. |
+| `@snapdragon-ai/sd` | Batteries included TUI agent for me to test, and use to develop itself! |
 | `@snapdragon-ai/repl` | Minimal CLI for the default coding REPL agent. |
 
 ## Layout
@@ -22,6 +25,7 @@ packages/
   host/
   tools/
   agent/
+  sd/
   repl/
 crates/
   core/
@@ -42,3 +46,5 @@ npm run build
 ```
 
 The Rust kernel builds to `wasm32-wasip2`; install that target with rustup before running the full build if it is missing.
+
+# Examples Roadmap

@@ -8,6 +8,7 @@
       "@snapdragon-ai/host",
       "@snapdragon-ai/tools",
       "@snapdragon-ai/agent",
+      "@snapdragon-ai/sd",
       "@snapdragon-ai/repl"
     ]
   ],
