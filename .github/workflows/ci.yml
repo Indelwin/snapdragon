@@ -51,6 +51,21 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Probe npm token access
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          cat > "$HOME/.npmrc" <<'NPMRC'
+          registry=https://registry.npmjs.org/
+          //registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}
+          NPMRC
+          npm whoami
+          npm access get status @snapdragon-ai/sd
+          npm access list packages @snapdragon-ai --json > /tmp/npm-packages.json
+          node -e "const p=require('/tmp/npm-packages.json'); const names=Object.keys(p); if (!names.includes('@snapdragon-ai/sd')) throw new Error('sd package not visible'); console.log('org packages visible:', names.length);"
+          npm access list collaborators @snapdragon-ai/sd --json > /tmp/npm-collaborators.json
+          node -e "const c=require('/tmp/npm-collaborators.json'); if (c.indelwin !== 'read-write') throw new Error('indelwin is not read-write'); console.log('sd collaborator access:', c.indelwin);"
+
       - name: Check
         run: npm run check:push
 
