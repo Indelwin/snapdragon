@@ -15,6 +15,7 @@
   "scripts": {
     "build": "npm run build:wasm && npm run build --workspaces --if-present",
     "build:wasm": "bash scripts/build-wasm.sh",
+    "changeset": "changeset",
     "check": "npm run check:push",
     "check:deep": "npm run check:push && npm run mutation:js && npm run mutation:rust",
     "check:fast": "npm run lint && npm run spec:lint && npm run quality:crap",
@@ -24,15 +25,19 @@
     "lint": "biome check . && cargo fmt --all --check",
     "mutation:js": "stryker run",
     "mutation:rust": "bash scripts/quality/mutation-rust.sh",
+    "pack:dry": "npm pack --workspace @snapdragon-ai/core --workspace @snapdragon-ai/host --workspace @snapdragon-ai/tools --workspace @snapdragon-ai/agent --workspace @snapdragon-ai/repl --dry-run",
     "prepare": "git config core.hooksPath .githooks && chmod +x .githooks/pre-commit .githooks/pre-push scripts/quality/*.sh scripts/quality/*.mjs",
     "quality:crap": "node scripts/quality/crap-analysis.mjs",
     "spec:lint": "node scripts/quality/check-gherkin.mjs",
     "test": "npm run test --workspaces --if-present && cargo test --workspace -- --test-threads=1",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "publish:dry": "npm publish --workspaces --access public --dry-run"
+    "version": "changeset version && npm install --package-lock-only --ignore-scripts",
+    "release": "npm run build && changeset publish",
+    "publish:dry": "npm run pack:dry"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.13",
+    "@changesets/cli": "^2.31.0",
     "@cucumber/gherkin": "39.0.0",
     "@cucumber/messages": "32.3.1",
     "@stryker-mutator/core": "9.6.1",
