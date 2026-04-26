@@ -1,7 +1,7 @@
-import type { LlmChatResponse, Message, ThinkingBlock, ToolCall } from '../types.js';
 import type { StreamingChatHandler } from '../registry.js';
 import { StreamAggregator } from '../stream/events.js';
 import { sseLines } from '../stream/sse.js';
+import type { LlmChatResponse, Message, ThinkingBlock, ToolCall } from '../types.js';
 
 const PROVIDER = 'anthropic';
 
@@ -19,7 +19,9 @@ export function anthropicProvider(options: AnthropicProviderOptions): StreamingC
       model: options.model,
       max_tokens: request.max_tokens ?? options.defaultMaxTokens ?? 4096,
       stream: true,
-      messages: request.messages.filter((message) => message.role !== 'system').map(convertMessageToAnthropic),
+      messages: request.messages
+        .filter((message) => message.role !== 'system')
+        .map(convertMessageToAnthropic),
     };
     const system = request.messages
       .filter((message) => message.role === 'system')
@@ -43,7 +45,14 @@ export function anthropicProvider(options: AnthropicProviderOptions): StreamingC
       body.tool_choice =
         request.tool_choice && typeof request.tool_choice === 'object'
           ? { type: 'tool', name: request.tool_choice.name }
-          : { type: request.tool_choice === 'any' ? 'any' : request.tool_choice === 'none' ? 'none' : 'auto' };
+          : {
+              type:
+                request.tool_choice === 'any'
+                  ? 'any'
+                  : request.tool_choice === 'none'
+                    ? 'none'
+                    : 'auto',
+            };
     }
 
     context.emit({
@@ -181,7 +190,12 @@ export function anthropicProvider(options: AnthropicProviderOptions): StreamingC
       cache_read_tokens: cacheReadTokens,
       finish_reason: finishReason,
     };
-    context.emit({ kind: 'done', run_id: context.runId, provider: PROVIDER, response: finalResponse });
+    context.emit({
+      kind: 'done',
+      run_id: context.runId,
+      provider: PROVIDER,
+      response: finalResponse,
+    });
     return finalResponse;
   };
 }

@@ -85,7 +85,7 @@ pub(crate) mod wit {
     /// `std::sync::Mutex` is fine — there's one thread inside a wasm
     /// instance.
     struct CoreState {
-        bundle:   Option<Bundle>,
+        bundle: Option<Bundle>,
         registry: SystemRegistry,
     }
 
@@ -93,7 +93,7 @@ pub(crate) mod wit {
         static STATE: std::sync::OnceLock<std::sync::Mutex<CoreState>> = std::sync::OnceLock::new();
         STATE.get_or_init(|| {
             std::sync::Mutex::new(CoreState {
-                bundle:   None,
+                bundle: None,
                 registry: SystemRegistry::core_defaults(),
             })
         })
@@ -104,18 +104,24 @@ pub(crate) mod wit {
     impl Guest for Impl {
         fn run(input_json: String) -> Result<String, String> {
             let host = WitHostPipe;
-            let out = run_inner(&host, &input_json)
-                .map_err(|e| e.to_err_arm())?;
-            serde_json::to_string(&out)
-                .map_err(|e| RunError::Internal { reason: alloc::format!("serialize output: {}", e) }.to_err_arm())
+            let out = run_inner(&host, &input_json).map_err(|e| e.to_err_arm())?;
+            serde_json::to_string(&out).map_err(|e| {
+                RunError::Internal {
+                    reason: alloc::format!("serialize output: {}", e),
+                }
+                .to_err_arm()
+            })
         }
 
         fn run_local(request_json: String) -> Result<String, String> {
             let host = WitHostPipe;
-            let out = run_local_inner(&host, &request_json)
-                .map_err(|e| e.to_err_arm())?;
-            serde_json::to_string(&out)
-                .map_err(|e| RunError::Internal { reason: alloc::format!("serialize output: {}", e) }.to_err_arm())
+            let out = run_local_inner(&host, &request_json).map_err(|e| e.to_err_arm())?;
+            serde_json::to_string(&out).map_err(|e| {
+                RunError::Internal {
+                    reason: alloc::format!("serialize output: {}", e),
+                }
+                .to_err_arm()
+            })
         }
 
         fn load_bundle(bundle_bytes: Vec<u8>) -> Result<String, String> {
@@ -124,7 +130,9 @@ pub(crate) mod wit {
             let cid = bundle
                 .cid()
                 .map_err(|e| alloc::format!("hashing bundle: {}", e))?;
-            let mut g = state().lock().map_err(|_| "state mutex poisoned".to_string())?;
+            let mut g = state()
+                .lock()
+                .map_err(|_| "state mutex poisoned".to_string())?;
 
             // Validate the registry satisfies the bundle's required
             // feature sets.
@@ -149,10 +157,12 @@ pub(crate) mod wit {
     /// the `std` feature can drive it against a MockHostPipe without
     /// touching the WIT import shims.
     pub(crate) fn run_inner(
-        host:       &dyn crate::host::HostPipe,
+        host: &dyn crate::host::HostPipe,
         input_json: &str,
     ) -> Result<serde_json::Value, RunError> {
-        let g = state().lock().map_err(|_| RunError::Internal { reason: "state mutex poisoned".into() })?;
+        let g = state().lock().map_err(|_| RunError::Internal {
+            reason: "state mutex poisoned".into(),
+        })?;
         let bundle = g.bundle.as_ref().ok_or(RunError::NoBundleLoaded)?.clone();
         let registry = &g.registry as *const SystemRegistry;
         // SAFETY: registry lives for the life of the process; we hold
@@ -173,8 +183,10 @@ pub(crate) mod wit {
             });
         }
 
-        let input: serde_json::Value = serde_json::from_str(input_json)
-            .map_err(|e| RunError::InvalidInput { reason: e.to_string() })?;
+        let input: serde_json::Value =
+            serde_json::from_str(input_json).map_err(|e| RunError::InvalidInput {
+                reason: e.to_string(),
+            })?;
 
         // Bundle-declared schedule wins; Predict default is the fallback
         // for bundles that don't ship one (the simple Predict case).
@@ -184,10 +196,14 @@ pub(crate) mod wit {
             .unwrap_or_else(Schedule::predict_default);
 
         let mut entity = Entity::default();
-        entity.run_id    = Some(alloc::format!("run_{}", host.now_ms()));
-        entity.identity  = Some(Identity { principal: "owner".into(), tenant: None, session: None });
-        entity.input     = Some(input);
-        entity.bundle    = Some(bundle);
+        entity.run_id = Some(alloc::format!("run_{}", host.now_ms()));
+        entity.identity = Some(Identity {
+            principal: "owner".into(),
+            tenant: None,
+            session: None,
+        });
+        entity.input = Some(input);
+        entity.bundle = Some(bundle);
 
         let mut runner = Runner::new(&mut entity, registry, &schedule, host);
         runner.run_to_completion()
@@ -205,8 +221,10 @@ pub(crate) mod wit {
         let registry = unsafe { &*registry };
         drop(g);
 
-        let request: LocalRunRequest = serde_json::from_str(request_json)
-            .map_err(|e| RunError::InvalidInput { reason: e.to_string() })?;
+        let request: LocalRunRequest =
+            serde_json::from_str(request_json).map_err(|e| RunError::InvalidInput {
+                reason: e.to_string(),
+            })?;
 
         crate::local_run::run_local(host, registry, bundle, request)
     }
@@ -224,7 +242,7 @@ pub(crate) mod wit {
 /// the WIT shim.
 #[cfg(feature = "std")]
 pub fn run_with_host(
-    host:       &dyn host::HostPipe,
+    host: &dyn host::HostPipe,
     input_json: &str,
 ) -> Result<serde_json::Value, error::RunError> {
     wit::run_inner(host, input_json)

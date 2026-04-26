@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { createInterface } from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
+import { createInterface } from 'node:readline/promises';
 import { createCodingReplAgent } from '@snapdragon/agent';
 import {
   anthropicProvider,

@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": ["packages/agent/src/tool-args.ts", "!packages/**/*.d.ts"],
+  "testRunner": "command",
+  "commandRunner": {
+    "command": "npm test --workspace @snapdragon/agent"
+  },
+  "coverageAnalysis": "off",
+  "checkers": [],
+  "reporters": ["clear-text", "progress"],
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": 80
+  },
+  "concurrency": 2
+}

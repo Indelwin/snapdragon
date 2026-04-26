@@ -1,5 +1,5 @@
-import type { LlmChatRequest, LlmChatResponse } from '../types.js';
 import type { StreamingChatHandler } from '../registry.js';
+import type { LlmChatRequest, LlmChatResponse } from '../types.js';
 
 const PROVIDER = 'mock';
 

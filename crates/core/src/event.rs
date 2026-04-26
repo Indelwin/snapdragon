@@ -32,23 +32,23 @@ pub enum Topic {
 impl Topic {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::AgentRunStarted         => "agent.run.started",
-            Self::AgentRunCompleted       => "agent.run.completed",
-            Self::AgentRunErrored         => "agent.run.errored",
-            Self::AgentIterStarted        => "agent.iter.started",
-            Self::AgentIterCompleted      => "agent.iter.completed",
-            Self::LlmRequestStarted       => "llm.request.started",
-            Self::LlmRequestCompleted     => "llm.request.completed",
-            Self::LlmParseFailed          => "llm.parse.failed",
-            Self::LlmParseRetried         => "llm.parse.retried",
-            Self::ToolInvokeStarted       => "tool.invoke.started",
-            Self::ToolInvokeCompleted     => "tool.invoke.completed",
-            Self::ToolInvokeFailed        => "tool.invoke.failed",
-            Self::ExecEvalStarted         => "exec.eval.started",
-            Self::ExecEvalCompleted       => "exec.eval.completed",
-            Self::TrajectoryStepAppended  => "trajectory.step.appended",
-            Self::BundleLoaded            => "bundle.loaded",
-            Self::CapabilityMissing       => "capability.missing",
+            Self::AgentRunStarted => "agent.run.started",
+            Self::AgentRunCompleted => "agent.run.completed",
+            Self::AgentRunErrored => "agent.run.errored",
+            Self::AgentIterStarted => "agent.iter.started",
+            Self::AgentIterCompleted => "agent.iter.completed",
+            Self::LlmRequestStarted => "llm.request.started",
+            Self::LlmRequestCompleted => "llm.request.completed",
+            Self::LlmParseFailed => "llm.parse.failed",
+            Self::LlmParseRetried => "llm.parse.retried",
+            Self::ToolInvokeStarted => "tool.invoke.started",
+            Self::ToolInvokeCompleted => "tool.invoke.completed",
+            Self::ToolInvokeFailed => "tool.invoke.failed",
+            Self::ExecEvalStarted => "exec.eval.started",
+            Self::ExecEvalCompleted => "exec.eval.completed",
+            Self::TrajectoryStepAppended => "trajectory.step.appended",
+            Self::BundleLoaded => "bundle.loaded",
+            Self::CapabilityMissing => "capability.missing",
         }
     }
 }
@@ -62,9 +62,8 @@ pub struct Event<'a> {
 /// Emit a typed event through the pipe. Serialisation failure becomes
 /// a pseudo-event so observability never silently drops.
 pub fn emit<P: Serialize>(host: &dyn HostPipe, topic: Topic, payload: &P) {
-    let json = serde_json::to_string(payload).unwrap_or_else(|e| {
-        alloc::format!(r#"{{"__emit_error__":"{}"}}"#, e)
-    });
+    let json = serde_json::to_string(payload)
+        .unwrap_or_else(|e| alloc::format!(r#"{{"__emit_error__":"{}"}}"#, e));
     host.emit_event(topic.as_str(), &json);
 }
 
@@ -80,40 +79,40 @@ pub fn emit_raw(host: &dyn HostPipe, topic: &str, payload_json: &str) {
 pub struct AgentRunStarted<'a> {
     pub program_id: &'a str,
     pub bundle_cid: Option<&'a str>,
-    pub input_len:  usize,
+    pub input_len: usize,
 }
 
 #[derive(Serialize)]
 pub struct AgentRunCompleted<'a> {
-    pub program_id:  &'a str,
+    pub program_id: &'a str,
     pub duration_ms: u64,
-    pub iters_used:  u32,
-    pub output_len:  usize,
+    pub iters_used: u32,
+    pub output_len: usize,
 }
 
 #[derive(Serialize)]
 pub struct AgentRunErrored<'a> {
-    pub program_id:  &'a str,
+    pub program_id: &'a str,
     pub duration_ms: u64,
-    pub error_kind:  &'a str,
-    pub reason:      &'a str,
+    pub error_kind: &'a str,
+    pub reason: &'a str,
 }
 
 #[derive(Serialize)]
 pub struct LlmRequestStarted<'a> {
-    pub role:        &'a str,
-    pub n_messages:  usize,
+    pub role: &'a str,
+    pub n_messages: usize,
 }
 
 #[derive(Serialize)]
 pub struct LlmRequestCompleted<'a> {
-    pub role:         &'a str,
-    pub duration_ms:  u64,
+    pub role: &'a str,
+    pub duration_ms: u64,
     pub response_len: usize,
 }
 
 #[derive(Serialize)]
 pub struct CapabilityMissing {
-    pub cap:      String,
+    pub cap: String,
     pub required: bool,
 }

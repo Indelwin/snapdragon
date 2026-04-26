@@ -14,8 +14,8 @@ fn classify_bundle() -> Bundle {
         program_version: "0.1.0".into(),
         signatures: vec![Signature {
             name: "ClassifyIntent".into(),
-            doc:  Some("Classify the user's query into a known intent.".into()),
-            inputs:  vec![Field {
+            doc: Some("Classify the user's query into a known intent.".into()),
+            inputs: vec![Field {
                 name: "query".into(),
                 ty: FieldType::String,
                 doc: Some("Raw user query.".into()),
@@ -50,17 +50,13 @@ fn classify_bundle() -> Bundle {
 #[test]
 fn predict_end_to_end_returns_structured_output() {
     let host = MockHostPipe::new();
-    host.enqueue_chat(
-        "[[ ## intent ## ]]\nsearch\n\n[[ ## completed ## ]]\n",
-    );
+    host.enqueue_chat("[[ ## intent ## ]]\nsearch\n\n[[ ## completed ## ]]\n");
 
     snapdragon_core::install_bundle_for_test(classify_bundle());
 
-    let out = snapdragon_core::run_with_host(
-        &host,
-        r#"{"query":"what's the weather in Melbourne"}"#,
-    )
-    .expect("run should succeed");
+    let out =
+        snapdragon_core::run_with_host(&host, r#"{"query":"what's the weather in Melbourne"}"#)
+            .expect("run should succeed");
 
     assert_eq!(out, serde_json::json!({ "intent": "search" }));
 
@@ -102,9 +98,7 @@ fn predict_surfaces_parse_failure_as_structured_error() {
 fn predict_retries_parse_failures_with_a_nudge() {
     let host = MockHostPipe::new();
     host.enqueue_chat("[[ ## intent ## ]]\nsearch\n");
-    host.enqueue_chat(
-        "[[ ## intent ## ]]\nchat\n\n[[ ## completed ## ]]\n",
-    );
+    host.enqueue_chat("[[ ## intent ## ]]\nchat\n\n[[ ## completed ## ]]\n");
 
     snapdragon_core::install_bundle_for_test(classify_bundle());
 

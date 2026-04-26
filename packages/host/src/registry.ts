@@ -1,3 +1,4 @@
+import { type StreamEmit, type StreamEvent, topicFor } from './stream/events.js';
 import type {
   CapabilityHandler,
   EventListener,
@@ -6,7 +7,6 @@ import type {
   Message,
   Profile,
 } from './types.js';
-import { topicFor, type StreamEmit, type StreamEvent } from './stream/events.js';
 
 export interface StreamContext {
   runId: string;
@@ -89,7 +89,11 @@ export class Registry {
     })) as Resp;
   }
 
-  async chat(role: string, messages: Message[], options: LocalCapabilityOptions = {}): Promise<string> {
+  async chat(
+    role: string,
+    messages: Message[],
+    options: LocalCapabilityOptions = {},
+  ): Promise<string> {
     const response = await this.#runStreamingChat({ role, messages }, options);
     return response.content;
   }
@@ -109,7 +113,9 @@ export class Registry {
     }
 
     const runId =
-      options.runId ?? this.#currentRunId ?? `run_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+      options.runId ??
+      this.#currentRunId ??
+      `run_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     let sawDone = false;
     const emit: StreamEmit = (event: StreamEvent) => {
       if (event.kind === 'done') sawDone = true;

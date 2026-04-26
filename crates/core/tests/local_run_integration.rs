@@ -82,7 +82,9 @@ impl HostPipe for ContextAwareHost {
                 self.stack.lock().unwrap().pop();
                 Ok("{}".into())
             }
-            _ => Err(CallError::NotProvided { cap: cap.to_string() }),
+            _ => Err(CallError::NotProvided {
+                cap: cap.to_string(),
+            }),
         }
     }
 
@@ -96,13 +98,17 @@ impl HostPipe for ContextAwareHost {
     }
 
     fn chat_rich(&self, _req: &ChatRequest) -> Result<ChatResponse, CallError> {
-        let snapshot = self.stack.lock().unwrap().last().cloned().unwrap_or((None, None));
-        self.seen.lock().unwrap().push((
-            snapshot.0,
-            snapshot
-                .1
-                .and_then(|profile| profile.persona),
-        ));
+        let snapshot = self
+            .stack
+            .lock()
+            .unwrap()
+            .last()
+            .cloned()
+            .unwrap_or((None, None));
+        self.seen
+            .lock()
+            .unwrap()
+            .push((snapshot.0, snapshot.1.and_then(|profile| profile.persona)));
         Ok(ChatResponse {
             content: "[[ ## intent ## ]]\nchat\n\n[[ ## completed ## ]]\n".into(),
             ..Default::default()

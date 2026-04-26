@@ -9,3 +9,4 @@ examples/*/dist
 !.env.example
 npm-debug.log*
 trajectories.sqlite*
+mutants.out*/

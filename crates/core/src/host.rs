@@ -44,8 +44,8 @@ impl core::fmt::Display for CallError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
             Self::NotProvided { cap } => write!(f, "capability not provided: {}", cap),
-            Self::Host(m)             => write!(f, "host error: {}", m),
-            Self::Serde(m)            => write!(f, "serde: {}", m),
+            Self::Host(m) => write!(f, "host error: {}", m),
+            Self::Serde(m) => write!(f, "serde: {}", m),
         }
     }
 }
@@ -101,29 +101,29 @@ pub trait HostPipe {
 /// `capabilities/llm.chat.v1.schema.json`.
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct ChatRequest {
-    pub role:     String,
+    pub role: String,
     pub messages: Vec<Message>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub tools:    Vec<ToolDefinition>,
+    pub tools: Vec<ToolDefinition>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_choice: Option<ToolChoice>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reasoning:   Option<ReasoningRequest>,
+    pub reasoning: Option<ReasoningRequest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub max_tokens:  Option<u32>,
+    pub max_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub stop:        Vec<String>,
+    pub stop: Vec<String>,
 }
 
 /// Tool definition sent to the model in a `llm.chat@1` request.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ToolDefinition {
-    pub name:        String,
+    pub name: String,
     pub description: String,
     /// JSON Schema for the tool's args.
-    pub parameters:  serde_json::Value,
+    pub parameters: serde_json::Value,
 }
 
 /// Force / allow / restrict tool selection. Providers vary in support;
@@ -132,33 +132,37 @@ pub struct ToolDefinition {
 #[serde(untagged)]
 pub enum ToolChoice {
     Mode(String), // "auto" | "any" | "none"
-    Function { #[serde(rename = "type")] kind: String, name: String },
+    Function {
+        #[serde(rename = "type")]
+        kind: String,
+        name: String,
+    },
 }
 
 /// Per-call reasoning request.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ReasoningRequest {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub enabled:       Option<bool>,
+    pub enabled: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub effort:        Option<String>, // "low" | "medium" | "high" | "max"
+    pub effort: Option<String>, // "low" | "medium" | "high" | "max"
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub summary:       Option<String>, // "auto" | "concise" | "detailed"
+    pub summary: Option<String>, // "auto" | "concise" | "detailed"
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ChatResponse {
-    pub content:       String,
+    pub content: String,
     #[serde(default)]
-    pub tool_calls:    Vec<crate::component::ToolCall>,
+    pub tool_calls: Vec<crate::component::ToolCall>,
     #[serde(default)]
-    pub thinking:      Vec<crate::component::ThinkingBlock>,
+    pub thinking: Vec<crate::component::ThinkingBlock>,
     #[serde(default)]
-    pub tokens_in:         Option<u32>,
+    pub tokens_in: Option<u32>,
     #[serde(default)]
-    pub tokens_out:        Option<u32>,
+    pub tokens_out: Option<u32>,
     #[serde(default)]
     pub cache_read_tokens: Option<u32>,
     #[serde(default)]
@@ -177,7 +181,9 @@ impl HostPipe for WitHostPipe {
             Ok(s) => Ok(s),
             Err(msg) => {
                 if msg.contains("capability_not_provided") {
-                    Err(CallError::NotProvided { cap: cap.to_string() })
+                    Err(CallError::NotProvided {
+                        cap: cap.to_string(),
+                    })
                 } else {
                     Err(CallError::Host(msg))
                 }
@@ -195,7 +201,7 @@ impl HostPipe for WitHostPipe {
         let wit_msgs: Vec<crate::wit::snapdragon::agent::host::Message> = msgs
             .iter()
             .map(|m| crate::wit::snapdragon::agent::host::Message {
-                role:    m.role.clone(),
+                role: m.role.clone(),
                 content: m.content.clone(),
             })
             .collect();
@@ -254,17 +260,19 @@ pub mod mock {
     impl Default for MockHostPipe {
         fn default() -> Self {
             Self {
-                responses:  Mutex::new(Default::default()),
+                responses: Mutex::new(Default::default()),
                 chat_queue: Mutex::new(VecDeque::new()),
-                events:     Mutex::new(Vec::new()),
-                clock:      Mutex::new(0),
-                rand_buf:   Mutex::new(vec![0u8; 16]),
+                events: Mutex::new(Vec::new()),
+                clock: Mutex::new(0),
+                rand_buf: Mutex::new(vec![0u8; 16]),
             }
         }
     }
 
     impl MockHostPipe {
-        pub fn new() -> Self { Default::default() }
+        pub fn new() -> Self {
+            Default::default()
+        }
 
         /// Queue a JSON response for the next call to `cap`.
         pub fn enqueue_ok(&self, cap: &str, resp_json: impl Into<String>) -> &Self {
@@ -329,24 +337,27 @@ pub mod mock {
                 if let Some(q) = map.get_mut(cap) {
                     if let Some(resp) = q.pop_front() {
                         return match resp {
-                            MockResponse::Ok(s)  => Ok(s),
+                            MockResponse::Ok(s) => Ok(s),
                             MockResponse::Err(e) => Err(e),
                         };
                     }
                 }
                 drop(map);
                 if let Some(r) = self.chat_queue.lock().unwrap().pop_front() {
-                    return serde_json::to_string(&r)
-                        .map_err(|e| CallError::Serde(e.to_string()));
+                    return serde_json::to_string(&r).map_err(|e| CallError::Serde(e.to_string()));
                 }
-                return Err(CallError::NotProvided { cap: cap.to_string() });
+                return Err(CallError::NotProvided {
+                    cap: cap.to_string(),
+                });
             }
             let mut map = self.responses.lock().unwrap();
             let queue = map.get_mut(cap);
             match queue.and_then(|q| q.pop_front()) {
-                Some(MockResponse::Ok(s))   => Ok(s),
-                Some(MockResponse::Err(e))  => Err(e),
-                None => Err(CallError::NotProvided { cap: cap.to_string() }),
+                Some(MockResponse::Ok(s)) => Ok(s),
+                Some(MockResponse::Err(e)) => Err(e),
+                None => Err(CallError::NotProvided {
+                    cap: cap.to_string(),
+                }),
             }
         }
 
@@ -360,14 +371,18 @@ pub mod mock {
         fn chat(&self, _role: &str, _msgs: &[Message]) -> Result<ChatResponse, CallError> {
             match self.chat_queue.lock().unwrap().pop_front() {
                 Some(r) => Ok(r),
-                None    => Err(CallError::NotProvided { cap: "llm.chat@1".into() }),
+                None => Err(CallError::NotProvided {
+                    cap: "llm.chat@1".into(),
+                }),
             }
         }
 
         fn chat_rich(&self, _req: &ChatRequest) -> Result<ChatResponse, CallError> {
             match self.chat_queue.lock().unwrap().pop_front() {
                 Some(r) => Ok(r),
-                None    => Err(CallError::NotProvided { cap: "llm.chat@1".into() }),
+                None => Err(CallError::NotProvided {
+                    cap: "llm.chat@1".into(),
+                }),
             }
         }
 
@@ -377,7 +392,9 @@ pub mod mock {
 
         fn random_bytes(&self, len: u32) -> Vec<u8> {
             let buf = self.rand_buf.lock().unwrap();
-            if buf.is_empty() { return vec![0u8; len as usize]; }
+            if buf.is_empty() {
+                return vec![0u8; len as usize];
+            }
             let mut out = Vec::with_capacity(len as usize);
             for i in 0..len as usize {
                 out.push(buf[i % buf.len()]);
@@ -410,10 +427,11 @@ mod tests {
             r#"{"persona":"x"}"#
         );
         // Third call: queue empty.
-        assert!(host
-            .call_capability("profile.get@1", "{}")
-            .unwrap_err()
-            .is_not_provided());
+        assert!(
+            host.call_capability("profile.get@1", "{}")
+                .unwrap_err()
+                .is_not_provided()
+        );
     }
 
     #[test]

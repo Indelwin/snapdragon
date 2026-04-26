@@ -57,9 +57,10 @@ pub fn run_local(
 
     let result = run_local_entity(host, registry, bundle, request.input, child_run_id);
 
-    let pop_result = crate::capability::runtime::pop_context(host).map_err(|e| RunError::Internal {
-        reason: alloc::format!("runtime.pop_context: {}", e),
-    });
+    let pop_result =
+        crate::capability::runtime::pop_context(host).map_err(|e| RunError::Internal {
+            reason: alloc::format!("runtime.pop_context: {}", e),
+        });
 
     match (result, pop_result) {
         (Ok(out), Ok(())) => Ok(out),

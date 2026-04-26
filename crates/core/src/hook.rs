@@ -40,12 +40,12 @@ pub enum Hook {
 impl Hook {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::BeforeLlmRequest  => "hook.before_llm_request@1",
-            Self::AfterLlmResponse  => "hook.after_llm_response@1",
-            Self::BeforeToolInvoke  => "hook.before_tool_invoke@1",
-            Self::AfterToolInvoke   => "hook.after_tool_invoke@1",
-            Self::BeforeIter        => "hook.before_iter@1",
-            Self::BeforeFinalize    => "hook.before_finalize@1",
+            Self::BeforeLlmRequest => "hook.before_llm_request@1",
+            Self::AfterLlmResponse => "hook.after_llm_response@1",
+            Self::BeforeToolInvoke => "hook.before_tool_invoke@1",
+            Self::AfterToolInvoke => "hook.after_tool_invoke@1",
+            Self::BeforeIter => "hook.before_iter@1",
+            Self::BeforeFinalize => "hook.before_finalize@1",
         }
     }
 }
@@ -57,14 +57,14 @@ impl Hook {
 pub fn invoke<Req: Serialize, Patch: for<'de> Deserialize<'de>>(
     host: &dyn HostPipe,
     hook: Hook,
-    req:  &Req,
+    req: &Req,
 ) -> Result<HookOutcome<Patch>, CallError> {
     match call::<Req, HookResponse<Patch>>(host, hook.as_str(), req) {
-        Ok(HookResponse::NoChange {})               => Ok(HookOutcome::NoChange),
-        Ok(HookResponse::Patch { patch })           => Ok(HookOutcome::Patch(patch)),
-        Ok(HookResponse::Abort { abort })           => Ok(HookOutcome::Abort(abort)),
-        Err(CallError::NotProvided { .. })          => Ok(HookOutcome::NoChange),
-        Err(e)                                      => Err(e),
+        Ok(HookResponse::NoChange {}) => Ok(HookOutcome::NoChange),
+        Ok(HookResponse::Patch { patch }) => Ok(HookOutcome::Patch(patch)),
+        Ok(HookResponse::Abort { abort }) => Ok(HookOutcome::Abort(abort)),
+        Err(CallError::NotProvided { .. }) => Ok(HookOutcome::NoChange),
+        Err(e) => Err(e),
     }
 }
 
@@ -172,10 +172,8 @@ mod tests {
             serde_json::from_str(r#"{"abort":"too unsafe"}"#).unwrap();
         assert!(matches!(abort, HookResponse::Abort { .. }));
 
-        let patch: HookResponse<AfterLlmResponsePatch> = serde_json::from_str(
-            r#"{"patch":{"raw_response":"cleaned up"}}"#,
-        )
-        .unwrap();
+        let patch: HookResponse<AfterLlmResponsePatch> =
+            serde_json::from_str(r#"{"patch":{"raw_response":"cleaned up"}}"#).unwrap();
         assert!(matches!(patch, HookResponse::Patch { .. }));
     }
 }

@@ -26,11 +26,7 @@ export interface ToolDefinition {
   parameters: JsonObject;
 }
 
-export type ToolChoice =
-  | 'auto'
-  | 'any'
-  | 'none'
-  | { type: 'function'; name: string };
+export type ToolChoice = 'auto' | 'any' | 'none' | { type: 'function'; name: string };
 
 export interface ReasoningRequest {
   enabled?: boolean;

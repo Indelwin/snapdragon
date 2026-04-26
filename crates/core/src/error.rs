@@ -12,14 +12,34 @@ use serde::Serialize;
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum RunError {
     NoBundleLoaded,
-    InvalidInput        { reason: String },
-    MissingCapability   { cap:    String },
-    MissingFeatureSet   { missing: alloc::vec::Vec<String>, present: alloc::vec::Vec<String> },
-    HookAborted         { hook:   String, reason: String },
-    LlmParseFailed      { attempts: u32, last_error: String },
-    ToolFailed          { name:   String, reason: String },
-    ExecFailed          { reason: String },
-    Internal            { reason: String },
+    InvalidInput {
+        reason: String,
+    },
+    MissingCapability {
+        cap: String,
+    },
+    MissingFeatureSet {
+        missing: alloc::vec::Vec<String>,
+        present: alloc::vec::Vec<String>,
+    },
+    HookAborted {
+        hook: String,
+        reason: String,
+    },
+    LlmParseFailed {
+        attempts: u32,
+        last_error: String,
+    },
+    ToolFailed {
+        name: String,
+        reason: String,
+    },
+    ExecFailed {
+        reason: String,
+    },
+    Internal {
+        reason: String,
+    },
 }
 
 impl RunError {
@@ -44,6 +64,8 @@ impl core::fmt::Display for RunError {
 
 impl From<serde_json::Error> for RunError {
     fn from(e: serde_json::Error) -> Self {
-        Self::InvalidInput { reason: e.to_string() }
+        Self::InvalidInput {
+            reason: e.to_string(),
+        }
     }
 }

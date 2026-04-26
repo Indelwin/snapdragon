@@ -1,7 +1,7 @@
-import type { LlmChatResponse, Message, ToolCall } from '../types.js';
 import type { StreamingChatHandler } from '../registry.js';
 import { StreamAggregator } from '../stream/events.js';
 import { sseLines } from '../stream/sse.js';
+import type { LlmChatResponse, Message, ToolCall } from '../types.js';
 
 const PROVIDER = 'openai';
 
@@ -84,7 +84,10 @@ export function openaiProvider(options: OpenAIProviderOptions): StreamingChatHan
     let finishReason: string | undefined;
     let tokensIn: number | undefined;
     let tokensOut: number | undefined;
-    const calls = new Map<number, { id: string; name: string; argsJson: string; started: boolean }>();
+    const calls = new Map<
+      number,
+      { id: string; name: string; argsJson: string; started: boolean }
+    >();
 
     for await (const payload of sseLines(response.body)) {
       if (payload === '[DONE]') break;
@@ -162,7 +165,12 @@ export function openaiProvider(options: OpenAIProviderOptions): StreamingChatHan
       tokens_out: tokensOut,
       finish_reason: finishReason,
     };
-    context.emit({ kind: 'done', run_id: context.runId, provider: PROVIDER, response: finalResponse });
+    context.emit({
+      kind: 'done',
+      run_id: context.runId,
+      provider: PROVIDER,
+      response: finalResponse,
+    });
     return finalResponse;
   };
 }

@@ -1,0 +1,146 @@
+{
+  "crates/core/src/adapter.rs": {
+    "lines": 588,
+    "complexity": 53,
+    "crapProxy": 2809,
+    "maxFunctionLines": 47
+  },
+  "crates/core/src/bundle.rs": {
+    "lines": 297,
+    "complexity": 14,
+    "crapProxy": 196,
+    "maxFunctionLines": 44
+  },
+  "crates/core/src/capability.rs": {
+    "lines": 190,
+    "complexity": 13,
+    "crapProxy": 169,
+    "maxFunctionLines": 24
+  },
+  "crates/core/src/component.rs": {
+    "lines": 364,
+    "complexity": 23,
+    "crapProxy": 529,
+    "maxFunctionLines": 65
+  },
+  "crates/core/src/host.rs": {
+    "lines": 454,
+    "complexity": 21,
+    "crapProxy": 441,
+    "maxFunctionLines": 33
+  },
+  "crates/core/src/lib.rs": {
+    "lines": 282,
+    "complexity": 15,
+    "crapProxy": 228,
+    "maxFunctionLines": 52
+  },
+  "crates/core/src/local_run.rs": {
+    "lines": 99,
+    "complexity": 7,
+    "crapProxy": 49,
+    "maxFunctionLines": 47
+  },
+  "crates/core/src/runner.rs": {
+    "lines": 483,
+    "complexity": 78,
+    "crapProxy": 6084,
+    "maxFunctionLines": 76
+  },
+  "crates/core/src/system.rs": {
+    "lines": 249,
+    "complexity": 7,
+    "crapProxy": 49,
+    "maxFunctionLines": 20
+  },
+  "crates/core/src/systems.rs": {
+    "lines": 686,
+    "complexity": 42,
+    "crapProxy": 1764,
+    "maxFunctionLines": 99
+  },
+  "packages/agent/src/index.ts": {
+    "lines": 207,
+    "complexity": 42,
+    "crapProxy": 1772,
+    "maxFunctionLines": 12
+  },
+  "packages/core/src/index.ts": {
+    "lines": 99,
+    "complexity": 21,
+    "crapProxy": 455,
+    "maxFunctionLines": 18
+  },
+  "packages/host/src/providers/anthropic.ts": {
+    "lines": 266,
+    "complexity": 100,
+    "crapProxy": 10002,
+    "maxFunctionLines": 186
+  },
+  "packages/host/src/providers/mock.ts": {
+    "lines": 63,
+    "complexity": 13,
+    "crapProxy": 172,
+    "maxFunctionLines": 45
+  },
+  "packages/host/src/providers/openai.ts": {
+    "lines": 225,
+    "complexity": 76,
+    "crapProxy": 5778,
+    "maxFunctionLines": 161
+  },
+  "packages/host/src/registry.ts": {
+    "lines": 136,
+    "complexity": 29,
+    "crapProxy": 845,
+    "maxFunctionLines": 8
+  },
+  "packages/host/src/stream/sse.ts": {
+    "lines": 35,
+    "complexity": 10,
+    "crapProxy": 101,
+    "maxFunctionLines": 24
+  },
+  "packages/host/src/types.ts": {
+    "lines": 79,
+    "complexity": 29,
+    "crapProxy": 853,
+    "maxFunctionLines": 1
+  },
+  "packages/repl/src/cli.ts": {
+    "lines": 122,
+    "complexity": 37,
+    "crapProxy": 1370,
+    "maxFunctionLines": 34
+  },
+  "packages/tools/src/registry.ts": {
+    "lines": 86,
+    "complexity": 26,
+    "crapProxy": 679,
+    "maxFunctionLines": 4
+  },
+  "packages/tools/src/safety.ts": {
+    "lines": 40,
+    "complexity": 12,
+    "crapProxy": 148,
+    "maxFunctionLines": 9
+  },
+  "packages/tools/src/toolsets/coding.ts": {
+    "lines": 249,
+    "complexity": 47,
+    "crapProxy": 2211,
+    "maxFunctionLines": 46
+  },
+  "packages/tools/src/toolsets/repl.ts": {
+    "lines": 117,
+    "complexity": 24,
+    "crapProxy": 578,
+    "maxFunctionLines": 39
+  },
+  "packages/tools/src/types.ts": {
+    "lines": 57,
+    "complexity": 9,
+    "crapProxy": 89,
+    "maxFunctionLines": 7
+  }
+}

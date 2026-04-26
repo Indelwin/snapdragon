@@ -15,7 +15,7 @@ use alloc::string::ToString;
 use alloc::vec::Vec;
 use serde_json::Value;
 
-use crate::adapter::{render_structured_chat_prefix, Adapter, ChatAdapter, Message};
+use crate::adapter::{Adapter, ChatAdapter, Message, render_structured_chat_prefix};
 use crate::component::{ComponentName, Entity, PendingLlmCall};
 use crate::error::RunError;
 use crate::event::{self, Topic};
@@ -29,11 +29,22 @@ use crate::system::{System, SystemDelta};
 pub struct ResolveProfileSystem;
 
 impl System for ResolveProfileSystem {
-    fn name(&self) -> &'static str { "ResolveProfile" }
-    fn reads(&self)  -> &'static [ComponentName] { &[ComponentName::Bundle] }
-    fn writes(&self) -> &'static [ComponentName] { &[ComponentName::Profile] }
+    fn name(&self) -> &'static str {
+        "ResolveProfile"
+    }
+    fn reads(&self) -> &'static [ComponentName] {
+        &[ComponentName::Bundle]
+    }
+    fn writes(&self) -> &'static [ComponentName] {
+        &[ComponentName::Profile]
+    }
 
-    fn run(&self, entity: &Entity, host: &dyn HostPipe, _args: &Value) -> Result<SystemDelta, RunError> {
+    fn run(
+        &self,
+        entity: &Entity,
+        host: &dyn HostPipe,
+        _args: &Value,
+    ) -> Result<SystemDelta, RunError> {
         // Bundle default profile (from `default_profile` field, falling back to empty).
         let bundle_default = entity
             .bundle
@@ -42,12 +53,13 @@ impl System for ResolveProfileSystem {
             .unwrap_or_default();
 
         // Host override via profile.get@1. None means "use bundle default".
-        let override_ = crate::capability::profile::get(host)
-            .map_err(|e| RunError::Internal { reason: format!("profile.get: {}", e) })?;
+        let override_ = crate::capability::profile::get(host).map_err(|e| RunError::Internal {
+            reason: format!("profile.get: {}", e),
+        })?;
 
         let resolved = match override_ {
             Some(p) => Profile::merge(bundle_default, p),
-            None    => bundle_default,
+            None => bundle_default,
         };
 
         let mut d = SystemDelta::default();
@@ -61,11 +73,22 @@ impl System for ResolveProfileSystem {
 pub struct ResolveScheduleSystem;
 
 impl System for ResolveScheduleSystem {
-    fn name(&self) -> &'static str { "ResolveSchedule" }
-    fn reads(&self)  -> &'static [ComponentName] { &[ComponentName::Bundle, ComponentName::Profile] }
-    fn writes(&self) -> &'static [ComponentName] { &[ComponentName::Schedule] }
+    fn name(&self) -> &'static str {
+        "ResolveSchedule"
+    }
+    fn reads(&self) -> &'static [ComponentName] {
+        &[ComponentName::Bundle, ComponentName::Profile]
+    }
+    fn writes(&self) -> &'static [ComponentName] {
+        &[ComponentName::Schedule]
+    }
 
-    fn run(&self, entity: &Entity, _host: &dyn HostPipe, _args: &Value) -> Result<SystemDelta, RunError> {
+    fn run(
+        &self,
+        entity: &Entity,
+        _host: &dyn HostPipe,
+        _args: &Value,
+    ) -> Result<SystemDelta, RunError> {
         // v0.1: bundle-declared schedule if any, else Predict default.
         // schedule.resolve@1 host override lands when we need it.
         let schedule = entity
@@ -85,20 +108,39 @@ impl System for ResolveScheduleSystem {
 pub struct RenderPromptSystem;
 
 impl System for RenderPromptSystem {
-    fn name(&self) -> &'static str { "RenderPrompt" }
-    fn reads(&self)  -> &'static [ComponentName] {
-        &[ComponentName::Bundle, ComponentName::Profile, ComponentName::Input, ComponentName::Trajectory]
+    fn name(&self) -> &'static str {
+        "RenderPrompt"
     }
-    fn writes(&self) -> &'static [ComponentName] { &[ComponentName::CurrentMessages] }
+    fn reads(&self) -> &'static [ComponentName] {
+        &[
+            ComponentName::Bundle,
+            ComponentName::Profile,
+            ComponentName::Input,
+            ComponentName::Trajectory,
+        ]
+    }
+    fn writes(&self) -> &'static [ComponentName] {
+        &[ComponentName::CurrentMessages]
+    }
 
-    fn run(&self, entity: &Entity, _host: &dyn HostPipe, _args: &Value) -> Result<SystemDelta, RunError> {
+    fn run(
+        &self,
+        entity: &Entity,
+        _host: &dyn HostPipe,
+        _args: &Value,
+    ) -> Result<SystemDelta, RunError> {
         let bundle = entity.bundle.as_ref().ok_or(RunError::NoBundleLoaded)?;
-        let input = entity.input.as_ref().ok_or_else(|| RunError::InvalidInput {
-            reason: "Input component missing".into(),
-        })?;
-        let signature = bundle.primary_signature().ok_or_else(|| RunError::Internal {
-            reason: "bundle has no signatures".into(),
-        })?;
+        let input = entity
+            .input
+            .as_ref()
+            .ok_or_else(|| RunError::InvalidInput {
+                reason: "Input component missing".into(),
+            })?;
+        let signature = bundle
+            .primary_signature()
+            .ok_or_else(|| RunError::Internal {
+                reason: "bundle has no signatures".into(),
+            })?;
 
         let instructions = bundle
             .compiled
@@ -115,7 +157,9 @@ impl System for RenderPromptSystem {
 
         let messages = if let Some(explicit_messages) = input.get("messages") {
             let mut prefix = render_structured_chat_prefix(signature, &instructions, &demos)
-                .map_err(|e| RunError::Internal { reason: format!("render: {:?}", e) })?;
+                .map_err(|e| RunError::Internal {
+                    reason: format!("render: {:?}", e),
+                })?;
             let mut explicit = serde_json::from_value::<Vec<Message>>(explicit_messages.clone())
                 .map_err(|e| RunError::InvalidInput {
                     reason: format!("input.messages: {}", e),
@@ -126,7 +170,9 @@ impl System for RenderPromptSystem {
             let adapter = ChatAdapter;
             adapter
                 .render(signature, &instructions, &demos, input)
-                .map_err(|e| RunError::Internal { reason: format!("render: {:?}", e) })?
+                .map_err(|e| RunError::Internal {
+                    reason: format!("render: {:?}", e),
+                })?
         };
 
         // Optional persona prefix from profile.
@@ -151,8 +197,10 @@ impl System for RenderPromptSystem {
 pub struct CallLlmSystem;
 
 impl System for CallLlmSystem {
-    fn name(&self) -> &'static str { "CallLlm" }
-    fn reads(&self)  -> &'static [ComponentName] {
+    fn name(&self) -> &'static str {
+        "CallLlm"
+    }
+    fn reads(&self) -> &'static [ComponentName] {
         &[
             ComponentName::CurrentMessages,
             ComponentName::Profile,
@@ -168,20 +216,33 @@ impl System for CallLlmSystem {
         ]
     }
 
-    fn run(&self, entity: &Entity, host: &dyn HostPipe, _args: &Value) -> Result<SystemDelta, RunError> {
-        let msgs = entity.current_messages.as_ref().ok_or_else(|| RunError::Internal {
-            reason: "CurrentMessages missing before CallLlm".into(),
-        })?;
+    fn run(
+        &self,
+        entity: &Entity,
+        host: &dyn HostPipe,
+        _args: &Value,
+    ) -> Result<SystemDelta, RunError> {
+        let msgs = entity
+            .current_messages
+            .as_ref()
+            .ok_or_else(|| RunError::Internal {
+                reason: "CurrentMessages missing before CallLlm".into(),
+            })?;
         let role = "action".to_string();
 
         let t0 = host.now_ms();
-        event::emit(host, Topic::LlmRequestStarted, &event::LlmRequestStarted {
-            role: &role, n_messages: msgs.len(),
-        });
+        event::emit(
+            host,
+            Topic::LlmRequestStarted,
+            &event::LlmRequestStarted {
+                role: &role,
+                n_messages: msgs.len(),
+            },
+        );
 
         // Pending marker — useful for Layer 3 batching; cleared after return.
         let pending = PendingLlmCall {
-            role:     role.clone(),
+            role: role.clone(),
             messages: msgs.clone(),
         };
 
@@ -196,9 +257,9 @@ impl System for CallLlmSystem {
             .available_tools
             .iter()
             .map(|t| crate::host::ToolDefinition {
-                name:        t.name.clone(),
+                name: t.name.clone(),
                 description: t.description.clone(),
-                parameters:  t.parameters.clone(),
+                parameters: t.parameters.clone(),
             })
             .collect();
         let tool_choice = if has_tools {
@@ -218,36 +279,40 @@ impl System for CallLlmSystem {
             .and_then(|v| serde_json::from_value::<crate::host::ReasoningRequest>(v.clone()).ok());
 
         let req = crate::host::ChatRequest {
-            role:        role.clone(),
-            messages:    msgs.clone(),
+            role: role.clone(),
+            messages: msgs.clone(),
             tools,
             tool_choice,
             reasoning,
             temperature: None,
-            max_tokens:  None,
-            stop:        Vec::new(),
+            max_tokens: None,
+            stop: Vec::new(),
         };
         let resp = host.chat_rich(&req).map_err(|e| RunError::Internal {
             reason: format!("chat: {}", e),
         })?;
 
         let elapsed = host.now_ms().saturating_sub(t0);
-        event::emit(host, Topic::LlmRequestCompleted, &event::LlmRequestCompleted {
-            role:         &role,
-            duration_ms:  elapsed,
-            response_len: resp.content.len(),
-        });
+        event::emit(
+            host,
+            Topic::LlmRequestCompleted,
+            &event::LlmRequestCompleted {
+                role: &role,
+                duration_ms: elapsed,
+                response_len: resp.content.len(),
+            },
+        );
 
         let mut d = SystemDelta::default();
-        d.writes.pending_llm_call   = Some(Some(pending)); // set
-        d.writes.last_llm_response  = Some(resp.content);
+        d.writes.pending_llm_call = Some(Some(pending)); // set
+        d.writes.last_llm_response = Some(resp.content);
         // Eagerly clear pending on success so downstream systems see it gone.
-        d.writes.pending_llm_call   = Some(None);
+        d.writes.pending_llm_call = Some(None);
         // Structured tool calls + thinking, routed through components
         // for host-side systems (detect_tool_call, invoke_tool) to pick
         // up. Always write — replaces any previous turn's values.
-        d.writes.pending_tool_calls    = Some(resp.tool_calls);
-        d.writes.last_thinking_blocks  = Some(resp.thinking);
+        d.writes.pending_tool_calls = Some(resp.tool_calls);
+        d.writes.last_thinking_blocks = Some(resp.thinking);
         Ok(d)
     }
 }
@@ -257,13 +322,22 @@ impl System for CallLlmSystem {
 pub struct ParseResponseSystem;
 
 impl System for ParseResponseSystem {
-    fn name(&self) -> &'static str { "ParseResponse" }
-    fn reads(&self)  -> &'static [ComponentName] {
+    fn name(&self) -> &'static str {
+        "ParseResponse"
+    }
+    fn reads(&self) -> &'static [ComponentName] {
         &[ComponentName::LastLlmResponse, ComponentName::Bundle]
     }
-    fn writes(&self) -> &'static [ComponentName] { &[ComponentName::ParsedAction] }
+    fn writes(&self) -> &'static [ComponentName] {
+        &[ComponentName::ParsedAction]
+    }
 
-    fn run(&self, entity: &Entity, host: &dyn HostPipe, _args: &Value) -> Result<SystemDelta, RunError> {
+    fn run(
+        &self,
+        entity: &Entity,
+        host: &dyn HostPipe,
+        _args: &Value,
+    ) -> Result<SystemDelta, RunError> {
         // When the model's response is a structured tool call (populated
         // into PendingToolCalls by CallLlm), there's nothing to parse —
         // the host-side InvokeTool system will consume the call and
@@ -271,13 +345,18 @@ impl System for ParseResponseSystem {
         if !entity.pending_tool_calls.is_empty() {
             return Ok(SystemDelta::default());
         }
-        let response = entity.last_llm_response.as_ref().ok_or_else(|| RunError::Internal {
-            reason: "LastLlmResponse missing before ParseResponse".into(),
-        })?;
+        let response = entity
+            .last_llm_response
+            .as_ref()
+            .ok_or_else(|| RunError::Internal {
+                reason: "LastLlmResponse missing before ParseResponse".into(),
+            })?;
         let bundle = entity.bundle.as_ref().ok_or(RunError::NoBundleLoaded)?;
-        let signature = bundle.primary_signature().ok_or_else(|| RunError::Internal {
-            reason: "bundle has no signatures".into(),
-        })?;
+        let signature = bundle
+            .primary_signature()
+            .ok_or_else(|| RunError::Internal {
+                reason: "bundle has no signatures".into(),
+            })?;
 
         let adapter = ChatAdapter;
         match adapter.parse(signature, response) {
@@ -287,10 +366,13 @@ impl System for ParseResponseSystem {
                 Ok(d)
             }
             Err(e) => {
-                event::emit_raw(host, Topic::LlmParseFailed.as_str(),
-                    &format!(r#"{{"error":"{}"}}"#, e));
+                event::emit_raw(
+                    host,
+                    Topic::LlmParseFailed.as_str(),
+                    &format!(r#"{{"error":"{}"}}"#, e),
+                );
                 Err(RunError::LlmParseFailed {
-                    attempts:   1,
+                    attempts: 1,
                     last_error: format!("{}", e),
                 })
             }
@@ -303,11 +385,22 @@ impl System for ParseResponseSystem {
 pub struct FinalizeSystem;
 
 impl System for FinalizeSystem {
-    fn name(&self) -> &'static str { "Finalize" }
-    fn reads(&self)  -> &'static [ComponentName] { &[ComponentName::ParsedAction] }
-    fn writes(&self) -> &'static [ComponentName] { &[ComponentName::Final] }
+    fn name(&self) -> &'static str {
+        "Finalize"
+    }
+    fn reads(&self) -> &'static [ComponentName] {
+        &[ComponentName::ParsedAction]
+    }
+    fn writes(&self) -> &'static [ComponentName] {
+        &[ComponentName::Final]
+    }
 
-    fn run(&self, entity: &Entity, _host: &dyn HostPipe, _args: &Value) -> Result<SystemDelta, RunError> {
+    fn run(
+        &self,
+        entity: &Entity,
+        _host: &dyn HostPipe,
+        _args: &Value,
+    ) -> Result<SystemDelta, RunError> {
         // If a tool-call round-trip is pending we have no parsed action
         // to finalize. This is the ReACT shape: Finalize sits after the
         // tool loop and only runs once the model has produced a real
@@ -315,9 +408,12 @@ impl System for FinalizeSystem {
         if !entity.pending_tool_calls.is_empty() {
             return Ok(SystemDelta::default());
         }
-        let parsed = entity.parsed_action.as_ref().ok_or_else(|| RunError::Internal {
-            reason: "ParsedAction missing before Finalize".into(),
-        })?;
+        let parsed = entity
+            .parsed_action
+            .as_ref()
+            .ok_or_else(|| RunError::Internal {
+                reason: "ParsedAction missing before Finalize".into(),
+            })?;
 
         let mut d = SystemDelta::default();
         d.writes.final_output = Some(parsed.clone());
@@ -336,17 +432,34 @@ impl System for FinalizeSystem {
 pub struct HookSystem;
 
 impl System for HookSystem {
-    fn name(&self) -> &'static str { "Hook" }
-    fn reads(&self)  -> &'static [ComponentName] {
-        &[ComponentName::CurrentMessages, ComponentName::LastLlmResponse]
+    fn name(&self) -> &'static str {
+        "Hook"
+    }
+    fn reads(&self) -> &'static [ComponentName] {
+        &[
+            ComponentName::CurrentMessages,
+            ComponentName::LastLlmResponse,
+        ]
     }
     fn writes(&self) -> &'static [ComponentName] {
-        &[ComponentName::CurrentMessages, ComponentName::LastLlmResponse]
+        &[
+            ComponentName::CurrentMessages,
+            ComponentName::LastLlmResponse,
+        ]
     }
 
-    fn run(&self, entity: &Entity, host: &dyn HostPipe, args: &Value) -> Result<SystemDelta, RunError> {
+    fn run(
+        &self,
+        entity: &Entity,
+        host: &dyn HostPipe,
+        args: &Value,
+    ) -> Result<SystemDelta, RunError> {
         let hook_name = args.get("hook").and_then(|v| v.as_str()).unwrap_or("");
-        let module_id = entity.bundle.as_ref().map(|b| b.program_id.as_str()).unwrap_or("unknown");
+        let module_id = entity
+            .bundle
+            .as_ref()
+            .map(|b| b.program_id.as_str())
+            .unwrap_or("unknown");
         let iter = entity.iter_counter.as_ref().map(|c| c.iter).unwrap_or(0);
 
         let mut d = SystemDelta::default();
@@ -427,11 +540,19 @@ mod tests {
             program_version: "0.1.0".into(),
             signatures: vec![Signature {
                 name: "Classify".into(),
-                doc:  Some("Classify the query.".into()),
-                inputs:  vec![Field { name: "query".into(), ty: FieldType::String, doc: None }],
-                outputs: vec![Field { name: "intent".into(),
-                    ty: FieldType::Enum { values: vec!["search".into(), "chat".into()] },
-                    doc: None }],
+                doc: Some("Classify the query.".into()),
+                inputs: vec![Field {
+                    name: "query".into(),
+                    ty: FieldType::String,
+                    doc: None,
+                }],
+                outputs: vec![Field {
+                    name: "intent".into(),
+                    ty: FieldType::Enum {
+                        values: vec!["search".into(), "chat".into()],
+                    },
+                    doc: None,
+                }],
             }],
             default_profile: None,
             schedule: None,
@@ -456,7 +577,9 @@ mod tests {
         let mut entity = Entity::default();
         entity.bundle = Some(mini_bundle());
 
-        let delta = ResolveProfileSystem.run(&entity, &host, &Value::Null).unwrap();
+        let delta = ResolveProfileSystem
+            .run(&entity, &host, &Value::Null)
+            .unwrap();
         let p = delta.writes.profile.unwrap();
         assert_eq!(p.persona.as_deref(), Some("acme-bot"));
     }
@@ -467,7 +590,9 @@ mod tests {
         let mut entity = Entity::default();
         entity.bundle = Some(mini_bundle());
 
-        let delta = ResolveProfileSystem.run(&entity, &host, &Value::Null).unwrap();
+        let delta = ResolveProfileSystem
+            .run(&entity, &host, &Value::Null)
+            .unwrap();
         assert!(delta.writes.profile.is_some());
     }
 
@@ -476,9 +601,11 @@ mod tests {
         let host = MockHostPipe::new();
         let mut entity = Entity::default();
         entity.bundle = Some(mini_bundle());
-        entity.input  = Some(serde_json::json!({ "query": "hi" }));
+        entity.input = Some(serde_json::json!({ "query": "hi" }));
 
-        let delta = RenderPromptSystem.run(&entity, &host, &Value::Null).unwrap();
+        let delta = RenderPromptSystem
+            .run(&entity, &host, &Value::Null)
+            .unwrap();
         let msgs = delta.writes.current_messages.unwrap();
         assert!(msgs.len() >= 2);
         assert_eq!(msgs[0].role, "system");
@@ -499,7 +626,9 @@ mod tests {
             ]
         }));
 
-        let delta = RenderPromptSystem.run(&entity, &host, &Value::Null).unwrap();
+        let delta = RenderPromptSystem
+            .run(&entity, &host, &Value::Null)
+            .unwrap();
         let msgs = delta.writes.current_messages.unwrap();
         assert!(msgs.len() >= 4);
         assert_eq!(msgs[0].role, "system");
@@ -533,11 +662,12 @@ mod tests {
         let host = MockHostPipe::new();
         let mut entity = Entity::default();
         entity.bundle = Some(mini_bundle());
-        entity.last_llm_response = Some(
-            "[[ ## intent ## ]]\nsearch\n\n[[ ## completed ## ]]".into(),
-        );
+        entity.last_llm_response =
+            Some("[[ ## intent ## ]]\nsearch\n\n[[ ## completed ## ]]".into());
 
-        let delta = ParseResponseSystem.run(&entity, &host, &Value::Null).unwrap();
+        let delta = ParseResponseSystem
+            .run(&entity, &host, &Value::Null)
+            .unwrap();
         let parsed = delta.writes.parsed_action.unwrap();
         assert_eq!(parsed, serde_json::json!({ "intent": "search" }));
     }

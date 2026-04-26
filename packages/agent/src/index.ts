@@ -5,7 +5,14 @@ import type {
   StreamingChatHandler,
   ToolCall,
 } from '@snapdragon/host';
-import { codingToolset, replToolset, ToolRegistry, type ToolRegistryOptions, type Toolset } from '@snapdragon/tools';
+import {
+  codingToolset,
+  replToolset,
+  ToolRegistry,
+  type ToolRegistryOptions,
+  type Toolset,
+} from '@snapdragon/tools';
+import { parseToolArgs } from './tool-args.js';
 
 export type AgentEvent =
   | { type: 'run_start'; runId: string }
@@ -71,9 +78,7 @@ export class SnapdragonAgent {
   static async create(options: AgentOptions): Promise<SnapdragonAgent> {
     const cwd = options.cwd ?? process.cwd();
     const registry =
-      options.tools instanceof ToolRegistry
-        ? options.tools
-        : new ToolRegistry({ cwd });
+      options.tools instanceof ToolRegistry ? options.tools : new ToolRegistry({ cwd });
     if (Array.isArray(options.tools)) await registry.registerMany(options.tools);
 
     return new SnapdragonAgent({
@@ -178,25 +183,13 @@ export async function createAgent(options: AgentOptions): Promise<SnapdragonAgen
 export async function createCodingReplAgent(options: CodingAgentOptions): Promise<SnapdragonAgent> {
   const cwd = options.cwd ?? process.cwd();
   const registry = new ToolRegistry({ cwd, session: options.codingTools?.session });
-  await registry.registerMany([
-    codingToolset({ cwd }),
-    replToolset(),
-  ]);
+  await registry.registerMany([codingToolset({ cwd }), replToolset()]);
   return SnapdragonAgent.create({
     ...options,
     cwd,
     tools: registry,
     systemPrompt: options.systemPrompt ?? defaultCodingSystemPrompt(),
   });
-}
-
-function parseToolArgs(argsJson: string): unknown {
-  if (argsJson.trim().length === 0) return {};
-  try {
-    return JSON.parse(argsJson) as unknown;
-  } catch {
-    return { raw: argsJson };
-  }
 }
 
 function defaultSystemPrompt(): string {

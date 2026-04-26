@@ -160,6 +160,67 @@ fn base32_lower_no_pad(input: &[u8], out: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::signature::{Field, FieldType, Signature};
+
+    fn sample_bundle() -> Bundle {
+        Bundle {
+            schema: SCHEMA_VERSION,
+            program_id: "demo.agent".into(),
+            program_version: "0.1.0".into(),
+            signatures: vec![Signature {
+                name: "Answer".into(),
+                doc: Some("Answer a short question.".into()),
+                inputs: vec![Field {
+                    name: "question".into(),
+                    ty: FieldType::String,
+                    doc: None,
+                }],
+                outputs: vec![Field {
+                    name: "answer".into(),
+                    ty: FieldType::String,
+                    doc: None,
+                }],
+            }],
+            default_profile: None,
+            schedule: None,
+            requires: vec!["predict".into(), "tools".into()],
+            compiled: Compiled::default(),
+            metadata: BTreeMap::new(),
+        }
+    }
+
+    fn reference_base32_lower_no_pad(input: &[u8]) -> String {
+        const ALPHABET: &[u8; 32] = b"abcdefghijklmnopqrstuvwxyz234567";
+        let mut out = String::new();
+        let mut value: u16 = 0;
+        let mut bits: u8 = 0;
+
+        for &byte in input {
+            value = (value << 8) | u16::from(byte);
+            bits += 8;
+            while bits >= 5 {
+                let shift = bits - 5;
+                let idx = ((value >> shift) & 0b11111) as usize;
+                out.push(ALPHABET[idx] as char);
+                value &= (1 << shift) - 1;
+                bits = shift;
+            }
+        }
+
+        if bits > 0 {
+            let idx = ((value << (5 - bits)) & 0b11111) as usize;
+            out.push(ALPHABET[idx] as char);
+        }
+
+        out
+    }
+
+    fn reference_cid_of(canonical_bytes: &[u8]) -> String {
+        let hash = blake3::hash(canonical_bytes);
+        let mut out = String::from("b");
+        out.push_str(&reference_base32_lower_no_pad(hash.as_bytes()));
+        out
+    }
 
     #[test]
     fn cid_is_deterministic() {
@@ -168,10 +229,68 @@ mod tests {
         assert_eq!(a, b);
         assert!(a.starts_with('b'));
         assert_eq!(a.len(), 1 + 52);
+        assert_eq!(a, reference_cid_of(b"hello world"));
     }
 
     #[test]
     fn cid_changes_on_input_change() {
         assert_ne!(cid_of(b"a"), cid_of(b"b"));
+    }
+
+    #[test]
+    fn cid_matches_reference_base32_for_edge_inputs() {
+        for input in [
+            b"".as_slice(),
+            b"a".as_slice(),
+            b"abc".as_slice(),
+            b"hello world".as_slice(),
+        ] {
+            assert_eq!(cid_of(input), reference_cid_of(input));
+        }
+    }
+
+    #[test]
+    fn bundle_error_display_includes_context() {
+        assert_eq!(
+            BundleError::UnsupportedSchema(99).to_string(),
+            "unsupported schema version 99"
+        );
+
+        let err = Bundle::from_json(b"{").unwrap_err();
+        assert!(err.to_string().starts_with("bundle decode error: "));
+    }
+
+    #[test]
+    fn bundle_json_round_trip_and_schema_validation() {
+        let bundle = sample_bundle();
+        let bytes = bundle.to_canonical_json().unwrap();
+        assert!(bytes.len() > 32);
+
+        let decoded = Bundle::from_json(&bytes).unwrap();
+        assert_eq!(decoded.program_id, "demo.agent");
+        assert_eq!(decoded.requires, ["predict", "tools"]);
+
+        let mut value: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        value["$schema"] = serde_json::json!(SCHEMA_VERSION + 1);
+        let err = Bundle::from_json(&serde_json::to_vec(&value).unwrap()).unwrap_err();
+        assert!(matches!(err, BundleError::UnsupportedSchema(v) if v == SCHEMA_VERSION + 1));
+    }
+
+    #[test]
+    fn bundle_requirement_and_primary_signature_helpers_are_observable() {
+        let bundle = sample_bundle();
+        assert_eq!(bundle.unmet_requirements(&["predict"]), ["tools"]);
+        assert_eq!(
+            bundle.unmet_requirements(&["predict", "tools"]),
+            Vec::<String>::new()
+        );
+        assert_eq!(bundle.primary_signature().unwrap().name, "Answer");
+    }
+
+    #[test]
+    fn bundle_cid_is_hash_of_canonical_json() {
+        let bundle = sample_bundle();
+        let canonical = bundle.to_canonical_json().unwrap();
+        assert_eq!(bundle.cid().unwrap(), cid_of(&canonical));
     }
 }

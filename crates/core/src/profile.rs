@@ -56,16 +56,31 @@ mod tests {
 
     #[test]
     fn merge_overlay_wins_on_scalar() {
-        let base = Profile { persona: Some("A".into()), ..Default::default() };
-        let overlay = Profile { persona: Some("B".into()), ..Default::default() };
+        let base = Profile {
+            persona: Some("A".into()),
+            ..Default::default()
+        };
+        let overlay = Profile {
+            persona: Some("B".into()),
+            ..Default::default()
+        };
         assert_eq!(Profile::merge(base, overlay).persona, Some("B".into()));
     }
 
     #[test]
     fn merge_lists_replace_not_append() {
-        let base = Profile { tool_allowlist: vec!["x".into()], ..Default::default() };
-        let overlay = Profile { tool_allowlist: vec!["y".into()], ..Default::default() };
-        assert_eq!(Profile::merge(base, overlay).tool_allowlist, vec!["y".to_string()]);
+        let base = Profile {
+            tool_allowlist: vec!["x".into()],
+            ..Default::default()
+        };
+        let overlay = Profile {
+            tool_allowlist: vec!["y".into()],
+            ..Default::default()
+        };
+        assert_eq!(
+            Profile::merge(base, overlay).tool_allowlist,
+            vec!["y".to_string()]
+        );
     }
 
     #[test]
@@ -74,7 +89,9 @@ mod tests {
         base.role_to_model.insert("planner".into(), "opus".into());
         base.role_to_model.insert("reviewer".into(), "haiku".into());
         let mut overlay = Profile::default();
-        overlay.role_to_model.insert("reviewer".into(), "sonnet".into());
+        overlay
+            .role_to_model
+            .insert("reviewer".into(), "sonnet".into());
         let merged = Profile::merge(base, overlay);
         assert_eq!(merged.role_to_model.get("planner"), Some(&"opus".into()));
         assert_eq!(merged.role_to_model.get("reviewer"), Some(&"sonnet".into()));

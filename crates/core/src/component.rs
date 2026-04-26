@@ -47,7 +47,7 @@ pub enum ComponentName {
     ParsedAction,
     PendingToolCall,
     LastObservation,
-    SessionId,          // RLM only
+    SessionId, // RLM only
     IterCounter,
 
     // Tool calling + reasoning
@@ -63,26 +63,26 @@ pub enum ComponentName {
 impl ComponentName {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::RunId            => "RunId",
-            Self::Identity         => "Identity",
-            Self::Input            => "Input",
-            Self::Bundle           => "Bundle",
-            Self::Profile          => "Profile",
-            Self::Schedule         => "Schedule",
-            Self::Trajectory       => "Trajectory",
-            Self::CurrentMessages  => "CurrentMessages",
-            Self::PendingLlmCall   => "PendingLlmCall",
-            Self::LastLlmResponse  => "LastLlmResponse",
-            Self::ParsedAction     => "ParsedAction",
-            Self::PendingToolCall  => "PendingToolCall",
-            Self::LastObservation  => "LastObservation",
-            Self::SessionId        => "SessionId",
-            Self::IterCounter      => "IterCounter",
-            Self::AvailableTools     => "AvailableTools",
-            Self::PendingToolCalls   => "PendingToolCalls",
+            Self::RunId => "RunId",
+            Self::Identity => "Identity",
+            Self::Input => "Input",
+            Self::Bundle => "Bundle",
+            Self::Profile => "Profile",
+            Self::Schedule => "Schedule",
+            Self::Trajectory => "Trajectory",
+            Self::CurrentMessages => "CurrentMessages",
+            Self::PendingLlmCall => "PendingLlmCall",
+            Self::LastLlmResponse => "LastLlmResponse",
+            Self::ParsedAction => "ParsedAction",
+            Self::PendingToolCall => "PendingToolCall",
+            Self::LastObservation => "LastObservation",
+            Self::SessionId => "SessionId",
+            Self::IterCounter => "IterCounter",
+            Self::AvailableTools => "AvailableTools",
+            Self::PendingToolCalls => "PendingToolCalls",
             Self::LastThinkingBlocks => "LastThinkingBlocks",
-            Self::Final            => "Final",
-            Self::Error            => "Error",
+            Self::Final => "Final",
+            Self::Error => "Error",
         }
     }
 }
@@ -166,13 +166,25 @@ pub struct ThinkingBlock {
 
 impl Message {
     pub fn system(content: impl Into<String>) -> Self {
-        Self { role: "system".into(), content: content.into(), ..Default::default() }
+        Self {
+            role: "system".into(),
+            content: content.into(),
+            ..Default::default()
+        }
     }
     pub fn user(content: impl Into<String>) -> Self {
-        Self { role: "user".into(), content: content.into(), ..Default::default() }
+        Self {
+            role: "user".into(),
+            content: content.into(),
+            ..Default::default()
+        }
     }
     pub fn assistant(content: impl Into<String>) -> Self {
-        Self { role: "assistant".into(), content: content.into(), ..Default::default() }
+        Self {
+            role: "assistant".into(),
+            content: content.into(),
+            ..Default::default()
+        }
     }
     /// Assistant message carrying tool_calls (and optionally text).
     pub fn assistant_with_tool_calls(
@@ -286,26 +298,66 @@ impl Entity {
     pub fn present_components(&self) -> Vec<ComponentName> {
         use ComponentName::*;
         let mut out = Vec::new();
-        if self.run_id.is_some()           { out.push(RunId); }
-        if self.identity.is_some()         { out.push(Identity); }
-        if self.input.is_some()            { out.push(Input); }
-        if self.bundle.is_some()           { out.push(Bundle); }
-        if self.profile.is_some()          { out.push(Profile); }
-        if self.schedule.is_some()         { out.push(Schedule); }
-        if !self.trajectory.is_empty()     { out.push(Trajectory); }
-        if self.current_messages.is_some() { out.push(CurrentMessages); }
-        if self.pending_llm_call.is_some() { out.push(PendingLlmCall); }
-        if self.last_llm_response.is_some(){ out.push(LastLlmResponse); }
-        if self.parsed_action.is_some()    { out.push(ParsedAction); }
-        if self.pending_tool_call.is_some(){ out.push(PendingToolCall); }
-        if self.last_observation.is_some() { out.push(LastObservation); }
-        if self.session_id.is_some()       { out.push(SessionId); }
-        if self.iter_counter.is_some()     { out.push(IterCounter); }
-        if !self.available_tools.is_empty()      { out.push(AvailableTools); }
-        if !self.pending_tool_calls.is_empty()   { out.push(PendingToolCalls); }
-        if !self.last_thinking_blocks.is_empty() { out.push(LastThinkingBlocks); }
-        if self.final_output.is_some()     { out.push(Final); }
-        if self.error.is_some()            { out.push(Error); }
+        if self.run_id.is_some() {
+            out.push(RunId);
+        }
+        if self.identity.is_some() {
+            out.push(Identity);
+        }
+        if self.input.is_some() {
+            out.push(Input);
+        }
+        if self.bundle.is_some() {
+            out.push(Bundle);
+        }
+        if self.profile.is_some() {
+            out.push(Profile);
+        }
+        if self.schedule.is_some() {
+            out.push(Schedule);
+        }
+        if !self.trajectory.is_empty() {
+            out.push(Trajectory);
+        }
+        if self.current_messages.is_some() {
+            out.push(CurrentMessages);
+        }
+        if self.pending_llm_call.is_some() {
+            out.push(PendingLlmCall);
+        }
+        if self.last_llm_response.is_some() {
+            out.push(LastLlmResponse);
+        }
+        if self.parsed_action.is_some() {
+            out.push(ParsedAction);
+        }
+        if self.pending_tool_call.is_some() {
+            out.push(PendingToolCall);
+        }
+        if self.last_observation.is_some() {
+            out.push(LastObservation);
+        }
+        if self.session_id.is_some() {
+            out.push(SessionId);
+        }
+        if self.iter_counter.is_some() {
+            out.push(IterCounter);
+        }
+        if !self.available_tools.is_empty() {
+            out.push(AvailableTools);
+        }
+        if !self.pending_tool_calls.is_empty() {
+            out.push(PendingToolCalls);
+        }
+        if !self.last_thinking_blocks.is_empty() {
+            out.push(LastThinkingBlocks);
+        }
+        if self.final_output.is_some() {
+            out.push(Final);
+        }
+        if self.error.is_some() {
+            out.push(Error);
+        }
         out
     }
 }

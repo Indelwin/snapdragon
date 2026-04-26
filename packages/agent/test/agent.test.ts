@@ -1,7 +1,8 @@
 import { strict as assert } from 'node:assert';
 import { test } from 'node:test';
-import { createCodingReplAgent } from '../src/index.ts';
 import { mockProvider } from '@snapdragon/host';
+import { createCodingReplAgent } from '../src/index.ts';
+import { parseToolArgs } from '../src/tool-args.ts';
 
 test('coding repl agent can call the REPL tool and continue', async () => {
   const mock = mockProvider();
@@ -24,5 +25,17 @@ test('coding repl agent can call the REPL tool and continue', async () => {
   const response = await agent.prompt('List your tools');
 
   assert.equal(response.content, 'done');
-  assert.ok(agent.messages.some((message) => message.role === 'tool' && message.content.includes('repl_eval')));
+  assert.ok(
+    agent.messages.some(
+      (message) => message.role === 'tool' && message.content.includes('repl_eval'),
+    ),
+  );
+});
+
+test('parseToolArgs accepts empty, valid JSON, and invalid JSON', () => {
+  assert.deepEqual(parseToolArgs(''), {});
+  assert.deepEqual(parseToolArgs('  \n '), {});
+  assert.deepEqual(parseToolArgs('{"path":"README.md"}'), { path: 'README.md' });
+  assert.deepEqual(parseToolArgs('[1,2]'), [1, 2]);
+  assert.deepEqual(parseToolArgs('not json'), { raw: 'not json' });
 });

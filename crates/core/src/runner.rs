@@ -17,30 +17,35 @@
 //! deltas and calling systems lands with the adapter + first system
 //! implementations in the next commit.
 
-use alloc::string::String;
 use crate::component::Entity;
 use crate::error::RunError;
 use crate::host::HostPipe;
 use crate::schedule::{Schedule, ScheduleStep};
 use crate::system::{SystemDelta, SystemRegistry};
+use alloc::string::String;
 
 /// Runner driving one Entity through its Schedule using a provided
 /// system registry + host pipe.
 pub struct Runner<'a> {
-    pub entity:   &'a mut Entity,
+    pub entity: &'a mut Entity,
     pub registry: &'a SystemRegistry,
     pub schedule: &'a Schedule,
-    pub host:     &'a dyn HostPipe,
+    pub host: &'a dyn HostPipe,
 }
 
 impl<'a> Runner<'a> {
     pub fn new(
-        entity:   &'a mut Entity,
+        entity: &'a mut Entity,
         registry: &'a SystemRegistry,
         schedule: &'a Schedule,
-        host:     &'a dyn HostPipe,
+        host: &'a dyn HostPipe,
     ) -> Self {
-        Self { entity, registry, schedule, host }
+        Self {
+            entity,
+            registry,
+            schedule,
+            host,
+        }
     }
 
     /// Drive the entity to completion (Final or Error present), or
@@ -67,7 +72,12 @@ impl<'a> Runner<'a> {
     fn run_step(&mut self, step: &ScheduleStep) -> Result<(), RunError> {
         match step {
             ScheduleStep::Invoke(inv) => self.run_invocation(inv),
-            ScheduleStep::Loop { body, max_iters, until, .. } => {
+            ScheduleStep::Loop {
+                body,
+                max_iters,
+                until,
+                ..
+            } => {
                 // `max_iters: None` = unbounded. Termination still
                 // comes from the entity reaching a terminal state
                 // (Final or Error) or the `until` predicate being
@@ -120,26 +130,26 @@ impl<'a> Runner<'a> {
             .collect::<String>();
 
         match normalized.as_str() {
-            "runid"              => self.entity.run_id.is_some(),
-            "identity"           => self.entity.identity.is_some(),
-            "input"              => self.entity.input.is_some(),
-            "bundle"             => self.entity.bundle.is_some(),
-            "profile"            => self.entity.profile.is_some(),
-            "schedule"           => self.entity.schedule.is_some(),
-            "currentmessages"    => self.entity.current_messages.is_some(),
-            "pendingllmcall"     => self.entity.pending_llm_call.is_some(),
-            "lastllmresponse"    => self.entity.last_llm_response.is_some(),
-            "parsedaction"       => self.entity.parsed_action.is_some(),
-            "pendingtoolcall"    => self.entity.pending_tool_call.is_some(),
-            "lastobservation"    => self.entity.last_observation.is_some(),
-            "sessionid"          => self.entity.session_id.is_some(),
-            "itercounter"        => self.entity.iter_counter.is_some(),
-            "availabletools"     => !self.entity.available_tools.is_empty(),
-            "pendingtoolcalls"   => !self.entity.pending_tool_calls.is_empty(),
+            "runid" => self.entity.run_id.is_some(),
+            "identity" => self.entity.identity.is_some(),
+            "input" => self.entity.input.is_some(),
+            "bundle" => self.entity.bundle.is_some(),
+            "profile" => self.entity.profile.is_some(),
+            "schedule" => self.entity.schedule.is_some(),
+            "currentmessages" => self.entity.current_messages.is_some(),
+            "pendingllmcall" => self.entity.pending_llm_call.is_some(),
+            "lastllmresponse" => self.entity.last_llm_response.is_some(),
+            "parsedaction" => self.entity.parsed_action.is_some(),
+            "pendingtoolcall" => self.entity.pending_tool_call.is_some(),
+            "lastobservation" => self.entity.last_observation.is_some(),
+            "sessionid" => self.entity.session_id.is_some(),
+            "itercounter" => self.entity.iter_counter.is_some(),
+            "availabletools" => !self.entity.available_tools.is_empty(),
+            "pendingtoolcalls" => !self.entity.pending_tool_calls.is_empty(),
             "lastthinkingblocks" => !self.entity.last_thinking_blocks.is_empty(),
-            "trajectory"         => !self.entity.trajectory.is_empty(),
+            "trajectory" => !self.entity.trajectory.is_empty(),
             "final" | "finaloutput" => self.entity.final_output.is_some(),
-            "error"              => self.entity.error.is_some(),
+            "error" => self.entity.error.is_some(),
             // Schedules may also reference extension-bag components by
             // the key they were written under.
             _ => self.entity.extensions.contains_key(name),
@@ -192,9 +202,12 @@ impl<'a> Runner<'a> {
         attempts_used: u32,
         err: &RunError,
     ) -> Result<(), RunError> {
-        let policy = inv.retry_on_fail.as_ref().ok_or_else(|| RunError::Internal {
-            reason: format!("retry requested for `{}` without retry policy", inv.system),
-        })?;
+        let policy = inv
+            .retry_on_fail
+            .as_ref()
+            .ok_or_else(|| RunError::Internal {
+                reason: format!("retry requested for `{}` without retry policy", inv.system),
+            })?;
 
         if inv.system == "ParseResponse" {
             self.retry_parse_with_nudge(inv, attempts_used, err, policy)
@@ -211,9 +224,13 @@ impl<'a> Runner<'a> {
         policy: &crate::schedule::RetryPolicy,
     ) -> Result<(), RunError> {
         let nudge = build_retry_nudge(inv, err, policy);
-        let messages = self.entity.current_messages.as_mut().ok_or_else(|| RunError::Internal {
-            reason: "retry_on_fail for ParseResponse requires CurrentMessages".into(),
-        })?;
+        let messages = self
+            .entity
+            .current_messages
+            .as_mut()
+            .ok_or_else(|| RunError::Internal {
+                reason: "retry_on_fail for ParseResponse requires CurrentMessages".into(),
+            })?;
         messages.push(crate::component::Message::user(nudge.clone()));
 
         self.entity.last_llm_response = None;
@@ -233,9 +250,12 @@ impl<'a> Runner<'a> {
             &payload.to_string(),
         );
 
-        let call = self.registry.get("CallLlm").ok_or_else(|| RunError::Internal {
-            reason: "retry_on_fail for ParseResponse requires CallLlm".into(),
-        })?;
+        let call = self
+            .registry
+            .get("CallLlm")
+            .ok_or_else(|| RunError::Internal {
+                reason: "retry_on_fail for ParseResponse requires CallLlm".into(),
+            })?;
         let delta = call.run(self.entity, self.host, &serde_json::Value::Null)?;
         self.apply(delta);
 
@@ -261,24 +281,21 @@ impl<'a> Runner<'a> {
         }
     }
 
-    fn run_host_system(
-        &mut self,
-        inv: &crate::schedule::SystemInvocation,
-    ) -> Result<(), RunError> {
-        use crate::host_system::{
-            EntityView, HostSystemRequest, HostSystemResponse,
-        };
+    fn run_host_system(&mut self, inv: &crate::schedule::SystemInvocation) -> Result<(), RunError> {
+        use crate::host_system::{EntityView, HostSystemRequest, HostSystemResponse};
 
         let cap_name = format!("system.{}@1", inv.system);
         let request = HostSystemRequest {
             args: inv.args.clone(),
             view: EntityView::from_entity(self.entity),
         };
-        let request_json = serde_json::to_string(&request).map_err(|e| {
-            RunError::Internal { reason: format!("encoding host-system request: {}", e) }
+        let request_json = serde_json::to_string(&request).map_err(|e| RunError::Internal {
+            reason: format!("encoding host-system request: {}", e),
         })?;
 
-        let response_json = self.host.call_capability(&cap_name, &request_json)
+        let response_json = self
+            .host
+            .call_capability(&cap_name, &request_json)
             .map_err(|e| match e {
                 crate::host::CallError::NotProvided { .. } => RunError::Internal {
                     reason: format!(
@@ -291,8 +308,8 @@ impl<'a> Runner<'a> {
                 },
             })?;
 
-        let response: HostSystemResponse = serde_json::from_str(&response_json)
-            .map_err(|e| RunError::Internal {
+        let response: HostSystemResponse =
+            serde_json::from_str(&response_json).map_err(|e| RunError::Internal {
                 reason: format!("decoding host-system response from `{}`: {}", cap_name, e),
             })?;
 
@@ -306,20 +323,42 @@ impl<'a> Runner<'a> {
         // identity, profile, schedule) are intentionally not writable
         // from host-side systems.
         let w = r.writes;
-        if let Some(v) = w.current_messages  { self.entity.current_messages = Some(v); }
-        if let Some(v) = w.last_llm_response { self.entity.last_llm_response = Some(v); }
-        if let Some(v) = w.parsed_action     { self.entity.parsed_action = Some(v); }
-        if let Some(v) = w.pending_tool_call { self.entity.pending_tool_call = v; }
-        if let Some(v) = w.last_observation  { self.entity.last_observation = Some(v); }
-        if let Some(v) = w.session_id        { self.entity.session_id = Some(v); }
-        if let Some(v) = w.iter_counter      { self.entity.iter_counter = Some(v); }
-        if let Some(v) = w.available_tools       { self.entity.available_tools = v; }
-        if let Some(v) = w.pending_tool_calls    { self.entity.pending_tool_calls = v; }
-        if let Some(v) = w.last_thinking_blocks  { self.entity.last_thinking_blocks = v; }
+        if let Some(v) = w.current_messages {
+            self.entity.current_messages = Some(v);
+        }
+        if let Some(v) = w.last_llm_response {
+            self.entity.last_llm_response = Some(v);
+        }
+        if let Some(v) = w.parsed_action {
+            self.entity.parsed_action = Some(v);
+        }
+        if let Some(v) = w.pending_tool_call {
+            self.entity.pending_tool_call = v;
+        }
+        if let Some(v) = w.last_observation {
+            self.entity.last_observation = Some(v);
+        }
+        if let Some(v) = w.session_id {
+            self.entity.session_id = Some(v);
+        }
+        if let Some(v) = w.iter_counter {
+            self.entity.iter_counter = Some(v);
+        }
+        if let Some(v) = w.available_tools {
+            self.entity.available_tools = v;
+        }
+        if let Some(v) = w.pending_tool_calls {
+            self.entity.pending_tool_calls = v;
+        }
+        if let Some(v) = w.last_thinking_blocks {
+            self.entity.last_thinking_blocks = v;
+        }
         for ev in w.trajectory_append {
             self.entity.trajectory.push(ev);
         }
-        if let Some(v) = w.final_output { self.entity.final_output = Some(v); }
+        if let Some(v) = w.final_output {
+            self.entity.final_output = Some(v);
+        }
         for (k, v) in w.extensions {
             if v.is_null() {
                 self.entity.extensions.remove(&k);
@@ -351,32 +390,61 @@ impl<'a> Runner<'a> {
                     reason,
                 });
             }
-            Some(crate::host_system::HostSystemSignal::Custom { name: _ })
-            | None => {}
+            Some(crate::host_system::HostSystemSignal::Custom { name: _ }) | None => {}
         }
     }
 
     fn apply(&mut self, delta: SystemDelta) {
         // Apply `writes`.
         let w = delta.writes;
-        if let Some(v) = w.profile           { self.entity.profile = Some(v); }
-        if let Some(v) = w.schedule          { self.entity.schedule = Some(v); }
-        if let Some(v) = w.current_messages  { self.entity.current_messages = Some(v); }
-        if let Some(v) = w.pending_llm_call  { self.entity.pending_llm_call = v; }
-        if let Some(v) = w.last_llm_response { self.entity.last_llm_response = Some(v); }
-        if let Some(v) = w.parsed_action     { self.entity.parsed_action = Some(v); }
-        if let Some(v) = w.pending_tool_call { self.entity.pending_tool_call = v; }
-        if let Some(v) = w.last_observation  { self.entity.last_observation = Some(v); }
-        if let Some(v) = w.session_id        { self.entity.session_id = Some(v); }
-        if let Some(v) = w.iter_counter      { self.entity.iter_counter = Some(v); }
-        if let Some(v) = w.available_tools      { self.entity.available_tools = v; }
-        if let Some(v) = w.pending_tool_calls   { self.entity.pending_tool_calls = v; }
-        if let Some(v) = w.last_thinking_blocks { self.entity.last_thinking_blocks = v; }
+        if let Some(v) = w.profile {
+            self.entity.profile = Some(v);
+        }
+        if let Some(v) = w.schedule {
+            self.entity.schedule = Some(v);
+        }
+        if let Some(v) = w.current_messages {
+            self.entity.current_messages = Some(v);
+        }
+        if let Some(v) = w.pending_llm_call {
+            self.entity.pending_llm_call = v;
+        }
+        if let Some(v) = w.last_llm_response {
+            self.entity.last_llm_response = Some(v);
+        }
+        if let Some(v) = w.parsed_action {
+            self.entity.parsed_action = Some(v);
+        }
+        if let Some(v) = w.pending_tool_call {
+            self.entity.pending_tool_call = v;
+        }
+        if let Some(v) = w.last_observation {
+            self.entity.last_observation = Some(v);
+        }
+        if let Some(v) = w.session_id {
+            self.entity.session_id = Some(v);
+        }
+        if let Some(v) = w.iter_counter {
+            self.entity.iter_counter = Some(v);
+        }
+        if let Some(v) = w.available_tools {
+            self.entity.available_tools = v;
+        }
+        if let Some(v) = w.pending_tool_calls {
+            self.entity.pending_tool_calls = v;
+        }
+        if let Some(v) = w.last_thinking_blocks {
+            self.entity.last_thinking_blocks = v;
+        }
         for ev in w.trajectory_append {
             self.entity.trajectory.push(ev);
         }
-        if let Some(v) = w.final_output      { self.entity.final_output = Some(v); }
-        if let Some(v) = w.error             { self.entity.error = Some(v); }
+        if let Some(v) = w.final_output {
+            self.entity.final_output = Some(v);
+        }
+        if let Some(v) = w.error {
+            self.entity.error = Some(v);
+        }
         for (k, v) in w.extensions {
             self.entity.extensions.insert(k, v);
         }
@@ -406,10 +474,7 @@ fn build_retry_nudge(
             "{}\n\nYour previous response could not be parsed: {}\nReply again and follow the required output format exactly.",
             prefix, last_error
         ),
-        other => format!(
-            "{}\n\nSystem `{}` failed: {}",
-            prefix, inv.system, other
-        ),
+        other => format!("{}\n\nSystem `{}` failed: {}", prefix, inv.system, other),
     }
 }
 

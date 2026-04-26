@@ -127,16 +127,17 @@ impl Schedule {
     pub fn predict_default() -> Self {
         Self {
             steps: alloc::vec![
-                inv("resolve_profile",  "ResolveProfile"),
+                inv("resolve_profile", "ResolveProfile"),
                 inv("resolve_schedule", "ResolveSchedule"),
-                inv("render",           "RenderPrompt"),
-                inv("hook_before_llm",  "Hook").with_args(hook_args("before_llm_request")),
-                inv("call",             "CallLlm"),
-                inv("hook_after_llm",   "Hook").with_args(hook_args("after_llm_response")),
-                inv("parse",            "ParseResponse").with_retry(RetryPolicy {
-                    max: 3, nudge: Some("Your previous response did not parse. Retry carefully.".into())
+                inv("render", "RenderPrompt"),
+                inv("hook_before_llm", "Hook").with_args(hook_args("before_llm_request")),
+                inv("call", "CallLlm"),
+                inv("hook_after_llm", "Hook").with_args(hook_args("after_llm_response")),
+                inv("parse", "ParseResponse").with_retry(RetryPolicy {
+                    max: 3,
+                    nudge: Some("Your previous response did not parse. Retry carefully.".into())
                 }),
-                inv("finalize",         "Finalize"),
+                inv("finalize", "Finalize"),
             ],
         }
     }
@@ -163,11 +164,15 @@ trait InvoBuilder {
 
 impl InvoBuilder for ScheduleStep {
     fn with_args(mut self, args: Value) -> Self {
-        if let ScheduleStep::Invoke(i) = &mut self { i.args = args; }
+        if let ScheduleStep::Invoke(i) = &mut self {
+            i.args = args;
+        }
         self
     }
     fn with_retry(mut self, policy: RetryPolicy) -> Self {
-        if let ScheduleStep::Invoke(i) = &mut self { i.retry_on_fail = Some(policy); }
+        if let ScheduleStep::Invoke(i) = &mut self {
+            i.retry_on_fail = Some(policy);
+        }
         self
     }
 }

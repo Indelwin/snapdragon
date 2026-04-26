@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+set -eu
+
+npm run check:push
+
+if [ "${SNAPDRAGON_MUTATION_ON_PUSH:-0}" = "1" ]; then
+  npm run mutation:js
+  npm run mutation:rust
+fi

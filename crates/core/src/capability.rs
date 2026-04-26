@@ -35,20 +35,20 @@ pub enum CapabilityName {
 impl CapabilityName {
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::LlmChat            => "llm.chat@1",
-            Self::BundleFetch        => "bundle.fetch@1",
-            Self::ProfileGet         => "profile.get@1",
-            Self::ScheduleResolve    => "schedule.resolve@1",
-            Self::ToolList           => "tool.list@1",
-            Self::MemoryPrefetch     => "memory.prefetch@1",
-            Self::MemoryWrite        => "memory.write@1",
-            Self::MemorySystemBlock  => "memory.system_block@1",
-            Self::SkillList          => "skill.list@1",
-            Self::SkillLoad          => "skill.load@1",
-            Self::ContextCompress    => "context.compress@1",
-            Self::ExecRun            => "exec.run@1",
+            Self::LlmChat => "llm.chat@1",
+            Self::BundleFetch => "bundle.fetch@1",
+            Self::ProfileGet => "profile.get@1",
+            Self::ScheduleResolve => "schedule.resolve@1",
+            Self::ToolList => "tool.list@1",
+            Self::MemoryPrefetch => "memory.prefetch@1",
+            Self::MemoryWrite => "memory.write@1",
+            Self::MemorySystemBlock => "memory.system_block@1",
+            Self::SkillList => "skill.list@1",
+            Self::SkillLoad => "skill.load@1",
+            Self::ContextCompress => "context.compress@1",
+            Self::ExecRun => "exec.run@1",
             Self::RuntimePushContext => "runtime.push_context@1",
-            Self::RuntimePopContext  => "runtime.pop_context@1",
+            Self::RuntimePopContext => "runtime.pop_context@1",
         }
     }
 }
@@ -58,10 +58,10 @@ impl CapabilityName {
 /// response for any capability whose schema makes all fields optional.
 pub fn call<Req: Serialize, Resp: for<'de> Deserialize<'de>>(
     host: &dyn HostPipe,
-    cap:  &str,
-    req:  &Req,
+    cap: &str,
+    req: &Req,
 ) -> Result<Resp, CallError> {
-    let req_json  = serde_json::to_string(req).map_err(|e| CallError::Serde(e.to_string()))?;
+    let req_json = serde_json::to_string(req).map_err(|e| CallError::Serde(e.to_string()))?;
     let resp_json = host.call_capability(cap, &req_json)?;
     serde_json::from_str::<Resp>(&resp_json).map_err(|e| CallError::Serde(e.to_string()))
 }
@@ -70,20 +70,27 @@ pub fn call<Req: Serialize, Resp: for<'de> Deserialize<'de>>(
 
 pub mod bundle {
     //! Typed helpers for `bundle.fetch@1`.
-    use super::{call, CallError, CapabilityName, HostPipe};
+    use super::{CallError, CapabilityName, HostPipe, call};
     use alloc::string::String;
     use alloc::vec::Vec;
     use serde::{Deserialize, Serialize};
 
     #[derive(Serialize)]
-    pub struct FetchRequest<'a> { pub cid: &'a str }
+    pub struct FetchRequest<'a> {
+        pub cid: &'a str,
+    }
 
     #[derive(Deserialize)]
-    pub struct FetchResponse { pub bytes_b64: String }
+    pub struct FetchResponse {
+        pub bytes_b64: String,
+    }
 
     pub fn fetch(host: &dyn HostPipe, cid: &str) -> Result<Vec<u8>, CallError> {
-        let resp: FetchResponse =
-            call(host, CapabilityName::BundleFetch.as_str(), &FetchRequest { cid })?;
+        let resp: FetchResponse = call(
+            host,
+            CapabilityName::BundleFetch.as_str(),
+            &FetchRequest { cid },
+        )?;
         decode_b64(&resp.bytes_b64).map_err(CallError::Host)
     }
 
@@ -143,7 +150,7 @@ pub mod runtime {
     use alloc::string::String;
     use serde::Serialize;
 
-    use super::{call, CallError, CapabilityName, HostPipe};
+    use super::{CallError, CapabilityName, HostPipe, call};
     use crate::profile::Profile;
 
     #[derive(Serialize)]

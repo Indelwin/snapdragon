@@ -15,12 +15,28 @@
   "scripts": {
     "build": "npm run build:wasm && npm run build --workspaces --if-present",
     "build:wasm": "bash scripts/build-wasm.sh",
+    "check": "npm run check:push",
+    "check:deep": "npm run check:push && npm run mutation:js && npm run mutation:rust",
+    "check:fast": "npm run lint && npm run spec:lint && npm run quality:crap",
+    "check:push": "npm run check:fast && npm run typecheck && npm test",
     "clean": "npm run clean --workspaces --if-present && rm -rf target",
+    "format": "biome check --write . && cargo fmt --all",
+    "lint": "biome check . && cargo fmt --all --check",
+    "mutation:js": "stryker run",
+    "mutation:rust": "bash scripts/quality/mutation-rust.sh",
+    "prepare": "git config core.hooksPath .githooks && chmod +x .githooks/pre-commit .githooks/pre-push scripts/quality/*.sh scripts/quality/*.mjs",
+    "quality:crap": "node scripts/quality/crap-analysis.mjs",
+    "spec:lint": "node scripts/quality/check-gherkin.mjs",
     "test": "npm run test --workspaces --if-present && cargo test --workspace -- --test-threads=1",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "publish:dry": "npm publish --workspaces --access public --dry-run"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.4.13",
+    "@cucumber/gherkin": "39.0.0",
+    "@cucumber/messages": "32.3.1",
+    "@stryker-mutator/core": "9.6.1",
+    "@stryker-mutator/typescript-checker": "9.6.1",
     "@types/node": "^22.10.5",
     "typescript": "^5.9.2"
   },

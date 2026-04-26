@@ -1,7 +1,7 @@
-import { createContext, Script, type Context } from 'node:vm';
+import { type Context, createContext, Script } from 'node:vm';
 import type { JsonObject } from '@snapdragon/core';
-import type { Tool, ToolResult, Toolset } from '../types.js';
 import { objectArg, optionalNumberArg, stringArg } from '../safety.js';
+import type { Tool, ToolResult, Toolset } from '../types.js';
 
 export interface ReplToolsetOptions {
   defaultTimeoutMs?: number;
@@ -18,7 +18,8 @@ export function replToolset(options: ReplToolsetOptions = {}): Toolset {
   return {
     name: 'repl',
     title: 'REPL tools',
-    description: 'Evaluate JavaScript against a persistent sandbox with an SDK for invoking registered tools.',
+    description:
+      'Evaluate JavaScript against a persistent sandbox with an SDK for invoking registered tools.',
     tools: [replEvalTool(defaultTimeoutMs)],
   };
 }
@@ -27,11 +28,15 @@ function replEvalTool(defaultTimeoutMs: number): Tool {
   return {
     name: 'repl_eval',
     toolset: 'repl',
-    description: 'Evaluate JavaScript in a persistent sandbox. Use sdk.list(), sdk.describe(name), and await sdk.invoke(name, args).',
-    parameters: schema({
-      code: { type: 'string' },
-      timeout_ms: { type: 'number', default: defaultTimeoutMs },
-    }, ['code']),
+    description:
+      'Evaluate JavaScript in a persistent sandbox. Use sdk.list(), sdk.describe(name), and await sdk.invoke(name, args).',
+    parameters: schema(
+      {
+        code: { type: 'string' },
+        timeout_ms: { type: 'number', default: defaultTimeoutMs },
+      },
+      ['code'],
+    ),
     async run(args, context): Promise<ToolResult> {
       const input = objectArg(args);
       const code = stringArg(input, 'code');
@@ -51,7 +56,7 @@ function replEvalTool(defaultTimeoutMs: number): Tool {
         return { content: renderValue(result) };
       } catch (error) {
         return {
-          content: error instanceof Error ? error.stack ?? error.message : String(error),
+          content: error instanceof Error ? (error.stack ?? error.message) : String(error),
           isError: true,
         };
       }

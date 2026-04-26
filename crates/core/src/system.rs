@@ -27,7 +27,11 @@ pub struct SystemDelta {
 
 impl Default for SystemDelta {
     fn default() -> Self {
-        Self { writes: ComponentWrites::default(), events: Vec::new(), signal: None }
+        Self {
+            writes: ComponentWrites::default(),
+            events: Vec::new(),
+            signal: None,
+        }
     }
 }
 
@@ -37,23 +41,23 @@ impl Default for SystemDelta {
 /// consuming.
 #[derive(Default)]
 pub struct ComponentWrites {
-    pub profile:           Option<crate::profile::Profile>,
-    pub schedule:          Option<crate::schedule::Schedule>,
-    pub current_messages:  Option<Vec<Message>>,
-    pub pending_llm_call:  Option<Option<crate::component::PendingLlmCall>>,
+    pub profile: Option<crate::profile::Profile>,
+    pub schedule: Option<crate::schedule::Schedule>,
+    pub current_messages: Option<Vec<Message>>,
+    pub pending_llm_call: Option<Option<crate::component::PendingLlmCall>>,
     pub last_llm_response: Option<String>,
-    pub parsed_action:     Option<Value>,
+    pub parsed_action: Option<Value>,
     pub pending_tool_call: Option<Option<crate::component::PendingToolCall>>,
-    pub last_observation:  Option<String>,
-    pub session_id:        Option<String>,
-    pub iter_counter:      Option<crate::component::IterCounter>,
-    pub available_tools:     Option<Vec<crate::component::ToolDefinitionRef>>,
-    pub pending_tool_calls:  Option<Vec<crate::component::ToolCall>>,
+    pub last_observation: Option<String>,
+    pub session_id: Option<String>,
+    pub iter_counter: Option<crate::component::IterCounter>,
+    pub available_tools: Option<Vec<crate::component::ToolDefinitionRef>>,
+    pub pending_tool_calls: Option<Vec<crate::component::ToolCall>>,
     pub last_thinking_blocks: Option<Vec<crate::component::ThinkingBlock>>,
     pub trajectory_append: Vec<crate::trajectory::TrajectoryEvent>,
-    pub final_output:      Option<Value>,
-    pub error:             Option<RunError>,
-    pub extensions:        BTreeMap<String, Value>,
+    pub final_output: Option<Value>,
+    pub error: Option<RunError>,
+    pub extensions: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone)]
@@ -73,8 +77,8 @@ pub trait System {
     fn run(
         &self,
         entity: &Entity,
-        host:   &dyn HostPipe,
-        args:   &Value,
+        host: &dyn HostPipe,
+        args: &Value,
     ) -> Result<SystemDelta, RunError>;
 }
 
@@ -83,7 +87,11 @@ pub struct SystemRegistry {
 }
 
 impl SystemRegistry {
-    pub fn new() -> Self { Self { systems: BTreeMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            systems: BTreeMap::new(),
+        }
+    }
 
     pub fn register<S: System + Send + Sync + 'static>(&mut self, s: S) {
         self.systems.insert(s.name(), Box::new(s));
@@ -154,7 +162,9 @@ impl SystemRegistry {
 }
 
 impl Default for SystemRegistry {
-    fn default() -> Self { Self::core_defaults() }
+    fn default() -> Self {
+        Self::core_defaults()
+    }
 }
 
 #[cfg(all(test, feature = "std"))]
@@ -164,9 +174,15 @@ mod tests {
 
     struct NoopSystem;
     impl System for NoopSystem {
-        fn name(&self) -> &'static str { "Noop" }
-        fn reads(&self) -> &'static [ComponentName] { &[] }
-        fn writes(&self) -> &'static [ComponentName] { &[] }
+        fn name(&self) -> &'static str {
+            "Noop"
+        }
+        fn reads(&self) -> &'static [ComponentName] {
+            &[]
+        }
+        fn writes(&self) -> &'static [ComponentName] {
+            &[]
+        }
         fn run(&self, _e: &Entity, _h: &dyn HostPipe, _a: &Value) -> Result<SystemDelta, RunError> {
             Ok(SystemDelta::default())
         }
@@ -183,8 +199,14 @@ mod tests {
     #[test]
     fn core_defaults_registers_predict_systems() {
         let r = SystemRegistry::core_defaults();
-        for name in &["ResolveProfile", "ResolveSchedule", "RenderPrompt",
-                      "CallLlm", "ParseResponse", "Finalize"] {
+        for name in &[
+            "ResolveProfile",
+            "ResolveSchedule",
+            "RenderPrompt",
+            "CallLlm",
+            "ParseResponse",
+            "Finalize",
+        ] {
             assert!(r.get(name).is_some(), "missing system `{}`", name);
         }
     }

@@ -2,8 +2,8 @@ import { spawn } from 'node:child_process';
 import { readdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, relative } from 'node:path';
 import type { JsonObject } from '@snapdragon/core';
-import type { Tool, ToolResult, Toolset } from '../types.js';
 import { objectArg, optionalNumberArg, resolveInside, stringArg } from '../safety.js';
+import type { Tool, ToolResult, Toolset } from '../types.js';
 
 export interface CodingToolsetOptions {
   cwd: string;
@@ -38,9 +38,12 @@ function readFileTool(cwd: string, maxReadBytes: number): Tool {
     name: 'read_file',
     toolset: 'coding',
     description: 'Read a UTF-8 text file under the workspace.',
-    parameters: schema({
-      path: { type: 'string', description: 'Path relative to the workspace.' },
-    }, ['path']),
+    parameters: schema(
+      {
+        path: { type: 'string', description: 'Path relative to the workspace.' },
+      },
+      ['path'],
+    ),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
       const file = resolveInside(cwd, stringArg(input, 'path'));
@@ -58,11 +61,15 @@ function writeFileTool(cwd: string): Tool {
   return {
     name: 'write_file',
     toolset: 'coding',
-    description: 'Write a UTF-8 text file under the workspace, creating parent directories as needed.',
-    parameters: schema({
-      path: { type: 'string', description: 'Path relative to the workspace.' },
-      content: { type: 'string', description: 'Full file content to write.' },
-    }, ['path', 'content']),
+    description:
+      'Write a UTF-8 text file under the workspace, creating parent directories as needed.',
+    parameters: schema(
+      {
+        path: { type: 'string', description: 'Path relative to the workspace.' },
+        content: { type: 'string', description: 'Full file content to write.' },
+      },
+      ['path', 'content'],
+    ),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
       const file = resolveInside(cwd, stringArg(input, 'path'));
@@ -79,12 +86,15 @@ function editFileTool(cwd: string): Tool {
     name: 'edit_file',
     toolset: 'coding',
     description: 'Replace text in a UTF-8 file under the workspace.',
-    parameters: schema({
-      path: { type: 'string' },
-      old_text: { type: 'string' },
-      new_text: { type: 'string' },
-      replace_all: { type: 'boolean', default: false },
-    }, ['path', 'old_text', 'new_text']),
+    parameters: schema(
+      {
+        path: { type: 'string' },
+        old_text: { type: 'string' },
+        new_text: { type: 'string' },
+        replace_all: { type: 'boolean', default: false },
+      },
+      ['path', 'old_text', 'new_text'],
+    ),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
       const file = resolveInside(cwd, stringArg(input, 'path'));
@@ -95,9 +105,14 @@ function editFileTool(cwd: string): Tool {
       if (!content.includes(oldText)) {
         return { content: `Text not found in ${relative(cwd, file)}`, isError: true };
       }
-      const next = replaceAll ? content.split(oldText).join(newText) : content.replace(oldText, newText);
+      const next = replaceAll
+        ? content.split(oldText).join(newText)
+        : content.replace(oldText, newText);
       await writeFile(file, next, 'utf8');
-      return { content: `Edited ${relative(cwd, file)}`, data: { path: relative(cwd, file), replace_all: replaceAll } };
+      return {
+        content: `Edited ${relative(cwd, file)}`,
+        data: { path: relative(cwd, file), replace_all: replaceAll },
+      };
     },
   };
 }
@@ -107,14 +122,20 @@ function listFilesTool(cwd: string): Tool {
     name: 'list_files',
     toolset: 'coding',
     description: 'List files under a workspace directory.',
-    parameters: schema({
-      path: { type: 'string', default: '.' },
-      max_entries: { type: 'number', default: 200 },
-    }, []),
+    parameters: schema(
+      {
+        path: { type: 'string', default: '.' },
+        max_entries: { type: 'number', default: 200 },
+      },
+      [],
+    ),
     async run(args): Promise<ToolResult> {
       const input = args && typeof args === 'object' ? (args as Record<string, unknown>) : {};
       const dir = resolveInside(cwd, typeof input.path === 'string' ? input.path : '.');
-      const maxEntries = Math.max(1, Math.min(optionalNumberArg(input, 'max_entries') ?? 200, 1000));
+      const maxEntries = Math.max(
+        1,
+        Math.min(optionalNumberArg(input, 'max_entries') ?? 200, 1000),
+      );
       const entries = await walk(dir, cwd, maxEntries);
       return { content: entries.join('\n') || '(empty)', data: { entries } };
     },
@@ -131,14 +152,20 @@ function runShellTool(
     name: 'run_shell',
     toolset: 'coding',
     description: 'Run a shell command in the workspace.',
-    parameters: schema({
-      command: { type: 'string' },
-      timeout_ms: { type: 'number', default: defaultTimeoutMs },
-    }, ['command']),
+    parameters: schema(
+      {
+        command: { type: 'string' },
+        timeout_ms: { type: 'number', default: defaultTimeoutMs },
+      },
+      ['command'],
+    ),
     async run(args, context): Promise<ToolResult> {
       const input = objectArg(args);
       const command = stringArg(input, 'command');
-      const timeoutMs = Math.min(optionalNumberArg(input, 'timeout_ms') ?? defaultTimeoutMs, maxTimeoutMs);
+      const timeoutMs = Math.min(
+        optionalNumberArg(input, 'timeout_ms') ?? defaultTimeoutMs,
+        maxTimeoutMs,
+      );
       return runCommand(command, cwd, timeoutMs, maxOutputBytes, context.signal);
     },
   };
@@ -151,7 +178,8 @@ async function walk(dir: string, cwd: string, maxEntries: number): Promise<strin
     const entries = await readdir(current, { withFileTypes: true });
     for (const entry of entries) {
       if (out.length >= maxEntries) return;
-      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'target') continue;
+      if (entry.name === 'node_modules' || entry.name === '.git' || entry.name === 'target')
+        continue;
       const full = join(current, entry.name);
       out.push(entry.isDirectory() ? `${relative(cwd, full)}/` : relative(cwd, full));
       if (entry.isDirectory()) await visit(full);
@@ -196,7 +224,11 @@ function runCommand(
     child.on('close', (code) => {
       clearTimeout(timer);
       signal?.removeEventListener('abort', abort);
-      const suffix = timedOut ? `\n[timeout after ${timeoutMs}ms]` : output.length >= maxOutputBytes ? '\n[truncated]' : '';
+      const suffix = timedOut
+        ? `\n[timeout after ${timeoutMs}ms]`
+        : output.length >= maxOutputBytes
+          ? '\n[truncated]'
+          : '';
       resolve({
         content: `${output}${suffix}` || `(exit ${code ?? 'unknown'}, no output)`,
         isError: timedOut || (code ?? 0) !== 0,

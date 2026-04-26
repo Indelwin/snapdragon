@@ -1,6 +1,6 @@
-import type { Tool, ToolContext, ToolResult, Toolset, RegisteredTool } from './types.js';
-import { toolToDefinition } from './types.js';
 import type { ToolDefinition } from '@snapdragon/host';
+import type { RegisteredTool, Tool, ToolContext, ToolResult, Toolset } from './types.js';
+import { toolToDefinition } from './types.js';
 
 export interface ToolRegistryOptions {
   cwd: string;
@@ -23,7 +23,9 @@ export class ToolRegistry {
       this.#tools.set(tool.name, {
         ...tool,
         enabled: check.available,
-        unavailableReason: check.available ? undefined : check.reason ?? `${toolset.name} is unavailable`,
+        unavailableReason: check.available
+          ? undefined
+          : (check.reason ?? `${toolset.name} is unavailable`),
       });
     }
   }
@@ -46,7 +48,7 @@ export class ToolRegistry {
 
   describe(name: string): ToolDefinition | undefined {
     const tool = this.#tools.get(name);
-    if (!tool || !tool.enabled) return undefined;
+    if (!tool?.enabled) return undefined;
     return toolToDefinition(tool);
   }
 

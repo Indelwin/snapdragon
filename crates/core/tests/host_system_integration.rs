@@ -117,8 +117,7 @@ fn host_side_system_can_append_trajectory() {
 
     snapdragon_core::install_bundle_for_test(custom_system_bundle("tracer"));
 
-    let out = snapdragon_core::run_with_host(&host, r#"{"message":"hi"}"#)
-        .expect("should succeed");
+    let out = snapdragon_core::run_with_host(&host, r#"{"message":"hi"}"#).expect("should succeed");
     assert_eq!(out, json!({ "reply": "done" }));
     // Not asserting on trajectory contents — the core's Entity is not
     // exposed from run_with_host. The fact that the handler's
@@ -144,8 +143,7 @@ fn host_side_system_gets_entity_view_in_request() {
     );
 
     snapdragon_core::install_bundle_for_test(custom_system_bundle("view_check"));
-    let out = snapdragon_core::run_with_host(&host, r#"{"message":"hi"}"#)
-        .expect("should succeed");
+    let out = snapdragon_core::run_with_host(&host, r#"{"message":"hi"}"#).expect("should succeed");
     assert_eq!(out, json!({ "reply": "view was ok" }));
 }
 
