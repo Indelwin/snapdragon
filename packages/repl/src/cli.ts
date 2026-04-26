@@ -2,12 +2,8 @@
 import { stdin as input, stdout as output } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 import { createCodingReplAgent } from '@snapdragon/agent';
-import {
-  anthropicProvider,
-  mockProvider,
-  openaiProvider,
-  type StreamingChatHandler,
-} from '@snapdragon/host';
+import { anthropicProvider, mockProvider, openaiProvider } from '@snapdragon/host';
+import { isDirectEntrypoint } from './entrypoint.js';
 
 interface CliArgs {
   provider: 'mock' | 'openai' | 'anthropic';
@@ -82,7 +78,7 @@ function parseArgs(argv: string[]): CliArgs {
   };
 }
 
-function makeProvider(args: CliArgs): StreamingChatHandler {
+function makeProvider(args: CliArgs) {
   if (args.provider === 'mock') {
     const mock = mockProvider();
     mock.enqueue('mock response');
@@ -113,7 +109,7 @@ function expectValue(argv: string[], index: number, flag: string): string {
   return value;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isDirectEntrypoint(import.meta.url)) {
   main().catch((error) => {
     console.error(error instanceof Error ? error.message : String(error));
     process.exitCode = 1;
