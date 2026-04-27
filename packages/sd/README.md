@@ -22,7 +22,16 @@ overriding exported variables. The default provider is Anthropic with
 
 Sessions are portable JSONL files under `~/.snapdragon/sd/sessions` by
 default. Profiles live under `~/.snapdragon/sd/profiles/<name>/` with a
-required `profile.yaml` and optional `SOUL.md`.
+required `profile.yaml`, optional `SOUL.md`, profile-local sessions, skills,
+memory, extensions, workspace, logs, and home directories.
+
+Skills are descriptor-first `SKILL.md` directories. `sd --setup` installs
+first-party skills such as `code-review`, `fix-ci`, `write-tests`,
+`release-check`, `repo-cleanup`, `self-build`, and `skill-learner`.
+
+Memory uses an active provider contract. The default `sd` provider is a
+profile-local or global `MEMORY.md` file that can be read, searched, appended
+by tools, and auto-captured from stable user preferences.
 
 Interactive commands:
 
@@ -37,6 +46,9 @@ Interactive commands:
 /delete-session <id>
 /profiles
 /profile [name|none]
+/memory [query]
+/remember <note>
+/extensions
 /tools
 /provider
 /models

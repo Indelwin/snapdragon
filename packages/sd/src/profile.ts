@@ -1,8 +1,15 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
-import { parse as parseYaml } from 'yaml';
-import type { SdAgentConfig, SdToolsetsConfig } from './config.js';
+import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import type {
+  SdAgentConfig,
+  SdExtensionsConfig,
+  SdIsolationConfig,
+  SdMemoryConfig,
+  SdSkillsConfig,
+  SdToolsetsConfig,
+} from './config.js';
 
 export const DEFAULT_SD_PROFILE_ROOT = resolve(homedir(), '.snapdragon/sd/profiles');
 export const ACTIVE_PROFILE_FILE = '_active';
@@ -18,6 +25,10 @@ export interface SdProfileConfig {
   };
   agent?: SdAgentConfig;
   toolsets?: SdToolsetsConfig;
+  skills?: Omit<SdSkillsConfig, 'root'>;
+  memory?: Omit<SdMemoryConfig, 'root'>;
+  extensions?: SdExtensionsConfig;
+  isolation?: SdIsolationConfig;
 }
 
 export interface SdProfileInfo {
@@ -74,6 +85,37 @@ export class SdProfileStore {
     return info;
   }
 
+  create(name: string, config: Partial<Omit<SdProfileConfig, 'name'>> = {}): SdProfileInfo {
+    assertValidProfileName(name);
+    const dir = this.profileDir(name);
+    const configPath = join(dir, 'profile.yaml');
+    if (existsSync(configPath)) throw new Error(`Profile '${name}' already exists`);
+    mkdirSync(dir, { recursive: true });
+    const profileConfig: SdProfileConfig = {
+      name,
+      description: config.description,
+      persona: config.persona_inline ? undefined : (config.persona ?? 'SOUL.md'),
+      persona_inline: config.persona_inline,
+      model: config.model,
+      agent: config.agent,
+      toolsets: config.toolsets,
+      skills: config.skills,
+      memory: config.memory,
+      extensions: config.extensions,
+      isolation: config.isolation,
+    };
+    writeFileSync(configPath, stringifyYaml(stripUndefined(profileConfig)), 'utf8');
+    if (!profileConfig.persona_inline) {
+      writeFileSync(
+        join(dir, profileConfig.persona ?? 'SOUL.md'),
+        `# ${name}\n\nDescribe this profile's role, style, and constraints.\n`,
+        'utf8',
+      );
+    }
+    ensureProfileHome(dir);
+    return this.load(name);
+  }
+
   loadInfo(name: string, options: { active?: string } = {}): SdProfileInfo {
     try {
       assertValidProfileName(name);
@@ -86,6 +128,7 @@ export class SdProfileStore {
       if (config.name !== name) {
         throw new Error(`Profile '${name}' has mismatched name '${config.name}'`);
       }
+      ensureProfileHome(dir);
       const persona = loadProfilePersona(config, dir);
       return {
         name,
@@ -113,6 +156,12 @@ export class SdProfileStore {
 
   private activePath(): string {
     return join(this.root, ACTIVE_PROFILE_FILE);
+  }
+}
+
+export function ensureProfileHome(dir: string): void {
+  for (const child of ['skills', 'sessions', 'memory', 'extensions', 'workspace', 'logs', 'home']) {
+    mkdirSync(join(dir, child), { recursive: true });
   }
 }
 
@@ -173,6 +222,15 @@ function compareProfiles(a: SdProfileInfo, b: SdProfileInfo): number {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function stripUndefined<T>(value: T): T {
+  if (!isRecord(value)) return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, entry]) => entry !== undefined)
+      .map(([key, entry]) => [key, stripUndefined(entry)]),
+  ) as T;
 }
 
 function errorMessage(error: unknown): string {

@@ -4,6 +4,7 @@ import { modelSelection } from './model-selection.js';
 import { profileSelection } from './profile-selection.js';
 import { providerSelection } from './provider-selection.js';
 import { sessionSelection } from './session-selection.js';
+import { skillSelection } from './skill-selection.js';
 
 export interface PromptSelection {
   draft: string;
@@ -37,6 +38,9 @@ export async function selectionForLine(
   }
   if ((commandName === '/profiles' || commandName === '/profile') && !arg) {
     return { draft: '/profile ', completion: profileSelection(runtime) };
+  }
+  if ((commandName === '/skills' || commandName === '/skill') && !arg) {
+    return { draft: '/skill ', completion: skillSelection(runtime) };
   }
   return undefined;
 }

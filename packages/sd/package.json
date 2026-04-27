@@ -23,7 +23,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "build": "tsc -p tsconfig.build.json && cp -R src/first-party dist/first-party && chmod +x dist/cli.js",
     "clean": "rm -rf dist",
     "typecheck": "tsc -b tsconfig.build.json --pretty false",
     "test": "node --test --import tsx test/*.test.ts"
@@ -31,8 +31,10 @@
   "dependencies": {
     "@snapdragon-ai/agent": "0.1.1",
     "@snapdragon-ai/config": "0.1.1",
+    "@snapdragon-ai/content": "0.1.1",
     "@snapdragon-ai/host": "0.1.1",
     "@snapdragon-ai/session": "0.1.1",
+    "@snapdragon-ai/tools": "0.1.1",
     "@snapdragon-ai/ui": "0.1.1",
     "dotenv": "^17.2.3",
     "ink": "^7.0.1",

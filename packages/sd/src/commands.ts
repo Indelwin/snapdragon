@@ -12,16 +12,48 @@ import type { SdRuntime } from './runtime.js';
 import {
   currentProfileName,
   deleteRuntimeSession,
-  listSessions,
   newRuntimeSession,
   resumeRuntimeSession,
   switchRuntimeProfile,
 } from './runtime-transitions.js';
+import { sessionCommandSummary } from './session-command-display.js';
+import { buildSkillInvocation, type SkillInvocation, skillForSlashCommand } from './skills.js';
 
 export interface CommandResult {
   quit: boolean;
   attachments: PendingAttachment[];
+  prompt?: CommandPromptRun;
 }
+
+export type CommandPromptRun = SkillInvocation;
+
+export const BUILTIN_SLASH_COMMANDS = [
+  '/help',
+  '/quit',
+  '/exit',
+  '/clear',
+  '/session',
+  '/sessions',
+  '/resume',
+  '/new-session',
+  '/delete-session',
+  '/profiles',
+  '/profile',
+  '/memory',
+  '/remember',
+  '/extensions',
+  '/skills',
+  '/skill',
+  '/tools',
+  '/providers',
+  '/provider',
+  '/models',
+  '/model',
+  '/attach',
+  '/clear-attachments',
+  '/events',
+  '/palette',
+];
 
 export async function handleCommand(
   line: string,
@@ -34,13 +66,18 @@ export async function handleCommand(
   if (command === '/quit' || command === '/exit') return { quit: true, attachments };
   if (command === '/help') return writeResult(io, slashHelp(), attachments);
   if (command === '/clear') return clearHistory(runtime, io, attachments);
-  if (command === '/session') return writeResult(io, sessionSummary(runtime), attachments);
-  if (command === '/sessions') return writeResult(io, sessionsSummary(runtime), attachments);
+  if (command === '/session' || command === '/sessions')
+    return writeResult(io, sessionCommandSummary(command, runtime), attachments);
   if (command === '/resume') return resumeSessionCommand(arg, runtime, io, attachments);
   if (command === '/new-session') return newSessionCommand(arg, runtime, io, attachments);
   if (command === '/delete-session') return deleteSessionCommand(arg, runtime, io, attachments);
   if (command === '/profiles') return writeResult(io, profilesSummary(runtime), attachments);
   if (command === '/profile') return profileCommand(arg, runtime, io, attachments);
+  if (command === '/memory') return writeResult(io, memorySummary(runtime, arg), attachments);
+  if (command === '/remember') return rememberCommand(arg, runtime, io, attachments);
+  if (command === '/extensions') return writeResult(io, extensionsSummary(runtime), attachments);
+  if (command === '/skills') return writeResult(io, skillsSummary(runtime), attachments);
+  if (command === '/skill') return skillCommand(line, arg, runtime, io, attachments);
   if (command === '/tools') return writeResult(io, toolsSummary(runtime), attachments);
   if (command === '/providers') return writeResult(io, providersSummary(runtime), attachments);
   if (command === '/provider') return providerCommand(arg, runtime, io, attachments);
@@ -51,8 +88,43 @@ export async function handleCommand(
     return writeResult(io, 'Cleared pending attachments.', []);
   }
 
+  const skill = skillForSlashCommand(runtime.skills, command, BUILTIN_SLASH_COMMANDS);
+  if (skill) {
+    return skillPrompt(line, skill.id, arg, runtime, attachments);
+  }
+
   io.error.write(`Unknown command: ${command}\n`);
   return { quit: false, attachments };
+}
+
+function skillCommand(
+  line: string,
+  arg: string,
+  runtime: SdRuntime,
+  io: SdIo,
+  attachments: PendingAttachment[],
+): CommandResult {
+  if (!arg) return writeResult(io, skillsSummary(runtime), attachments);
+  const [target = '', ...rest] = arg.split(/\s+/);
+  return skillPrompt(line, target, rest.join(' ').trim(), runtime, attachments);
+}
+
+function skillPrompt(
+  line: string,
+  target: string,
+  task: string,
+  runtime: SdRuntime,
+  attachments: PendingAttachment[],
+): CommandResult {
+  const skill = runtime.skills.load(target);
+  if (!skill) {
+    throw new Error(`Skill not found: ${target}`);
+  }
+  return {
+    quit: false,
+    attachments,
+    prompt: buildSkillInvocation(skill, line, task),
+  };
 }
 
 async function providerCommand(
@@ -237,6 +309,11 @@ function slashHelp(): string {
     '  /delete-session <id>  Delete a session',
     '  /profiles             List profiles',
     '  /profile [name|none]  Show or switch profile',
+    '  /memory [query]        Show or search durable memory',
+    '  /remember <note>       Append a durable memory note',
+    '  /extensions            List discovered extensions',
+    '  /skills               List skills',
+    '  /skill <id> [task]    Run a skill for one request',
     '  /tools                List enabled tools',
     '  /providers            List configured providers',
     '  /provider [id] [model] Show or switch provider',
@@ -247,24 +324,59 @@ function slashHelp(): string {
   ].join('\n');
 }
 
-function sessionSummary(runtime: SdRuntime): string {
-  if (!runtime.session) return 'Sessions are disabled for this run.';
+function memorySummary(runtime: SdRuntime, query: string): string {
+  if (runtime.config.memory?.enabled === false) return 'Memory is disabled.';
+  if (query) {
+    const results = runtime.memory.search({ query, limit: 10 });
+    return [
+      `Memory matches for "${query}":`,
+      ...(results.length
+        ? results.map((entry) => `  ${entry.id} ${entry.title ?? ''} - ${entry.content}`)
+        : ['  (none)']),
+    ].join('\n');
+  }
+  const info = runtime.memory.info();
+  const entries = runtime.memory.read({ limit: 20 }).entries;
   return [
-    `id: ${runtime.session.sessionId}`,
-    `path: ${runtime.session.jsonlPath}`,
-    `messages: ${runtime.session.messages().length}`,
-  ].join('\n');
+    `Memory: ${info.path ?? info.id}`,
+    ...entries.map((entry) => `  ${entry.id} ${entry.title ?? ''}`.trimEnd()),
+    entries.length === 0 ? '  (empty)' : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
-function sessionsSummary(runtime: SdRuntime): string {
-  const sessions = listSessions(runtime);
-  if (sessions.length === 0) return 'No sessions found.';
+function rememberCommand(
+  arg: string,
+  runtime: SdRuntime,
+  io: SdIo,
+  attachments: PendingAttachment[],
+): CommandResult {
+  if (!arg) return writeResult(io, 'Usage: /remember <note>', attachments);
+  const result = runtime.memory.append({
+    title: 'Manual note',
+    content: arg,
+    source: 'sd.command',
+  });
+  return writeResult(
+    io,
+    result.success ? (result.message ?? 'Memory updated.') : (result.error ?? 'Memory failed.'),
+    attachments,
+  );
+}
+
+function extensionsSummary(runtime: SdRuntime): string {
+  const extensions = runtime.extensions.list();
+  if (extensions.length === 0) return 'No extensions found.';
   return [
-    'Sessions:',
-    ...sessions.map((session) => {
-      const active = runtime.session?.sessionId === session.session_id ? '*' : ' ';
-      const updated = new Date(session.updated_at * 1000).toISOString();
-      return `${active} ${session.session_id} ${updated} ${session.jsonl_size} bytes`;
+    'Extensions:',
+    ...extensions.map((extension) => {
+      const enabled = extension.enabled ? '+' : '-';
+      const capabilities = extension.capabilities?.length
+        ? ` [${extension.capabilities.join(', ')}]`
+        : '';
+      const description = extension.description ? ` - ${extension.description}` : '';
+      return `${enabled} ${extension.id} (${extension.name})${capabilities}${description}`;
     }),
   ].join('\n');
 }
@@ -284,6 +396,15 @@ function profilesSummary(runtime: SdRuntime): string {
       const description = profile.config?.description ? ` - ${profile.config.description}` : '';
       return `${active} ${profile.name}${description}`;
     }),
+  ].join('\n');
+}
+
+function skillsSummary(runtime: SdRuntime): string {
+  const skills = runtime.skills.list();
+  if (skills.length === 0) return 'No skills found.';
+  return [
+    'Skills:',
+    ...skills.map((skill) => `  ${skill.id} (${skill.command}) - ${skill.description}`),
   ].join('\n');
 }
 

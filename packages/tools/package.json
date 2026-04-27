@@ -18,6 +18,10 @@
       "types": "./dist/toolsets/file.d.ts",
       "import": "./dist/toolsets/file.js"
     },
+    "./toolsets/memory": {
+      "types": "./dist/toolsets/memory.d.ts",
+      "import": "./dist/toolsets/memory.js"
+    },
     "./toolsets/shell": {
       "types": "./dist/toolsets/shell.d.ts",
       "import": "./dist/toolsets/shell.js"
@@ -38,6 +42,7 @@
     "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },
   "dependencies": {
+    "@snapdragon-ai/content": "0.1.1",
     "@snapdragon-ai/core": "0.1.1",
     "@snapdragon-ai/host": "0.1.1"
   },
