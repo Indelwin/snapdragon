@@ -27,6 +27,7 @@ import {
   validateSkillMarkdown,
 } from '@snapdragon-ai/content';
 import type { SdConfig } from './config.js';
+import { ensureFirstPartySkills } from './first-party.js';
 import type { SdProfileInfo } from './profile.js';
 
 export const DEFAULT_SD_SKILL_ROOT = resolve(homedir(), '.snapdragon/sd/skills');
@@ -264,8 +265,14 @@ export class SdSkillStore implements SkillCatalog {
 }
 
 export function createSdSkillStore(config: SdConfig, profile?: SdProfileInfo): SdSkillStore {
+  const roots = resolveSdSkillRoots(config, profile);
+  if (config.skills?.builtins !== false) {
+    for (const root of roots.filter((candidate) => candidate.writable)) {
+      ensureFirstPartySkills(root.root);
+    }
+  }
   return new SdSkillStore({
-    roots: resolveSdSkillRoots(config, profile),
+    roots,
     enabled: config.skills?.enabled,
     disabled: config.skills?.disabled,
   });

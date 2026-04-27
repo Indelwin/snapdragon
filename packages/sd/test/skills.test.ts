@@ -142,6 +142,7 @@ async function writeMockConfig(workspace: string, skillRoot: string): Promise<st
       `  root: "${escapeYaml(join(workspace, 'sessions'))}"`,
       'skills:',
       `  root: "${escapeYaml(skillRoot)}"`,
+      '  builtins: false',
       'toolsets:',
       '  enabled:',
       '    - file',

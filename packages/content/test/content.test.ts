@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  memoryShouldAutoCapture,
+  parseExtensionManifest,
   parseSkillMarkdown,
   skillCommandMetadata,
   skillCommandSlug,
@@ -32,6 +34,22 @@ test('parses and validates skill markdown frontmatter without leaking body', () 
   assert.equal(descriptor?.description, 'Review code carefully');
   assert.deepEqual(descriptor?.tags, ['quality', 'review']);
   assert.equal(JSON.stringify(descriptor).includes('Run the checks.'), false);
+});
+
+test('memory auto-capture policy triggers only stable notes', () => {
+  assert.equal(memoryShouldAutoCapture({ userInput: 'remember to run pack dry' }).capture, true);
+  assert.equal(memoryShouldAutoCapture({ userInput: 'hello there' }).capture, false);
+  assert.equal(
+    memoryShouldAutoCapture({ userInput: 'remember this' }, { enabled: false }).reason,
+    'disabled',
+  );
+});
+
+test('parses extension manifests with required identity', () => {
+  const manifest = parseExtensionManifest('id: local/sandbox\nname: Local Sandbox\n');
+  assert.equal(manifest?.id, 'local/sandbox');
+  assert.equal(manifest?.name, 'Local Sandbox');
+  assert.equal(parseExtensionManifest('name: Missing Id\n'), undefined);
 });
 
 test('rejects malformed or incomplete skills', () => {

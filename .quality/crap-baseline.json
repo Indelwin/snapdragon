@@ -78,9 +78,9 @@
     "maxFunctionLines": 10
   },
   "packages/content/src/index.ts": {
-    "lines": 293,
-    "complexity": 98,
-    "crapProxy": 9629,
+    "lines": 496,
+    "complexity": 180,
+    "crapProxy": 32449,
     "maxFunctionLines": 26
   },
   "packages/core/src/index.ts": {
@@ -216,22 +216,22 @@
     "maxFunctionLines": 25
   },
   "packages/sd/src/cli.ts": {
-    "lines": 120,
-    "complexity": 21,
-    "crapProxy": 444,
+    "lines": 126,
+    "complexity": 25,
+    "crapProxy": 628,
     "maxFunctionLines": 30
   },
   "packages/sd/src/commands.ts": {
-    "lines": 358,
-    "complexity": 66,
-    "crapProxy": 4360,
-    "maxFunctionLines": 38
+    "lines": 426,
+    "complexity": 92,
+    "crapProxy": 8468,
+    "maxFunctionLines": 41
   },
   "packages/sd/src/config.ts": {
-    "lines": 229,
-    "complexity": 86,
-    "crapProxy": 7415,
-    "maxFunctionLines": 58
+    "lines": 324,
+    "complexity": 140,
+    "crapProxy": 19625,
+    "maxFunctionLines": 86
   },
   "packages/sd/src/exit-summary.ts": {
     "lines": 61,
@@ -239,16 +239,34 @@
     "crapProxy": 148,
     "maxFunctionLines": 9
   },
+  "packages/sd/src/extensions.ts": {
+    "lines": 117,
+    "complexity": 35,
+    "crapProxy": 1230,
+    "maxFunctionLines": 13
+  },
+  "packages/sd/src/first-party.ts": {
+    "lines": 68,
+    "complexity": 12,
+    "crapProxy": 147,
+    "maxFunctionLines": 10
+  },
+  "packages/sd/src/memory.ts": {
+    "lines": 397,
+    "complexity": 127,
+    "crapProxy": 16137,
+    "maxFunctionLines": 56
+  },
   "packages/sd/src/profile-runtime.ts": {
-    "lines": 133,
-    "complexity": 70,
-    "crapProxy": 4903,
-    "maxFunctionLines": 27
+    "lines": 192,
+    "complexity": 123,
+    "crapProxy": 15132,
+    "maxFunctionLines": 43
   },
   "packages/sd/src/profile.ts": {
-    "lines": 226,
-    "complexity": 54,
-    "crapProxy": 2925,
+    "lines": 239,
+    "complexity": 57,
+    "crapProxy": 3258,
     "maxFunctionLines": 10
   },
   "packages/sd/src/provider.ts": {
@@ -264,9 +282,9 @@
     "maxFunctionLines": 0
   },
   "packages/sd/src/repl.ts": {
-    "lines": 100,
-    "complexity": 15,
-    "crapProxy": 231,
+    "lines": 115,
+    "complexity": 16,
+    "crapProxy": 262,
     "maxFunctionLines": 28
   },
   "packages/sd/src/runtime-options.ts": {
@@ -282,16 +300,16 @@
     "maxFunctionLines": 19
   },
   "packages/sd/src/runtime-transitions.ts": {
-    "lines": 160,
+    "lines": 167,
     "complexity": 37,
     "crapProxy": 1378,
     "maxFunctionLines": 25
   },
   "packages/sd/src/runtime.ts": {
-    "lines": 104,
-    "complexity": 20,
-    "crapProxy": 405,
-    "maxFunctionLines": 32
+    "lines": 132,
+    "complexity": 27,
+    "crapProxy": 734,
+    "maxFunctionLines": 45
   },
   "packages/sd/src/session-command-display.ts": {
     "lines": 44,
@@ -318,9 +336,9 @@
     "maxFunctionLines": 8
   },
   "packages/sd/src/skills.ts": {
-    "lines": 510,
-    "complexity": 118,
-    "crapProxy": 13934,
+    "lines": 517,
+    "complexity": 121,
+    "crapProxy": 14651,
     "maxFunctionLines": 35
   },
   "packages/sd/src/tui/commands.ts": {
@@ -348,9 +366,9 @@
     "maxFunctionLines": 44
   },
   "packages/sd/src/tui/input-commands.ts": {
-    "lines": 258,
-    "complexity": 57,
-    "crapProxy": 3253,
+    "lines": 273,
+    "complexity": 58,
+    "crapProxy": 3368,
     "maxFunctionLines": 67
   },
   "packages/sd/src/tui/input-completion.ts": {
@@ -502,6 +520,12 @@
     "complexity": 20,
     "crapProxy": 402,
     "maxFunctionLines": 30
+  },
+  "packages/tools/src/toolsets/memory.ts": {
+    "lines": 176,
+    "complexity": 35,
+    "crapProxy": 1227,
+    "maxFunctionLines": 34
   },
   "packages/tools/src/toolsets/repl.ts": {
     "lines": 117,

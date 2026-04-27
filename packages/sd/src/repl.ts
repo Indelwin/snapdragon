@@ -3,6 +3,7 @@ import { createInterface } from 'node:readline/promises';
 import type { LlmChatResponse } from '@snapdragon-ai/host';
 import { contentWithAttachments, type PendingAttachment } from './attachments.js';
 import { type CommandPromptRun, type CommandResult, handleCommand } from './commands.js';
+import { maybeAutoCaptureMemory, requestInputWithMemory } from './memory.js';
 import { RunRenderer } from './renderer.js';
 import type { SdRuntime } from './runtime.js';
 
@@ -24,10 +25,24 @@ export async function runOneShot(
   const renderer = new RunRenderer(io);
   const unsubscribe = runtime.agent.subscribe((event) => renderer.accept(event));
   try {
-    const response = await runtime.agent.prompt(contentWithAttachments(prompt, attachments), {
-      requestInput: options.requestInput,
+    const visibleInput = contentWithAttachments(prompt, attachments);
+    const response = await runtime.agent.prompt(visibleInput, {
+      requestInput: requestInputWithMemory(
+        runtime.config,
+        runtime.memory,
+        visibleInput,
+        options.requestInput,
+      ),
     });
     renderer.finish(response);
+    maybeAutoCaptureMemory({
+      config: runtime.config,
+      memory: runtime.memory,
+      visibleInput,
+      response,
+      source: 'sd.repl',
+      sessionAppendMeta: (meta) => runtime.session?.appendMeta(meta),
+    });
     return response;
   } finally {
     unsubscribe();

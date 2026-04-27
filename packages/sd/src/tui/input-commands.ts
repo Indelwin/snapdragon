@@ -2,6 +2,7 @@ import { Writable } from 'node:stream';
 import type { MutableRefObject } from 'react';
 import { contentWithAttachments, type PendingAttachment } from '../attachments.js';
 import { BUILTIN_SLASH_COMMANDS, type CommandResult, handleCommand } from '../commands.js';
+import { maybeAutoCaptureMemory, requestInputWithMemory } from '../memory.js';
 import { defaultIo, runCommandPrompt, type SdIo } from '../repl.js';
 import type { SdRuntime } from '../runtime.js';
 import { matchCommandLine, type SdTuiCommand } from './commands.js';
@@ -25,6 +26,9 @@ export function defaultCommands(
     command('/delete-session', 'delete a session', runSlashCommand, '<id>'),
     command('/profiles', 'list profiles', runSlashCommand),
     command('/profile', 'show or switch profile', runSlashCommand, '[name|none]'),
+    command('/memory', 'show or search memory', runSlashCommand, '[query]'),
+    command('/remember', 'append memory note', runSlashCommand, '<note>'),
+    command('/extensions', 'list extensions', runSlashCommand),
     command('/tools', 'list enabled tools', runSlashCommand),
     command('/providers', 'list configured providers', runSlashCommand),
     command('/provider', 'show or switch provider', runSlashCommand, '<id> [model]'),
@@ -140,7 +144,18 @@ export async function submitLine(args: {
   args.setAttachments([]);
   try {
     args.controller.bindRuntimeAgent();
-    await args.runtime.agent.prompt(contentWithAttachments(args.line, attachments));
+    const visibleInput = contentWithAttachments(args.line, attachments);
+    const response = await args.runtime.agent.prompt(visibleInput, {
+      requestInput: requestInputWithMemory(args.runtime.config, args.runtime.memory, visibleInput),
+    });
+    maybeAutoCaptureMemory({
+      config: args.runtime.config,
+      memory: args.runtime.memory,
+      visibleInput,
+      response,
+      source: 'sd.tui',
+      sessionAppendMeta: (meta) => args.runtime.session?.appendMeta(meta),
+    });
   } catch (error) {
     args.controller.markRunError(error);
   }

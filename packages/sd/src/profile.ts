@@ -2,7 +2,14 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import { homedir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import type { SdAgentConfig, SdSkillsConfig, SdToolsetsConfig } from './config.js';
+import type {
+  SdAgentConfig,
+  SdExtensionsConfig,
+  SdIsolationConfig,
+  SdMemoryConfig,
+  SdSkillsConfig,
+  SdToolsetsConfig,
+} from './config.js';
 
 export const DEFAULT_SD_PROFILE_ROOT = resolve(homedir(), '.snapdragon/sd/profiles');
 export const ACTIVE_PROFILE_FILE = '_active';
@@ -19,6 +26,9 @@ export interface SdProfileConfig {
   agent?: SdAgentConfig;
   toolsets?: SdToolsetsConfig;
   skills?: Omit<SdSkillsConfig, 'root'>;
+  memory?: Omit<SdMemoryConfig, 'root'>;
+  extensions?: SdExtensionsConfig;
+  isolation?: SdIsolationConfig;
 }
 
 export interface SdProfileInfo {
@@ -90,6 +100,9 @@ export class SdProfileStore {
       agent: config.agent,
       toolsets: config.toolsets,
       skills: config.skills,
+      memory: config.memory,
+      extensions: config.extensions,
+      isolation: config.isolation,
     };
     writeFileSync(configPath, stringifyYaml(stripUndefined(profileConfig)), 'utf8');
     if (!profileConfig.persona_inline) {
@@ -147,7 +160,7 @@ export class SdProfileStore {
 }
 
 export function ensureProfileHome(dir: string): void {
-  for (const child of ['skills', 'sessions', 'workspace', 'logs', 'home']) {
+  for (const child of ['skills', 'sessions', 'memory', 'extensions', 'workspace', 'logs', 'home']) {
     mkdirSync(join(dir, child), { recursive: true });
   }
 }

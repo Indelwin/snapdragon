@@ -50,7 +50,14 @@ Feature: sd batteries-included agent
     When sd starts with that profile active
     Then sd should use the profile's sessions directory for JSONL sessions
     And sd should use the profile's skills directory as the writable skill root
+    And sd should use the profile's memory directory for durable scratchpad notes
     And unprofiled sessions and skills should not bleed into the active profile
+
+  Scenario: sd captures durable memory automatically
+    Given the active memory provider is enabled
+    When the user gives a stable preference or correction
+    Then sd should append a note to the active MEMORY.md file
+    And later prompts should receive relevant memory context without loading all sessions
 
   Scenario: sd indexes skills by descriptor before loading bodies
     Given a skill directory contains a SKILL.md file with YAML frontmatter
@@ -64,6 +71,18 @@ Feature: sd batteries-included agent
     Then sd should send the full skill body to the provider for that run
     And sd should persist only the visible command plus skill invocation metadata
     And later prompts should not include the full skill body unless invoked again
+
+  Scenario: sd exposes first-party profile and skill templates
+    Given the user runs setup or starts with a known first-party profile name
+    When sd installs first-party templates
+    Then the code-review, fix-ci, write-tests, release-check, repo-cleanup, and self-build skills should be available
+    And the uncle-bob profile should have an isolated home with inherited auth policy
+
+  Scenario: sd discovers extensions as manifests before loading code
+    Given an extension root contains a snapdragon.extension.yaml manifest
+    When sd scans the extension root
+    Then it should list the extension descriptor and capabilities
+    And it should not execute extension code during discovery
 
   Scenario: sd guards runtime transitions
     Given an agent run is active in the TUI

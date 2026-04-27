@@ -12,6 +12,8 @@ export { helpText, isDirectEntrypoint, main } from './cli.js';
 export {
   DEFAULT_SD_CONFIG_PATH,
   DEFAULT_SD_ENV_PATH,
+  DEFAULT_SD_EXTENSION_ROOT,
+  DEFAULT_SD_MEMORY_ROOT,
   DEFAULT_SD_SESSION_ROOT,
   DEFAULT_SD_SESSION_TITLE_MODEL,
   DEFAULT_SD_SESSION_TITLE_PROVIDER,
@@ -20,6 +22,10 @@ export {
   loadSdEnvironment,
   type SdAgentConfig,
   type SdConfig,
+  type SdExtensionsConfig,
+  type SdIsolationConfig,
+  type SdMemoryAutoConfig,
+  type SdMemoryConfig,
   type SdProviderConfig,
   type SdProviderKind,
   type SdSessionConfig,
@@ -35,6 +41,23 @@ export {
   renderExitSummary,
   writeExitSummary,
 } from './exit-summary.js';
+export {
+  createSdExtensionStore,
+  EXTENSION_MANIFEST_FILES,
+  resolveSdExtensionRoots,
+  SdExtensionStore,
+  type SdExtensionStoreOptions,
+} from './extensions.js';
+export {
+  createSdMemoryStore,
+  DEFAULT_SD_MEMORY_FILE,
+  type MemoryCaptureResult,
+  maybeAutoCaptureMemory,
+  requestInputWithMemory,
+  resolveSdMemoryPath,
+  SdMemoryStore,
+  type SdMemoryStoreOptions,
+} from './memory.js';
 export {
   ACTIVE_PROFILE_FILE,
   DEFAULT_SD_PROFILE_ROOT,

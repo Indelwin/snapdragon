@@ -11,12 +11,14 @@ import {
   writeDefaultConfig,
   writeEnvTemplate,
 } from './config.js';
+import { ensureFirstPartyProfiles, ensureFirstPartySkills } from './first-party.js';
 import { helpText } from './help.js';
 import { type SdProfileInfo, SdProfileStore } from './profile.js';
 import { runSelectedMode } from './run-mode.js';
 import { createSdRuntime } from './runtime.js';
 import { runtimeSessionStore } from './runtime-session.js';
 import { printSessionList } from './session-list-output.js';
+import { DEFAULT_SD_SKILL_ROOT } from './skills.js';
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   const args = parseArgs(argv);
@@ -29,7 +31,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     return;
   }
   if (args.mode === 'setup') {
-    await setup(args.configPath);
+    await setup(args.configPath, args.profileRoot);
     return;
   }
   if (args.mode === 'list-sessions') {
@@ -78,15 +80,19 @@ function profileLine(profile: SdProfileInfo): string {
 
 export { helpText } from './help.js';
 
-async function setup(configPath: string): Promise<void> {
+async function setup(configPath: string, profileRoot?: string): Promise<void> {
   const wroteConfig = await writeDefaultConfig(configPath);
   const wroteEnv = await writeEnvTemplate();
+  const config = await loadSdConfig(configPath);
+  ensureFirstPartySkills(config.skills?.root ?? DEFAULT_SD_SKILL_ROOT);
+  ensureFirstPartyProfiles(new SdProfileStore({ root: profileRoot }).root);
   stdout.write(
     [
       wroteConfig ? `Created ${configPath}` : `Config already exists: ${configPath}`,
       wroteEnv
         ? `Created ${DEFAULT_SD_ENV_PATH}`
         : `Env file already exists: ${DEFAULT_SD_ENV_PATH}`,
+      'Installed first-party skills and profile templates.',
       '',
     ].join('\n'),
   );

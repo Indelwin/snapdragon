@@ -106,6 +106,137 @@ export interface ProfileResourcePolicy {
   authoring?: boolean;
 }
 
+export interface MemoryProviderInfo {
+  id: string;
+  title?: string;
+  description?: string;
+  writable?: boolean;
+  path?: string;
+}
+
+export interface MemoryEntry {
+  id: string;
+  content: string;
+  title?: string;
+  tags?: string[];
+  source?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface MemorySearchResult extends MemoryEntry {
+  score?: number;
+}
+
+export interface MemoryReadRequest {
+  id?: string;
+  limit?: number;
+}
+
+export interface MemoryReadResult {
+  entries: MemoryEntry[];
+  raw?: string;
+}
+
+export interface MemorySearchRequest {
+  query: string;
+  limit?: number;
+}
+
+export interface MemoryAppendRequest {
+  content: string;
+  title?: string;
+  tags?: string[];
+  source?: string;
+  metadata?: Record<string, unknown>;
+}
+
+export type MemoryManageAction = 'append' | 'patch' | 'delete' | 'replace';
+
+export interface MemoryManageRequest extends MemoryAppendRequest {
+  action: MemoryManageAction;
+  id?: string;
+  old_string?: string;
+  new_string?: string;
+}
+
+export interface MemoryManageResult {
+  success: boolean;
+  action: MemoryManageAction;
+  id?: string;
+  path?: string;
+  message?: string;
+  error?: string;
+}
+
+export interface MemoryProvider {
+  info(): MemoryProviderInfo | Promise<MemoryProviderInfo>;
+  read(request?: MemoryReadRequest): MemoryReadResult | Promise<MemoryReadResult>;
+  search(request: MemorySearchRequest): MemorySearchResult[] | Promise<MemorySearchResult[]>;
+  append(request: MemoryAppendRequest): MemoryManageResult | Promise<MemoryManageResult>;
+  manage?(request: MemoryManageRequest): MemoryManageResult | Promise<MemoryManageResult>;
+}
+
+export interface MemoryAutoCaptureInput {
+  userInput: string;
+  assistantOutput?: string;
+  source?: string;
+  tags?: string[];
+}
+
+export interface MemoryAutoCapturePolicy {
+  enabled?: boolean;
+  triggers?: string[];
+  maxEntryChars?: number;
+  includeAssistant?: boolean;
+}
+
+export interface MemoryAutoCaptureDecision {
+  capture: boolean;
+  trigger?: string;
+  reason?: string;
+}
+
+export interface ExtensionContributionManifest {
+  skills?: string[];
+  profiles?: string[];
+  tools?: string[];
+  providers?: string[];
+  ui?: string[];
+  sandboxes?: string[];
+}
+
+export interface ExtensionManifest {
+  id: string;
+  name: string;
+  version?: string;
+  description?: string;
+  main?: string;
+  capabilities?: string[];
+  contributes?: ExtensionContributionManifest;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ExtensionDescriptor extends ExtensionManifest {
+  path?: string;
+  dir?: string;
+  enabled?: boolean;
+}
+
+export const DEFAULT_MEMORY_CAPTURE_TRIGGERS = [
+  'remember',
+  'from now on',
+  'always',
+  'never',
+  'prefer',
+  'preference',
+  'i want',
+  'we should',
+  'do not',
+  "don't",
+];
+
 export interface ParsedSkillMarkdown {
   frontmatter: SkillFrontmatter;
   body: string;
@@ -254,11 +385,83 @@ export function descriptorSummary(descriptor: SkillDescriptor): string {
   return `${descriptor.id} (${descriptor.name}) - ${descriptor.description}`;
 }
 
+export function memoryShouldAutoCapture(
+  input: MemoryAutoCaptureInput,
+  policy: MemoryAutoCapturePolicy = {},
+): MemoryAutoCaptureDecision {
+  if (policy.enabled === false) return { capture: false, reason: 'disabled' };
+  const text = input.userInput.toLowerCase();
+  const triggers = policy.triggers?.length ? policy.triggers : DEFAULT_MEMORY_CAPTURE_TRIGGERS;
+  const trigger = triggers.find((candidate) => text.includes(candidate.toLowerCase()));
+  if (!trigger) return { capture: false, reason: 'no trigger matched' };
+  return { capture: true, trigger };
+}
+
+export function formatMemoryMarkdownEntry(
+  request: MemoryAppendRequest,
+  options: { id?: string; createdAt?: string; maxEntryChars?: number } = {},
+): string {
+  const createdAt = options.createdAt ?? new Date().toISOString();
+  const id = options.id ?? memoryEntryId(createdAt);
+  const title = sanitizeMemoryTitle(request.title ?? request.source ?? 'Memory');
+  const tags = request.tags?.length ? `\ntags: ${request.tags.join(', ')}` : '';
+  const source = request.source ? `\nsource: ${request.source}` : '';
+  const content = clampText(request.content.trim(), options.maxEntryChars);
+  return [`## ${createdAt} - ${title}`, `id: ${id}${source}${tags}`, '', content, ''].join('\n');
+}
+
+export function memoryEntryId(createdAt = new Date().toISOString()): string {
+  return createdAt
+    .replace(/[^0-9a-z]/gi, '')
+    .slice(0, 20)
+    .toLowerCase();
+}
+
+export function normalizeExtensionId(id: string): string {
+  const normalized = id
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9._/-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-/]+|[-/]+$/g, '');
+  if (!normalized) throw new Error('Extension id cannot be empty.');
+  return normalized;
+}
+
+export function parseExtensionManifest(raw: string): ExtensionManifest | undefined {
+  const parsed = parseYaml(raw) as unknown;
+  if (!isRecord(parsed)) return undefined;
+  const id = typeof parsed.id === 'string' ? normalizeExtensionId(parsed.id) : '';
+  const name = typeof parsed.name === 'string' ? parsed.name.trim() : '';
+  if (!id || !name) return undefined;
+  return {
+    ...(parsed as unknown as ExtensionManifest),
+    id,
+    name,
+  };
+}
+
+export function validateExtensionManifest(raw: string): ExtensionManifest {
+  const manifest = parseExtensionManifest(raw);
+  if (!manifest) throw new Error('Extension manifest needs non-empty id and name fields.');
+  return manifest;
+}
+
 function normalizeSkillFrontmatter(value: Record<string, unknown>): SkillFrontmatter | undefined {
   const name = typeof value.name === 'string' ? value.name.trim() : '';
   const description = typeof value.description === 'string' ? value.description.trim() : '';
   if (!name || !description) return undefined;
   return { ...value, name, description } as SkillFrontmatter;
+}
+
+function sanitizeMemoryTitle(value: string): string {
+  const title = value.replace(/\s+/g, ' ').trim();
+  return title.length > 80 ? `${title.slice(0, 77)}...` : title || 'Memory';
+}
+
+function clampText(value: string, maxEntryChars?: number): string {
+  if (!maxEntryChars || value.length <= maxEntryChars) return value;
+  return `${value.slice(0, Math.max(0, maxEntryChars - 3)).trimEnd()}...`;
 }
 
 function normalizeTags(...values: unknown[]): string[] {
