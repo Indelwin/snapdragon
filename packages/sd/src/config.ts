@@ -14,7 +14,13 @@ export const DEFAULT_SD_EXTENSION_ROOT = resolve(homedir(), '.snapdragon/sd/exte
 export const DEFAULT_SD_SESSION_TITLE_PROVIDER = 'anthropic';
 export const DEFAULT_SD_SESSION_TITLE_MODEL = 'claude-haiku-4-5-20251001';
 
-export type SdProviderKind = 'anthropic' | 'openai' | 'openai-compatible' | 'mock' | 'openai-codex';
+export type SdProviderKind =
+  | 'anthropic'
+  | 'openai'
+  | 'openai-compatible'
+  | 'mock'
+  | 'openai-codex'
+  | 'extension';
 
 export interface SdProviderConfig {
   kind?: SdProviderKind;
@@ -27,6 +33,7 @@ export interface SdProviderConfig {
   extra_headers?: Record<string, string>;
   organization_env?: string;
   reasoning?: ReasoningRequest;
+  extension?: string;
 }
 
 export interface SdToolsetsConfig {
@@ -55,6 +62,7 @@ export interface SdMemoryAutoConfig {
 
 export interface SdMemoryConfig {
   enabled?: boolean;
+  provider?: string;
   root?: string;
   file?: string;
   authoring?: boolean;
@@ -70,6 +78,7 @@ export interface SdExtensionsConfig {
   enabled?: string[];
   disabled?: string[];
   hot_reload?: boolean;
+  builtins?: boolean;
 }
 
 export interface SdIsolationConfig {
@@ -191,6 +200,7 @@ export function defaultSdConfig(): SdConfig {
       enabled: [],
       disabled: [],
       hot_reload: true,
+      builtins: true,
     },
     isolation: {
       home: 'profile',

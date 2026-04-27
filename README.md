@@ -12,12 +12,26 @@ The core is in Rust, so I can work on optimising the ECS system as much as possi
 | --- | --- |
 | `@snapdragon-ai/core` | Bundle, signature, schedule, and component-facing types. |
 | `@snapdragon-ai/host` | Capability registry and streaming provider adapters. |
+| `@snapdragon-ai/ui` | Renderer-neutral UI ECS descriptors and state. |
+| `@snapdragon-ai/content` | Side-effect-free contracts for skills, memory, profiles, and extensions. |
 | `@snapdragon-ai/session` | Portable append-only JSONL sessions. |
 | `@snapdragon-ai/config` | Side-effect-free resolved config contracts. |
 | `@snapdragon-ai/tools` | Tool registry, coding tools, and the REPL toolset. |
 | `@snapdragon-ai/agent` | Embeddable chat/coding agent loop. |
 | `@snapdragon-ai/sd` | Batteries included TUI agent for me to test, and use to develop itself! |
 | `@snapdragon-ai/repl` | Minimal CLI for the default coding REPL agent. |
+
+## sd Extensions
+
+`sd` discovers local extensions from `snapdragon.extension.yaml`, `.yml`, or `.json`
+manifests under `~/.snapdragon/sd/extensions` and profile-local `extensions/`
+directories. Discovery reads descriptors only; executable extension code is loaded
+only during activation for enabled extensions.
+
+Extensions can contribute descriptor-only skill roots through the manifest, and
+trusted local modules can register toolsets, provider factories, and memory
+providers through the activation context. Runtime reload is available with
+`/extensions reload`, using the configured hot-reload mode.
 
 ## Layout
 

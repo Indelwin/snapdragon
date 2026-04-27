@@ -15,6 +15,7 @@ import {
   type StreamingChatHandler,
 } from '@snapdragon-ai/host';
 import type { SdConfig, SdProviderConfig, SdProviderKind } from './config.js';
+import type { SdExtensionProviderFactory } from './extension-runtime.js';
 import type { SdRuntime } from './runtime.js';
 
 export interface SdProviderRuntime {
@@ -37,6 +38,7 @@ export function makeSdProvider(
   config: SdConfig,
   overrides: { provider?: string; model?: string } = {},
   env: NodeJS.ProcessEnv = process.env,
+  extensionProviders: Map<string, SdExtensionProviderFactory> = new Map(),
 ): SdProviderRuntime {
   const id = overrides.provider ?? config.default_provider;
   const providerConfig = providerConfigFor(config, id);
@@ -53,6 +55,23 @@ export function makeSdProvider(
     headers: providerConfig.extra_headers,
     reasoning: providerConfig.reasoning,
   } satisfies ResolvedProviderConfig);
+
+  if (kind === 'extension') {
+    const extension = extensionProviderFor(extensionProviders, id, providerConfig).create({
+      id: normalized.id,
+      model: normalized.model,
+      kind,
+      config: providerConfig,
+      env,
+    });
+    return {
+      id: normalized.id,
+      kind,
+      model: extension.model ?? normalized.model,
+      reasoning: extension.reasoning ?? normalized.reasoning,
+      handler: extension.handler,
+    };
+  }
 
   return {
     id: normalized.id,
@@ -81,11 +100,23 @@ export async function discoverSdModels(
   config: SdConfig,
   providerId: string,
   env: NodeJS.ProcessEnv = process.env,
+  extensionProviders: Map<string, SdExtensionProviderFactory> = new Map(),
 ): Promise<ProviderModel[]> {
   const providerConfig = providerConfigFor(config, providerId);
   const kind = providerKindFor(providerId, providerConfig);
   if (kind === 'mock') return [{ id: providerConfig.model ?? 'mock', source: 'static' }];
   if (kind === 'openai-codex') return listCodexModels();
+  if (kind === 'extension') {
+    const factory = extensionProviderFor(extensionProviders, providerId, providerConfig);
+    return (
+      factory.listModels?.({
+        id: providerId,
+        kind,
+        config: providerConfig,
+        env,
+      }) ?? configuredModels(providerConfig).map((id) => ({ id, source: 'static' }))
+    );
+  }
 
   const apiKey = providerConfig.api_key_env
     ? env[providerConfig.api_key_env]
@@ -110,7 +141,12 @@ export async function switchSdProvider(
   if (runtime.provider.id === providerId && (!model || runtime.provider.model === model)) {
     return runtime.provider;
   }
-  const provider = makeSdProvider(runtime.config, { provider: providerId, model }, env);
+  const provider = makeSdProvider(
+    runtime.config,
+    { provider: providerId, model },
+    env,
+    runtime.extensionRuntime.providers,
+  );
   runtime.provider = provider;
   runtime.config.default_provider = provider.id;
   runtime.config.providers[provider.id].model = provider.model;
@@ -147,7 +183,8 @@ function providerKindFor(id: string, providerConfig: SdProviderConfig): SdProvid
     id === 'anthropic' ||
     id === 'openai-compatible' ||
     id === 'openai-codex' ||
-    id === 'mock'
+    id === 'mock' ||
+    id === 'extension'
   ) {
     return id;
   }
@@ -193,6 +230,17 @@ function makeHandler(
     extraHeaders: provider.headers,
     organization: organization(providerConfig, env),
   });
+}
+
+function extensionProviderFor(
+  providers: Map<string, SdExtensionProviderFactory>,
+  providerId: string,
+  config: SdProviderConfig,
+): SdExtensionProviderFactory {
+  const id = config.extension ?? providerId;
+  const provider = providers.get(id);
+  if (!provider) throw new Error(`Extension provider '${id}' is not registered`);
+  return provider;
 }
 
 function requiredEnv(

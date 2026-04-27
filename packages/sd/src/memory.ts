@@ -175,7 +175,19 @@ export class SdMemoryStore implements MemoryProvider {
   }
 }
 
-export function createSdMemoryStore(config: SdConfig, profile?: SdProfileInfo): SdMemoryStore {
+export type SdMemoryProvider = MemoryProvider;
+
+export function createSdMemoryStore(
+  config: SdConfig,
+  profile?: SdProfileInfo,
+  providers: Map<string, MemoryProvider> = new Map(),
+): SdMemoryProvider {
+  const providerId = config.memory?.provider;
+  if (providerId && providerId !== 'sd-markdown') {
+    const provider = providers.get(providerId);
+    if (!provider) throw new Error(`Memory provider '${providerId}' is not registered`);
+    return provider;
+  }
   return new SdMemoryStore({
     path: resolveSdMemoryPath(config, profile),
     enabled: config.memory?.enabled ?? true,
@@ -193,28 +205,33 @@ export function resolveSdMemoryPath(config: SdConfig, profile?: SdProfileInfo): 
 
 export function requestInputWithMemory(
   config: SdConfig,
-  memory: SdMemoryStore,
+  memory: SdMemoryProvider,
   visibleInput: MessageContent,
   requestInput?: MessageContent,
-): MessageContent | undefined {
+): Promise<MessageContent | undefined> | MessageContent | undefined {
   if (config.memory?.enabled === false || config.memory?.context?.enabled === false) {
     return requestInput;
   }
   const base = requestInput ?? visibleInput;
-  const context = memory.contextForPrompt(visibleInput, config.memory?.context?.max_entries ?? 5);
-  if (!context) return requestInput;
-  return prependTextContext(base, context);
+  return memoryContextForPrompt(
+    memory,
+    visibleInput,
+    config.memory?.context?.max_entries ?? 5,
+  ).then((context) => {
+    if (!context) return requestInput;
+    return prependTextContext(base, context);
+  });
 }
 
 export function maybeAutoCaptureMemory(args: {
   config: SdConfig;
-  memory: SdMemoryStore;
+  memory: SdMemoryProvider;
   visibleInput: MessageContent;
   response?: LlmChatResponse;
   source?: string;
   tags?: string[];
   sessionAppendMeta?: (meta: Record<string, unknown>) => void | Promise<void>;
-}): MemoryCaptureResult {
+}): Promise<MemoryCaptureResult> | MemoryCaptureResult {
   const auto = args.config.memory?.auto;
   if (args.config.memory?.enabled === false || auto?.enabled === false) {
     return { captured: false, reason: 'disabled' };
@@ -240,27 +257,45 @@ export function maybeAutoCaptureMemory(args: {
     userInput,
     assistantOutput: auto?.include_assistant ? args.response?.content : undefined,
   });
-  const result = args.memory.append({
+  const appended = args.memory.append({
     title: `Auto capture: ${decision.trigger}`,
     content,
     tags: ['auto', ...(args.tags ?? [])],
     source: args.source ?? 'sd.auto',
   });
-  if (result.success) {
-    void args.sessionAppendMeta?.({
-      memory_capture: {
-        id: result.id,
-        trigger: decision.trigger,
-        path: result.path,
-      },
-    });
-  }
-  return {
-    captured: result.success,
-    id: result.id,
-    trigger: decision.trigger,
-    reason: result.error,
-  };
+  return Promise.resolve(appended).then(async (result) => {
+    if (result.success) {
+      await args.sessionAppendMeta?.({
+        memory_capture: {
+          id: result.id,
+          trigger: decision.trigger,
+          path: result.path,
+        },
+      });
+    }
+    return {
+      captured: result.success,
+      id: result.id,
+      trigger: decision.trigger,
+      reason: result.error,
+    };
+  });
+}
+
+async function memoryContextForPrompt(
+  memory: MemoryProvider,
+  prompt: MessageContent,
+  limit: number,
+): Promise<string> {
+  if (memory instanceof SdMemoryStore) return memory.contextForPrompt(prompt, limit);
+  const query = textFromContent(prompt);
+  const entries = await memory.search({ query, limit });
+  if (entries.length === 0) return '';
+  const info = await memory.info();
+  return [
+    `[${info.title ?? info.id}: Relevant durable notes. Use these as user/project preferences when applicable.]`,
+    ...entries.map((entry) => `- ${entry.title ?? entry.id}: ${oneLine(entry.content)}`),
+  ].join('\n');
 }
 
 function ensureMemoryFile(path: string): void {
