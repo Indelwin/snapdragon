@@ -6,38 +6,16 @@ import { stderr, stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from './args.js';
 import {
-  DEFAULT_SD_CONFIG_PATH,
   DEFAULT_SD_ENV_PATH,
+  loadSdConfig,
   writeDefaultConfig,
   writeEnvTemplate,
 } from './config.js';
+import { helpText } from './help.js';
+import { type SdProfileInfo, SdProfileStore } from './profile.js';
 import { runInteractive, runOneShot } from './repl.js';
 import { createSdRuntime } from './runtime.js';
-
-export const helpText = `sd
-
-Batteries-included Snapdragon code agent REPL.
-
-Usage:
-  sd [options]
-  sd [options] "prompt"
-
-Options:
-  --provider <name>    Provider override (anthropic|openai|openai-compatible|mock)
-  --model <id>         Model override
-  --cwd <path>         Workspace root for coding tools
-  --config <path>      Config file path
-  --session <id>       Resume or create a named session
-  --new-session        Force a new session
-  --no-session         Disable session persistence
-  --setup              Create default config and env template if missing
-  -v, --version        Print version
-  -h, --help           Print help
-
-Defaults:
-  config: ${DEFAULT_SD_CONFIG_PATH}
-  env:    ${DEFAULT_SD_ENV_PATH}
-`;
+import { listRuntimeSessions, runtimeSessionStore } from './runtime-session.js';
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   const args = parseArgs(argv);
@@ -53,14 +31,81 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     await setup(args.configPath);
     return;
   }
+  if (args.mode === 'list-sessions') {
+    await listSessions(args.configPath);
+    return;
+  }
+  if (args.mode === 'delete-session') {
+    await deleteSession(args.configPath, args.deleteSessionId);
+    return;
+  }
+  if (args.mode === 'list-profiles') {
+    listProfiles(new SdProfileStore({ root: args.profileRoot }));
+    return;
+  }
 
   const runtime = await createSdRuntime(args);
-  if (args.prompt) {
-    await runOneShot(runtime, args.prompt);
-  } else {
+  await runSelectedMode(args.mode, runtime, args.prompt);
+}
+
+async function listSessions(configPath: string): Promise<void> {
+  const config = await loadSdConfig(configPath);
+  const sessions = listRuntimeSessions(config);
+  if (sessions.length === 0) {
+    stdout.write('No sessions found.\n');
+    return;
+  }
+  stdout.write(
+    sessions
+      .map(
+        (session) =>
+          `${session.session_id}\t${new Date(session.updated_at * 1000).toISOString()}\t${session.jsonl_size} bytes`,
+      )
+      .join('\n')
+      .concat('\n'),
+  );
+}
+
+async function deleteSession(configPath: string, sessionId: string | undefined): Promise<void> {
+  if (!sessionId) throw new Error('--delete-session requires an id');
+  const config = await loadSdConfig(configPath);
+  const deleted = runtimeSessionStore(config).delete(sessionId);
+  stdout.write(deleted ? `Deleted session ${sessionId}\n` : `Session not found: ${sessionId}\n`);
+}
+
+function listProfiles(store: SdProfileStore): void {
+  const profiles = store.list();
+  if (profiles.length === 0) {
+    stdout.write('No profiles found.\n');
+    return;
+  }
+  stdout.write(profiles.map(profileLine).join('\n').concat('\n'));
+}
+
+function profileLine(profile: SdProfileInfo): string {
+  if (!profile.valid) return `! ${profile.name}\t${profile.error}`;
+  const active = profile.active ? '*' : ' ';
+  const description = profile.config?.description ? `\t${profile.config.description}` : '';
+  return `${active} ${profile.name}${description}`;
+}
+
+async function runSelectedMode(
+  mode: 'tui' | 'repl' | 'print',
+  runtime: Awaited<ReturnType<typeof createSdRuntime>>,
+  prompt: string | undefined,
+): Promise<void> {
+  if (mode === 'print') {
+    if (!prompt) throw new Error('Print mode requires a prompt.');
+    await runOneShot(runtime, prompt);
+  } else if (mode === 'repl') {
     await runInteractive(runtime);
+  } else {
+    const { runTui } = await import('./tui/index.js');
+    await runTui(runtime);
   }
 }
+
+export { helpText } from './help.js';
 
 async function setup(configPath: string): Promise<void> {
   const wroteConfig = await writeDefaultConfig(configPath);

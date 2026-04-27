@@ -1,7 +1,7 @@
 import type { StreamingChatHandler } from '../registry.js';
 import { StreamAggregator } from '../stream/events.js';
 import { sseLines } from '../stream/sse.js';
-import type { LlmChatResponse, ThinkingBlock, ToolCall } from '../types.js';
+import type { GeneratedImage, LlmChatResponse, ThinkingBlock, ToolCall } from '../types.js';
 
 interface CallState {
   id: string;
@@ -16,6 +16,7 @@ export async function readResponsesStream(
 ): Promise<LlmChatResponse> {
   const aggregate = new StreamAggregator();
   const calls = new Map<string, CallState>();
+  const generatedImages: GeneratedImage[] = [];
   const thinking: ThinkingBlock[] = [];
   let tokensIn: number | undefined;
   let tokensOut: number | undefined;
@@ -32,6 +33,9 @@ export async function readResponsesStream(
       acceptThinking(event.delta, provider, thinking, context);
     } else if (type === 'response.output_item.added' || type === 'response.output_item.done') {
       rememberCall(event.item, calls, provider, context);
+      rememberImage(event.item, generatedImages, provider, context);
+    } else if (type === 'response.image_generation_call.partial_image') {
+      rememberPartialImage(event, generatedImages, provider, context);
     } else if (type === 'response.function_call_arguments.delta') {
       appendArgs(event, event.delta, calls, provider, context);
     } else if (type === 'response.completed') {
@@ -46,7 +50,17 @@ export async function readResponsesStream(
   }
   if (streamError) throw new Error(`${provider}: ${streamError}`);
   emitUsage(provider, context, tokensIn, tokensOut);
-  return finish(provider, context, aggregate, calls, thinking, tokensIn, tokensOut, finishReason);
+  return finish(
+    provider,
+    context,
+    aggregate,
+    calls,
+    generatedImages,
+    thinking,
+    tokensIn,
+    tokensOut,
+    finishReason,
+  );
 }
 
 function acceptText(
@@ -88,6 +102,73 @@ function rememberCall(
   if (!existed && name) {
     context.emit({ kind: 'tool_call_start', run_id: context.runId, provider, id, name });
   }
+}
+
+function rememberImage(
+  raw: unknown,
+  generatedImages: GeneratedImage[],
+  provider: string,
+  context: Parameters<StreamingChatHandler>[1],
+): void {
+  const item = asRecord(raw);
+  if (item.type !== 'image_generation_call') return;
+  const image = generatedImageFromItem(item);
+  if (!image.result && !image.id) return;
+  upsertImage(generatedImages, image);
+  context.emit({
+    kind: 'image_generation',
+    run_id: context.runId,
+    provider,
+    image,
+  });
+}
+
+function rememberPartialImage(
+  event: Record<string, unknown>,
+  generatedImages: GeneratedImage[],
+  provider: string,
+  context: Parameters<StreamingChatHandler>[1],
+): void {
+  const result = stringField(event, 'b64_json') ?? stringField(event, 'result');
+  if (!result) return;
+  const image: GeneratedImage = {
+    id: stringField(event, 'item_id') ?? stringField(event, 'id'),
+    result,
+    partial: true,
+    partial_index: numberField(event, 'partial_image_index'),
+  };
+  generatedImages.push(image);
+  context.emit({
+    kind: 'image_generation',
+    run_id: context.runId,
+    provider,
+    image,
+  });
+}
+
+function generatedImageFromItem(item: Record<string, unknown>): GeneratedImage {
+  const result = stringField(item, 'result') ?? stringField(item, 'b64_json');
+  const id = stringField(item, 'id');
+  const revisedPrompt = stringField(item, 'revised_prompt');
+  const metadata = providerMetadata(item, ['type', 'id', 'result', 'b64_json', 'revised_prompt']);
+  return stripUndefined({
+    id,
+    result,
+    revised_prompt: revisedPrompt,
+    provider_metadata: Object.keys(metadata).length > 0 ? metadata : undefined,
+  }) as GeneratedImage;
+}
+
+function upsertImage(generatedImages: GeneratedImage[], image: GeneratedImage): void {
+  if (!image.id) {
+    generatedImages.push(image);
+    return;
+  }
+  const index = generatedImages.findIndex(
+    (existing) => existing.id === image.id && !existing.partial,
+  );
+  if (index === -1) generatedImages.push(image);
+  else generatedImages[index] = { ...generatedImages[index], ...image };
 }
 
 function appendArgs(
@@ -141,6 +222,7 @@ function finish(
   context: Parameters<StreamingChatHandler>[1],
   aggregate: StreamAggregator,
   calls: Map<string, CallState>,
+  generatedImages: GeneratedImage[],
   thinking: ThinkingBlock[],
   tokensIn: number | undefined,
   tokensOut: number | undefined,
@@ -152,6 +234,7 @@ function finish(
   const response = {
     content: aggregate.content,
     tool_calls: tool_calls.length ? tool_calls : undefined,
+    generated_images: generatedImages.length ? generatedImages : undefined,
     thinking: thinking.length ? thinking : undefined,
     tokens_in: tokensIn,
     tokens_out: tokensOut,
@@ -171,6 +254,18 @@ function stringField(record: Record<string, unknown>, key: string): string | und
 
 function numberField(record: Record<string, unknown>, key: string): number | undefined {
   return typeof record[key] === 'number' ? record[key] : undefined;
+}
+
+function providerMetadata(
+  record: Record<string, unknown>,
+  exclude: string[],
+): Record<string, unknown> {
+  const excluded = new Set(exclude);
+  return Object.fromEntries(Object.entries(record).filter(([key]) => !excluded.has(key)));
+}
+
+function stripUndefined(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 }
 
 function errorMessage(event: Record<string, unknown>): string {

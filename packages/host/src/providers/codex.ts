@@ -7,6 +7,8 @@ import { type FetchLike, fetchImpl } from './shared.js';
 const PROVIDER = 'openai-codex';
 const DEFAULT_BASE_URL = 'https://chatgpt.com/backend-api';
 
+export { CODEX_MODELS, listCodexModels } from '../model-discovery.js';
+
 export interface CodexAuth {
   accessToken: string;
   accountId?: string;
@@ -33,6 +35,7 @@ export const codexProviderDescriptor: ProviderDescriptor = {
     fileInput: true,
     reasoning: true,
     modelDiscovery: 'static',
+    imageGeneration: 'responses-tool',
   },
 };
 

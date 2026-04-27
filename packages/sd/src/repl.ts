@@ -75,8 +75,9 @@ async function tryCommand(
 
 function header(runtime: SdRuntime): string {
   const session = runtime.session ? `session ${runtime.session.sessionId}` : 'no session';
+  const profile = runtime.profile ? `profile ${runtime.profile.name}` : 'no profile';
   return [
-    `sd ${runtime.provider.id}/${runtime.provider.model} (${session})`,
+    `sd ${runtime.provider.id}/${runtime.provider.model} (${session}, ${profile})`,
     'Type /help for commands.',
     '',
   ].join('\n');

@@ -24,13 +24,15 @@ test('sd binary runs through an npm-style symlink', async () => {
 
 test('parseArgs handles run, one-shot, setup, and session flags', () => {
   assert.deepEqual(parseArgs(['--provider', 'mock', '--model=mock-1', '--no-session', 'hello']), {
-    mode: 'run',
+    mode: 'print',
     provider: 'mock',
     model: 'mock-1',
     cwd: process.cwd(),
     configPath: DEFAULT_SD_CONFIG_PATH,
     noSession: true,
     newSession: false,
+    resume: false,
+    noProfile: false,
     prompt: 'hello',
   });
 
@@ -41,10 +43,31 @@ test('parseArgs handles run, one-shot, setup, and session flags', () => {
   const session = parseArgs(['--session', 'work', '--new-session']);
   assert.equal(session.sessionId, 'work');
   assert.equal(session.newSession, true);
+
+  const resume = parseArgs(['--resume', '--profile', 'daily']);
+  assert.equal(resume.resume, true);
+  assert.equal(resume.profileName, 'daily');
+
+  const deleteSession = parseArgs(['--delete-session', 'old']);
+  assert.equal(deleteSession.mode, 'delete-session');
+  assert.equal(deleteSession.deleteSessionId, 'old');
+});
+
+test('parseArgs handles TUI and REPL modes', () => {
+  assert.equal(parseArgs([]).mode, 'tui');
+  assert.equal(parseArgs(['--repl']).mode, 'repl');
+  assert.equal(parseArgs(['repl']).mode, 'repl');
+  assert.equal(parseArgs(['--mode', 'print', 'hello']).mode, 'print');
+  assert.throws(() => parseArgs(['--mode', 'unknown']), /Invalid --mode/);
 });
 
 test('help text documents the minimal REPL surface', () => {
   assert.match(helpText, /--provider/);
+  assert.match(helpText, /--repl/);
+  assert.match(helpText, /--mode/);
   assert.match(helpText, /--session/);
+  assert.match(helpText, /--resume/);
+  assert.match(helpText, /--profile/);
+  assert.match(helpText, /--list-sessions/);
   assert.match(helpText, /--setup/);
 });

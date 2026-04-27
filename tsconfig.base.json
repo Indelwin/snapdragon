@@ -20,6 +20,7 @@
       "@snapdragon-ai/core": ["packages/core/src/index.ts"],
       "@snapdragon-ai/host": ["packages/host/src/index.ts"],
       "@snapdragon-ai/host/*": ["packages/host/src/*"],
+      "@snapdragon-ai/ui": ["packages/ui/src/index.ts"],
       "@snapdragon-ai/session": ["packages/session/src/index.ts"],
       "@snapdragon-ai/config": ["packages/config/src/index.ts"],
       "@snapdragon-ai/tools": ["packages/tools/src/index.ts"],

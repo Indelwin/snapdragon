@@ -1,5 +1,5 @@
 import { contentText, dataUrl, normalizeContent } from '../content.js';
-import type { ContentBlock, LlmChatRequest, Message } from '../types.js';
+import type { ContentBlock, LlmChatRequest, Message, NativeToolDefinition } from '../types.js';
 import { nonSystemMessages, systemInstructions, toolChoiceForResponses } from './shared.js';
 
 export interface ResponsesPayload {
@@ -19,14 +19,20 @@ export function openAIResponsesBody(model: string, request: LlmChatRequest): Res
   if (request.temperature !== undefined) body.temperature = request.temperature;
   if (request.max_tokens !== undefined) body.max_output_tokens = request.max_tokens;
   if (request.stop !== undefined) body.stop = request.stop;
-  if (request.tools && request.tools.length > 0) {
-    body.tools = request.tools.map((tool) => ({
+  const tools = [
+    ...(request.tools ?? []).map((tool) => ({
       type: 'function',
       name: tool.name,
       description: tool.description,
       parameters: tool.parameters,
-    }));
-    body.tool_choice = toolChoiceForResponses(request.tool_choice);
+    })),
+    ...(request.native_tools ?? []).map(nativeToolForResponses),
+  ];
+  if (tools.length > 0) {
+    body.tools = tools;
+    if (request.tools && request.tools.length > 0) {
+      body.tool_choice = toolChoiceForResponses(request.tool_choice);
+    }
   }
   if (request.reasoning?.enabled || request.reasoning?.effort) {
     body.reasoning = {
@@ -35,6 +41,27 @@ export function openAIResponsesBody(model: string, request: LlmChatRequest): Res
     };
   }
   return { body, instructions };
+}
+
+function nativeToolForResponses(tool: NativeToolDefinition): Record<string, unknown> {
+  if (tool.type === 'image_generation') {
+    return stripUndefined({
+      type: 'image_generation',
+      model: tool.model,
+      size: tool.size,
+      quality: tool.quality,
+      background: tool.background,
+      output_format: tool.output_format,
+      output_compression: tool.output_compression,
+      partial_images: tool.partial_images,
+      action: tool.action,
+    });
+  }
+  return stripUndefined({ ...tool });
+}
+
+function stripUndefined(record: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(record).filter(([, value]) => value !== undefined));
 }
 
 export function messageToResponsesItems(message: Message): Array<Record<string, unknown>> {
