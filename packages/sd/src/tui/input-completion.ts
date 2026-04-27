@@ -4,11 +4,11 @@ export interface PromptSuggestion {
   label: string;
   description: string;
   insertText: string;
-  kind: 'command' | 'shell' | 'provider' | 'model' | 'session' | 'profile';
+  kind: 'command' | 'shell' | 'provider' | 'model' | 'session' | 'profile' | 'skill';
 }
 
 export interface PromptCompletionState {
-  mode: 'slash' | 'shell' | 'provider' | 'model' | 'session' | 'profile';
+  mode: 'slash' | 'shell' | 'provider' | 'model' | 'session' | 'profile' | 'skill';
   query: string;
   selectedIndex: number;
   suggestions: PromptSuggestion[];
@@ -20,6 +20,7 @@ export interface PromptCompletionCatalog {
   models?: Array<{ id: string; active?: boolean }>;
   sessions?: Array<{ id: string; active?: boolean; updatedAt?: number }>;
   profiles?: Array<{ id: string; active?: boolean; description?: string; valid?: boolean }>;
+  skills?: Array<{ id: string; command: string; description?: string }>;
 }
 
 export function buildPromptCompletion(
@@ -178,6 +179,21 @@ function slashArgumentCompletion(
       suggestions,
     });
   }
+  if (command === '/skill') {
+    const skillEntries = (catalog.skills ?? []).filter(
+      (skill) =>
+        !query ||
+        skill.id.toLowerCase().startsWith(query) ||
+        skill.command.toLowerCase().startsWith(query),
+    );
+    const suggestions = skillEntries.map((skill) => ({
+      label: skill.id,
+      description: skill.description ?? 'skill',
+      insertText: `/skill ${skill.id}`,
+      kind: 'skill' as const,
+    }));
+    return clampCompletion({ mode: 'skill', query, selectedIndex, suggestions });
+  }
   return undefined;
 }
 
@@ -194,7 +210,8 @@ function supportsBareArgumentCompletion(command: string): boolean {
     command === '/model' ||
     command === '/resume' ||
     command === '/delete-session' ||
-    command === '/profile'
+    command === '/profile' ||
+    command === '/skill'
   );
 }
 

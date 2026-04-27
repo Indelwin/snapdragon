@@ -34,6 +34,15 @@ export interface SdToolsetsConfig {
   denied_tools?: string[];
 }
 
+export interface SdSkillsConfig {
+  root?: string;
+  shared_roots?: string[];
+  compatibility_roots?: string[];
+  enabled?: string[];
+  disabled?: string[];
+  authoring?: boolean;
+}
+
 export interface SdSessionTitleConfig {
   enabled?: boolean;
   provider?: string;
@@ -59,6 +68,7 @@ export interface SdConfig {
   default_provider: string;
   providers: Record<string, SdProviderConfig>;
   sessions?: SdSessionConfig;
+  skills?: SdSkillsConfig;
   toolsets?: SdToolsetsConfig;
   agent?: SdAgentConfig;
 }
@@ -114,8 +124,15 @@ export function defaultSdConfig(): SdConfig {
         max_tokens: 48,
       },
     },
+    skills: {
+      authoring: true,
+      shared_roots: [],
+      compatibility_roots: [],
+      enabled: [],
+      disabled: [],
+    },
     toolsets: {
-      enabled: ['file', 'shell', 'repl'],
+      enabled: ['file', 'shell', 'repl', 'skill'],
       disabled: [],
       denied_tools: [],
     },
@@ -144,8 +161,23 @@ export function withDefaults(input: Partial<SdConfig>): SdConfig {
     default_provider: input.default_provider ?? defaults.default_provider,
     providers,
     sessions: mergeSessionConfig(defaults.sessions, input.sessions),
+    skills: mergeSkillsConfig(defaults.skills, input.skills),
     toolsets: { ...defaults.toolsets, ...(input.toolsets ?? {}) },
     agent: { ...defaults.agent, ...(input.agent ?? {}) },
+  };
+}
+
+function mergeSkillsConfig(
+  defaults: SdSkillsConfig | undefined,
+  input: SdSkillsConfig | undefined,
+): SdSkillsConfig {
+  return {
+    ...defaults,
+    ...(input ?? {}),
+    shared_roots: input?.shared_roots ?? defaults?.shared_roots,
+    compatibility_roots: input?.compatibility_roots ?? defaults?.compatibility_roots,
+    enabled: input?.enabled ?? defaults?.enabled,
+    disabled: input?.disabled ?? defaults?.disabled,
   };
 }
 

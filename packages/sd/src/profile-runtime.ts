@@ -1,5 +1,6 @@
+import { join } from 'node:path';
 import { defaultCodingSystemPrompt } from '@snapdragon-ai/agent';
-import type { SdConfig, SdProviderConfig, SdToolsetsConfig } from './config.js';
+import type { SdConfig, SdProviderConfig, SdSkillsConfig, SdToolsetsConfig } from './config.js';
 import type { SdProfileInfo } from './profile.js';
 
 export interface SdRuntimeCliOverrides {
@@ -32,8 +33,12 @@ function applyProfileOverlay(config: SdConfig, profile: SdProfileInfo | undefine
   if (profileConfig.model?.provider) config.default_provider = profileConfig.model.provider;
   const providerId = profileConfig.model?.provider ?? config.default_provider;
   if (profileConfig.model?.name) applyProviderModel(config, providerId, profileConfig.model.name);
+  if (profile?.dir) {
+    config.sessions = { ...(config.sessions ?? {}), root: join(profile.dir, 'sessions') };
+  }
   config.agent = { ...config.agent, ...(profileConfig.agent ?? {}) };
   config.toolsets = mergeToolsets(config.toolsets, profileConfig.toolsets);
+  config.skills = mergeSkills(config.skills, profileConfig.skills);
 }
 
 function applyCliOverrides(config: SdConfig, overrides: SdRuntimeCliOverrides): void {
@@ -60,6 +65,17 @@ function cloneConfig(config: SdConfig): SdConfig {
       Object.entries(config.providers).map(([id, provider]) => [id, cloneProvider(provider)]),
     ),
     sessions: config.sessions ? { ...config.sessions } : undefined,
+    skills: config.skills
+      ? {
+          ...config.skills,
+          shared_roots: config.skills.shared_roots ? [...config.skills.shared_roots] : undefined,
+          compatibility_roots: config.skills.compatibility_roots
+            ? [...config.skills.compatibility_roots]
+            : undefined,
+          enabled: config.skills.enabled ? [...config.skills.enabled] : undefined,
+          disabled: config.skills.disabled ? [...config.skills.disabled] : undefined,
+        }
+      : undefined,
     toolsets: config.toolsets ? cloneToolsets(config.toolsets) : undefined,
     agent: config.agent
       ? {
@@ -67,6 +83,22 @@ function cloneConfig(config: SdConfig): SdConfig {
           reasoning: config.agent.reasoning ? { ...config.agent.reasoning } : undefined,
         }
       : undefined,
+  };
+}
+
+function mergeSkills(
+  base: SdConfig['skills'],
+  overlay: Omit<SdSkillsConfig, 'root'> | undefined,
+): SdConfig['skills'] {
+  if (!base && !overlay) return undefined;
+  return {
+    ...(base ?? {}),
+    ...(overlay ?? {}),
+    root: base?.root,
+    shared_roots: overlay?.shared_roots ?? base?.shared_roots,
+    compatibility_roots: overlay?.compatibility_roots ?? base?.compatibility_roots,
+    enabled: overlay?.enabled ?? base?.enabled,
+    disabled: overlay?.disabled ?? base?.disabled,
   };
 }
 

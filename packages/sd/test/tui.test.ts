@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -222,6 +222,37 @@ test('TUI session and profile commands open selectable prompt options', async ()
     assert.equal(draft, '/profile ');
     assert.equal(completion?.mode, 'profile');
     assert.equal(completion?.suggestions[0]?.label, 'none');
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('TUI skills command opens selectable skill options', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-skill-selectors-'));
+  try {
+    await writeSkill(join(workspace, 'skills'), 'code-review', 'code-review', 'Review code');
+    const runtime = await createMockRuntime(workspace);
+    const controller = new SdUiController(runtime);
+    let draft = '';
+    let completion: PromptCompletionState | undefined;
+
+    await runSlashLine({
+      line: '/skills',
+      runtime,
+      controller,
+      exit: () => undefined,
+      attachmentsRef: { current: [] },
+      setAttachments: () => undefined,
+      setPalette: () => undefined,
+      openSelection: (nextDraft, nextCompletion) => {
+        draft = nextDraft;
+        completion = nextCompletion;
+      },
+    });
+
+    assert.equal(draft, '/skill ');
+    assert.equal(completion?.mode, 'skill');
+    assert.equal(completion?.suggestions[0]?.label, 'code-review');
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
@@ -453,6 +484,19 @@ test('prompt completion supports session and profile arguments', () => {
   );
 });
 
+test('prompt completion supports skill arguments', () => {
+  const catalog = {
+    skills: [{ id: 'code-review', command: '/code-review', description: 'Review code' }],
+  };
+  const skill = buildPromptCompletion('/skill code', testCommands(), [], catalog);
+  assert.equal(skill?.mode, 'skill');
+  assert.equal(skill?.suggestions[0]?.label, 'code-review');
+  assert.equal(
+    completePromptDraft('/skill code', testCommands(), [], skill, catalog)?.draft,
+    '/skill code-review',
+  );
+});
+
 test('inline shell command returns stdout and error status', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-shell-'));
   try {
@@ -480,6 +524,8 @@ async function createMockRuntime(workspace: string) {
       '    model: mock',
       'sessions:',
       `  root: "${join(workspace, 'sessions').replace(/"/g, '\\"')}"`,
+      'skills:',
+      `  root: "${join(workspace, 'skills').replace(/"/g, '\\"')}"`,
       '',
     ].join('\n'),
     'utf8',
@@ -488,6 +534,21 @@ async function createMockRuntime(workspace: string) {
     ...parseArgs(['--config', configPath, '--cwd', workspace]),
     profileRoot: join(workspace, 'profiles'),
   });
+}
+
+async function writeSkill(
+  root: string,
+  id: string,
+  name: string,
+  description: string,
+): Promise<void> {
+  const dir = join(root, id);
+  await mkdir(dir, { recursive: true });
+  await writeFile(
+    join(dir, 'SKILL.md'),
+    ['---', `name: ${name}`, `description: ${description}`, '---', '', 'Body.', ''].join('\n'),
+    'utf8',
+  );
 }
 
 function testCommands(): SdTuiCommand[] {

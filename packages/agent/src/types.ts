@@ -23,6 +23,7 @@ export interface AgentOptions {
 export interface PromptOptions {
   runId?: string;
   signal?: AbortSignal;
+  requestInput?: AgentPromptInput;
 }
 
 export interface CodingAgentOptions extends Omit<AgentOptions, 'tools'> {
