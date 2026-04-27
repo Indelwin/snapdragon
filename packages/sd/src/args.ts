@@ -1,28 +1,18 @@
-import { resolve } from 'node:path';
-import { DEFAULT_SD_CONFIG_PATH } from './config.js';
-
-export type SdCliMode = 'run' | 'help' | 'version' | 'setup';
-
-export interface SdCliArgs {
-  mode: SdCliMode;
-  provider?: string;
-  model?: string;
-  cwd: string;
-  configPath: string;
-  sessionId?: string;
-  newSession: boolean;
-  noSession: boolean;
-  prompt?: string;
-}
+import {
+  addPromptPart,
+  applyPrompt,
+  applyValueFlag,
+  defaultArgs,
+  isValueFlag,
+  modeForFlag,
+  splitFlag,
+  takeValue,
+} from './args-helpers.js';
+import type { SdCliArgs } from './args-types.js';
+import { parseRunMode } from './modes.js';
 
 export function parseArgs(argv: string[], cwd = process.cwd()): SdCliArgs {
-  const out: SdCliArgs = {
-    mode: 'run',
-    cwd,
-    configPath: DEFAULT_SD_CONFIG_PATH,
-    newSession: false,
-    noSession: false,
-  };
+  const out = defaultArgs(cwd);
   const promptParts: string[] = [];
 
   for (let i = 0; i < argv.length; i += 1) {
@@ -31,58 +21,49 @@ export function parseArgs(argv: string[], cwd = process.cwd()): SdCliArgs {
       promptParts.push(...argv.slice(i + 1));
       break;
     }
-    const { flag, value } = splitFlag(raw);
-    switch (flag) {
-      case '--help':
-      case '-h':
-        out.mode = 'help';
-        break;
-      case '--version':
-      case '-v':
-        out.mode = 'version';
-        break;
-      case '--setup':
-        out.mode = 'setup';
-        break;
-      case '--provider':
-        out.provider = value ?? expectValue(argv, ++i, flag);
-        break;
-      case '--model':
-        out.model = value ?? expectValue(argv, ++i, flag);
-        break;
-      case '--cwd':
-        out.cwd = resolve(value ?? expectValue(argv, ++i, flag));
-        break;
-      case '--config':
-        out.configPath = resolve(value ?? expectValue(argv, ++i, flag));
-        break;
-      case '--session':
-        out.sessionId = value ?? expectValue(argv, ++i, flag);
-        break;
-      case '--new-session':
-        out.newSession = true;
-        break;
-      case '--no-session':
-        out.noSession = true;
-        break;
-      default:
-        if (raw.startsWith('-')) throw new Error(`Unknown option: ${raw}`);
-        promptParts.push(raw);
+
+    const parsed = splitFlag(raw);
+    const mode = modeForFlag(parsed.flag);
+    if (mode) {
+      out.mode = mode;
+      continue;
     }
+
+    if (parsed.flag === '--mode') {
+      const taken = takeValue(parsed.value, argv, i, parsed.flag);
+      out.mode = parseRunMode(taken.value);
+      i = taken.index;
+      continue;
+    }
+
+    if (isValueFlag(parsed.flag)) {
+      const taken = takeValue(parsed.value, argv, i, parsed.flag);
+      applyValueFlag(out, parsed.flag, taken.value);
+      i = taken.index;
+      continue;
+    }
+
+    if (parsed.flag === '--new-session') {
+      out.newSession = true;
+      continue;
+    }
+    if (parsed.flag === '--no-session') {
+      out.noSession = true;
+      continue;
+    }
+    if (parsed.flag === '--resume') {
+      out.resume = true;
+      continue;
+    }
+    if (parsed.flag === '--no-profile') {
+      out.noProfile = true;
+      continue;
+    }
+    addPromptPart(raw, out, promptParts);
   }
 
-  if (promptParts.length > 0) out.prompt = promptParts.join(' ');
+  applyPrompt(out, promptParts);
   return out;
 }
 
-function splitFlag(raw: string): { flag: string; value?: string } {
-  const index = raw.indexOf('=');
-  if (index <= 0 || !raw.startsWith('-')) return { flag: raw };
-  return { flag: raw.slice(0, index), value: raw.slice(index + 1) };
-}
-
-function expectValue(argv: string[], index: number, flag: string): string {
-  const value = argv[index];
-  if (!value) throw new Error(`Missing value for ${flag}`);
-  return value;
-}
+export type { SdCliArgs, SdCliMode } from './args-types.js';

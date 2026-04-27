@@ -6,6 +6,8 @@ import { type FetchLike, fetchImpl } from './shared.js';
 
 const PROVIDER = 'anthropic';
 
+export { listAnthropicModels } from '../model-discovery.js';
+
 export interface AnthropicProviderOptions {
   apiKey: string;
   model: string;
@@ -26,6 +28,7 @@ export const anthropicProviderDescriptor: ProviderDescriptor = {
     fileInput: true,
     reasoning: true,
     modelDiscovery: true,
+    imageGeneration: false,
   },
 };
 

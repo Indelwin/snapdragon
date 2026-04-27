@@ -5,6 +5,7 @@ export interface ProviderCapabilities {
   fileInput: boolean;
   reasoning: boolean;
   modelDiscovery: boolean | 'static';
+  imageGeneration: boolean | 'responses-tool' | 'images-api';
 }
 
 export interface ProviderDescriptor {

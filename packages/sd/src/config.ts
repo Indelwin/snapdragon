@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, resolve } from 'node:path';
-import type { ReasoningRequest } from '@snapdragon-ai/host';
+import { CODEX_MODELS, type ReasoningRequest } from '@snapdragon-ai/host';
 import { parse as parseDotenv } from 'dotenv';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 
@@ -17,7 +17,9 @@ export interface SdProviderConfig {
   api_key_env?: string;
   model?: string;
   default_model?: string;
+  models?: string[];
   base_url?: string;
+  codex_auth_path?: string;
   extra_headers?: Record<string, string>;
   organization_env?: string;
   reasoning?: ReasoningRequest;
@@ -85,6 +87,11 @@ export function defaultSdConfig(): SdConfig {
       mock: {
         kind: 'mock',
         model: 'mock',
+      },
+      'openai-codex': {
+        kind: 'openai-codex',
+        model: 'gpt-5.5',
+        models: [...CODEX_MODELS],
       },
     },
     sessions: {
