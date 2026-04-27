@@ -1,4 +1,4 @@
-import type { LlmChatResponse } from '../types.js';
+import type { GeneratedImage, LlmChatResponse } from '../types.js';
 
 export type StreamEvent =
   | { kind: 'started'; run_id: string; provider: string; role: string; model?: string }
@@ -6,6 +6,7 @@ export type StreamEvent =
   | { kind: 'thinking'; run_id: string; provider: string; delta: string }
   | { kind: 'tool_call_start'; run_id: string; provider: string; id: string; name: string }
   | { kind: 'input_json_delta'; run_id: string; provider: string; delta: string }
+  | { kind: 'image_generation'; run_id: string; provider: string; image: GeneratedImage }
   | { kind: 'content_block_stop'; run_id: string; provider: string }
   | { kind: 'usage'; run_id: string; provider: string; input_tokens: number; output_tokens: number }
   | { kind: 'max_tokens_reached'; run_id: string; provider: string }

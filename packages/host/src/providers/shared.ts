@@ -17,6 +17,7 @@ export const commonStreamingTools = {
   fileInput: false,
   reasoning: true,
   modelDiscovery: true,
+  imageGeneration: false,
 } satisfies ProviderDescriptor['capabilities'];
 
 export function fetchImpl(candidate: FetchLike | undefined): FetchLike {

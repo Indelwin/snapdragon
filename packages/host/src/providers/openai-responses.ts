@@ -6,6 +6,8 @@ import { type FetchLike, fetchImpl } from './shared.js';
 
 const PROVIDER = 'openai';
 
+export { listOpenAIResponsesModels } from '../model-discovery.js';
+
 export interface OpenAIResponsesProviderOptions {
   apiKey: string;
   model: string;
@@ -26,6 +28,7 @@ export const openaiResponsesProviderDescriptor: ProviderDescriptor = {
     fileInput: true,
     reasoning: true,
     modelDiscovery: true,
+    imageGeneration: 'responses-tool',
   },
 };
 

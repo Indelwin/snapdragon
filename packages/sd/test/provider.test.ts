@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { defaultSdConfig, type SdConfig } from '../src/config.ts';
-import { makeSdProvider } from '../src/provider.ts';
+import { configuredModelsForProvider, listSdProviders, makeSdProvider } from '../src/provider.ts';
 
 test('makeSdProvider resolves mock without API credentials', () => {
   const config = configWithProvider('mock');
@@ -44,6 +44,24 @@ test('makeSdProvider supports OpenAI Responses and compatible endpoints', () => 
   assert.equal(openai.kind, 'openai');
   assert.equal(compatible.kind, 'openai-compatible');
   assert.equal(compatible.model, 'custom-model');
+});
+
+test('makeSdProvider supports OpenAI Codex without API key env vars', () => {
+  const config = defaultSdConfig();
+  const provider = makeSdProvider(config, { provider: 'openai-codex' }, {});
+  assert.equal(provider.kind, 'openai-codex');
+  assert.equal(provider.model, 'gpt-5.5');
+});
+
+test('provider summaries expose configured models and active provider', () => {
+  const config = defaultSdConfig();
+  const providers = listSdProviders(config, 'openai-codex');
+  const codex = providers.find((provider) => provider.id === 'openai-codex');
+
+  assert.equal(codex?.active, true);
+  assert.equal(codex?.model, 'gpt-5.5');
+  assert.ok(codex?.models.includes('gpt-5.5'));
+  assert.deepEqual(configuredModelsForProvider(config, 'mock'), ['mock']);
 });
 
 function configWithProvider(provider: string): SdConfig {
