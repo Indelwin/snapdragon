@@ -1,35 +1,71 @@
 import { createCodingReplAgent, type SnapdragonAgent } from '@snapdragon-ai/agent';
 import { normalizeToolsetsConfig } from '@snapdragon-ai/config';
-import { type JsonlSession, SessionStore } from '@snapdragon-ai/session';
-import type { SdCliArgs } from './args.js';
-import {
-  DEFAULT_SD_SESSION_ROOT,
-  loadSdConfig,
-  loadSdEnvironment,
-  type SdConfig,
-} from './config.js';
+import type { JsonlSession } from '@snapdragon-ai/session';
+import type { SdCliArgs } from './args-types.js';
+import { loadSdConfig, loadSdEnvironment, type SdConfig } from './config.js';
+import { type SdProfileInfo, SdProfileStore } from './profile.js';
+import { resolveSdRuntimeConfig } from './profile-runtime.js';
 import { makeSdProvider, type SdProviderRuntime } from './provider.js';
+import { normalizeRuntimeOptions, type SdRuntimeOptions } from './runtime-options.js';
+import { createRuntimeSession, sessionRoot } from './runtime-session.js';
 
 export interface SdRuntime {
   agent: SnapdragonAgent;
+  baseConfig: SdConfig;
   config: SdConfig;
   provider: SdProviderRuntime;
+  profile?: SdProfileInfo;
+  profileStore: SdProfileStore;
   session?: JsonlSession;
   sessionRoot?: string;
+  systemPrompt?: string;
+  options: SdRuntimeOptions;
+  env: NodeJS.ProcessEnv;
 }
 
 export async function createSdRuntime(
-  args: SdCliArgs,
+  args: SdRuntimeOptions | SdCliArgs,
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<SdRuntime> {
+  const options = normalizeRuntimeOptions(args);
   await loadSdEnvironment(undefined, env);
-  const config = await loadSdConfig(args.configPath);
-  const provider = makeSdProvider(config, { provider: args.provider, model: args.model }, env);
-  const session = createSession(args, config, provider);
+  const baseConfig = await loadSdConfig(options.configPath);
+  const profileStore = new SdProfileStore({ root: options.profileRoot });
+  const profile = resolveRuntimeProfile(options, profileStore);
+  const { config, systemPrompt } = resolveSdRuntimeConfig(baseConfig, profile, {
+    provider: options.provider,
+    model: options.model,
+  });
+  const provider = makeSdProvider(config, {}, env);
+  const session = createRuntimeSession(options, config, provider);
+  const agent = await createSdAgent(options, config, provider, session, systemPrompt);
+  return {
+    agent,
+    baseConfig,
+    config,
+    provider,
+    profile,
+    profileStore,
+    session,
+    sessionRoot: session ? sessionRoot(config) : undefined,
+    systemPrompt,
+    options,
+    env,
+  };
+}
+
+export async function createSdAgent(
+  options: SdRuntimeOptions,
+  config: SdConfig,
+  provider: SdProviderRuntime,
+  session: JsonlSession | undefined,
+  systemPrompt?: string,
+): Promise<SnapdragonAgent> {
   const agent = await createCodingReplAgent({
     provider: provider.handler,
-    cwd: args.cwd,
+    cwd: options.cwd,
     session,
+    systemPrompt,
     maxTurns: config.agent?.max_turns,
     temperature: config.agent?.temperature,
     maxTokens: config.agent?.max_tokens,
@@ -42,36 +78,17 @@ export async function createSdRuntime(
     allowedTools: toolsets.allowedTools,
     deniedTools: toolsets.deniedTools,
   });
-
-  return {
-    agent,
-    config,
-    provider,
-    session,
-    sessionRoot: session ? sessionRoot(config) : undefined,
-  };
+  return agent;
 }
 
-function createSession(
-  args: SdCliArgs,
-  config: SdConfig,
-  provider: SdProviderRuntime,
-): JsonlSession | undefined {
-  if (args.noSession || config.sessions?.enabled === false) return undefined;
-  const store = new SessionStore({ root: sessionRoot(config) });
-  const meta = {
-    app: 'sd',
-    provider: provider.id,
-    model: provider.model,
-    cwd: args.cwd,
-  };
-  if (args.newSession) {
-    return store.create(args.sessionId ?? SessionStore.generateId(), meta);
-  }
-  if (args.sessionId) return store.openOrCreate(args.sessionId, meta);
-  return store.create(SessionStore.generateId(), meta);
+function resolveRuntimeProfile(
+  options: SdRuntimeOptions,
+  store: SdProfileStore,
+): SdProfileInfo | undefined {
+  if (options.noProfile) return undefined;
+  const name = options.profileName ?? store.activeName();
+  return name ? store.load(name) : undefined;
 }
 
-function sessionRoot(config: SdConfig): string {
-  return config.sessions?.root ?? DEFAULT_SD_SESSION_ROOT;
-}
+export { resolveSdRuntimeConfig } from './profile-runtime.js';
+export { normalizeRuntimeOptions, type SdRuntimeOptions } from './runtime-options.js';

@@ -12,6 +12,8 @@ import {
 
 const PROVIDER = 'openai-compatible';
 
+export { listOpenAICompatibleModels } from '../model-discovery.js';
+
 export interface OpenAICompatibleProviderOptions {
   apiKey: string;
   model: string;
@@ -32,6 +34,7 @@ export const openaiCompatibleProviderDescriptor: ProviderDescriptor = {
     fileInput: true,
     reasoning: false,
     modelDiscovery: true,
+    imageGeneration: false,
   },
 };
 

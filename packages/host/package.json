@@ -30,9 +30,21 @@
       "types": "./dist/providers/codex.d.ts",
       "import": "./dist/providers/codex.js"
     },
+    "./providers/codex-auth": {
+      "types": "./dist/providers/codex-auth.d.ts",
+      "import": "./dist/providers/codex-auth.js"
+    },
+    "./providers/codex-auth-store": {
+      "types": "./dist/providers/codex-auth-store.d.ts",
+      "import": "./dist/providers/codex-auth-store.js"
+    },
     "./providers/anthropic": {
       "types": "./dist/providers/anthropic.d.ts",
       "import": "./dist/providers/anthropic.js"
+    },
+    "./model-discovery": {
+      "types": "./dist/model-discovery.d.ts",
+      "import": "./dist/model-discovery.js"
     }
   },
   "files": [

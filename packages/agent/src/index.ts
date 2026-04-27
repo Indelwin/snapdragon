@@ -23,6 +23,7 @@ type AgentOptionsPlus = AgentOptions & ReasoningOptions;
 type CodingOptions = CodingAgentOptions & ReasoningOptions;
 type AgentArgsPlus = SnapdragonAgentArgs & ReasoningOptions;
 
+export { defaultCodingSystemPrompt, defaultSystemPrompt } from './prompts.js';
 export type * from './types.js';
 
 export class SnapdragonAgent {
@@ -76,6 +77,11 @@ export class SnapdragonAgent {
   subscribe(listener: AgentEventListener): () => void {
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
+  }
+
+  setProvider(provider: StreamingChatHandler, options: ReasoningOptions = {}): void {
+    this.#provider = provider;
+    if ('reasoning' in options) this.#reasoning = options.reasoning;
   }
 
   async prompt(input: AgentPromptInput, options: PromptOptions = {}): Promise<LlmChatResponse> {
