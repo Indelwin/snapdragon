@@ -13,9 +13,10 @@ import {
 } from './config.js';
 import { helpText } from './help.js';
 import { type SdProfileInfo, SdProfileStore } from './profile.js';
-import { runInteractive, runOneShot } from './repl.js';
+import { runSelectedMode } from './run-mode.js';
 import { createSdRuntime } from './runtime.js';
-import { listRuntimeSessions, runtimeSessionStore } from './runtime-session.js';
+import { runtimeSessionStore } from './runtime-session.js';
+import { printSessionList } from './session-list-output.js';
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   const args = parseArgs(argv);
@@ -49,21 +50,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 }
 
 async function listSessions(configPath: string): Promise<void> {
-  const config = await loadSdConfig(configPath);
-  const sessions = listRuntimeSessions(config);
-  if (sessions.length === 0) {
-    stdout.write('No sessions found.\n');
-    return;
-  }
-  stdout.write(
-    sessions
-      .map(
-        (session) =>
-          `${session.session_id}\t${new Date(session.updated_at * 1000).toISOString()}\t${session.jsonl_size} bytes`,
-      )
-      .join('\n')
-      .concat('\n'),
-  );
+  await printSessionList(configPath, stdout);
 }
 
 async function deleteSession(configPath: string, sessionId: string | undefined): Promise<void> {
@@ -87,22 +74,6 @@ function profileLine(profile: SdProfileInfo): string {
   const active = profile.active ? '*' : ' ';
   const description = profile.config?.description ? `\t${profile.config.description}` : '';
   return `${active} ${profile.name}${description}`;
-}
-
-async function runSelectedMode(
-  mode: 'tui' | 'repl' | 'print',
-  runtime: Awaited<ReturnType<typeof createSdRuntime>>,
-  prompt: string | undefined,
-): Promise<void> {
-  if (mode === 'print') {
-    if (!prompt) throw new Error('Print mode requires a prompt.');
-    await runOneShot(runtime, prompt);
-  } else if (mode === 'repl') {
-    await runInteractive(runtime);
-  } else {
-    const { runTui } = await import('./tui/index.js');
-    await runTui(runtime);
-  }
 }
 
 export { helpText } from './help.js';

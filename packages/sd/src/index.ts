@@ -13,6 +13,8 @@ export {
   DEFAULT_SD_CONFIG_PATH,
   DEFAULT_SD_ENV_PATH,
   DEFAULT_SD_SESSION_ROOT,
+  DEFAULT_SD_SESSION_TITLE_MODEL,
+  DEFAULT_SD_SESSION_TITLE_PROVIDER,
   defaultSdConfig,
   loadSdConfig,
   loadSdEnvironment,
@@ -21,11 +23,18 @@ export {
   type SdProviderConfig,
   type SdProviderKind,
   type SdSessionConfig,
+  type SdSessionTitleConfig,
   type SdToolsetsConfig,
   withDefaults,
   writeDefaultConfig,
   writeEnvTemplate,
 } from './config.js';
+export {
+  type ExitSummaryOptions,
+  formatDuration,
+  renderExitSummary,
+  writeExitSummary,
+} from './exit-summary.js';
 export {
   ACTIVE_PROFILE_FILE,
   DEFAULT_SD_PROFILE_ROOT,
@@ -64,6 +73,19 @@ export {
   type SdRuntimeRebuildOptions,
   switchRuntimeProfile,
 } from './runtime-transitions.js';
+export {
+  fallbackTitleFromMessages,
+  latestSessionMeta,
+  messageText,
+  type SdSessionSummary,
+  sessionTitle,
+  summarizeSession,
+} from './session-summary.js';
+export {
+  DEFAULT_SESSION_TITLE_MODEL,
+  type EnsureSessionTitleOptions,
+  ensureSessionTitle,
+} from './session-title.js';
 export type { SdTuiOptions } from './tui/index.js';
 
 export async function runTui(runtime: SdRuntime, options?: SdTuiOptions): Promise<void> {

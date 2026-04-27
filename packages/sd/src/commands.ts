@@ -12,11 +12,11 @@ import type { SdRuntime } from './runtime.js';
 import {
   currentProfileName,
   deleteRuntimeSession,
-  listSessions,
   newRuntimeSession,
   resumeRuntimeSession,
   switchRuntimeProfile,
 } from './runtime-transitions.js';
+import { sessionCommandSummary } from './session-command-display.js';
 
 export interface CommandResult {
   quit: boolean;
@@ -34,8 +34,8 @@ export async function handleCommand(
   if (command === '/quit' || command === '/exit') return { quit: true, attachments };
   if (command === '/help') return writeResult(io, slashHelp(), attachments);
   if (command === '/clear') return clearHistory(runtime, io, attachments);
-  if (command === '/session') return writeResult(io, sessionSummary(runtime), attachments);
-  if (command === '/sessions') return writeResult(io, sessionsSummary(runtime), attachments);
+  if (command === '/session' || command === '/sessions')
+    return writeResult(io, sessionCommandSummary(command, runtime), attachments);
   if (command === '/resume') return resumeSessionCommand(arg, runtime, io, attachments);
   if (command === '/new-session') return newSessionCommand(arg, runtime, io, attachments);
   if (command === '/delete-session') return deleteSessionCommand(arg, runtime, io, attachments);
@@ -244,28 +244,6 @@ function slashHelp(): string {
     '  /model [id]           Show or switch model on active provider',
     '  /attach <path-or-url> Attach an image to the next prompt',
     '  /clear-attachments    Clear pending attachments',
-  ].join('\n');
-}
-
-function sessionSummary(runtime: SdRuntime): string {
-  if (!runtime.session) return 'Sessions are disabled for this run.';
-  return [
-    `id: ${runtime.session.sessionId}`,
-    `path: ${runtime.session.jsonlPath}`,
-    `messages: ${runtime.session.messages().length}`,
-  ].join('\n');
-}
-
-function sessionsSummary(runtime: SdRuntime): string {
-  const sessions = listSessions(runtime);
-  if (sessions.length === 0) return 'No sessions found.';
-  return [
-    'Sessions:',
-    ...sessions.map((session) => {
-      const active = runtime.session?.sessionId === session.session_id ? '*' : ' ';
-      const updated = new Date(session.updated_at * 1000).toISOString();
-      return `${active} ${session.session_id} ${updated} ${session.jsonl_size} bytes`;
-    }),
   ].join('\n');
 }
 
