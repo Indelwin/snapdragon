@@ -42,7 +42,16 @@ test('SdProfileStore scaffolds isolated profile homes', async () => {
     const info = new SdProfileStore({ root }).create('daily', { description: 'Daily driver' });
 
     assert.equal(info.valid, true);
-    for (const child of ['SOUL.md', 'skills', 'sessions', 'workspace', 'logs', 'home']) {
+    for (const child of [
+      'SOUL.md',
+      'skills',
+      'sessions',
+      'memory',
+      'extensions',
+      'workspace',
+      'logs',
+      'home',
+    ]) {
       assert.ok(await exists(join(root, 'daily', child)));
     }
   } finally {

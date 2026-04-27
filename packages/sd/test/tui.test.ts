@@ -526,6 +526,7 @@ async function createMockRuntime(workspace: string) {
       `  root: "${join(workspace, 'sessions').replace(/"/g, '\\"')}"`,
       'skills:',
       `  root: "${join(workspace, 'skills').replace(/"/g, '\\"')}"`,
+      '  builtins: false',
       '',
     ].join('\n'),
     'utf8',

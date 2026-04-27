@@ -1,6 +1,13 @@
 import { join } from 'node:path';
 import { defaultCodingSystemPrompt } from '@snapdragon-ai/agent';
-import type { SdConfig, SdProviderConfig, SdSkillsConfig, SdToolsetsConfig } from './config.js';
+import type {
+  SdConfig,
+  SdExtensionsConfig,
+  SdMemoryConfig,
+  SdProviderConfig,
+  SdSkillsConfig,
+  SdToolsetsConfig,
+} from './config.js';
 import type { SdProfileInfo } from './profile.js';
 
 export interface SdRuntimeCliOverrides {
@@ -35,10 +42,18 @@ function applyProfileOverlay(config: SdConfig, profile: SdProfileInfo | undefine
   if (profileConfig.model?.name) applyProviderModel(config, providerId, profileConfig.model.name);
   if (profile?.dir) {
     config.sessions = { ...(config.sessions ?? {}), root: join(profile.dir, 'sessions') };
+    config.memory = { ...(config.memory ?? {}), root: join(profile.dir, 'memory') };
+    config.extensions = {
+      ...(config.extensions ?? {}),
+      roots: [join(profile.dir, 'extensions'), ...(config.extensions?.roots ?? [])],
+    };
   }
   config.agent = { ...config.agent, ...(profileConfig.agent ?? {}) };
   config.toolsets = mergeToolsets(config.toolsets, profileConfig.toolsets);
   config.skills = mergeSkills(config.skills, profileConfig.skills);
+  config.memory = mergeMemory(config.memory, profileConfig.memory);
+  config.extensions = mergeExtensions(config.extensions, profileConfig.extensions);
+  config.isolation = { ...(config.isolation ?? {}), ...(profileConfig.isolation ?? {}) };
 }
 
 function applyCliOverrides(config: SdConfig, overrides: SdRuntimeCliOverrides): void {
@@ -65,6 +80,22 @@ function cloneConfig(config: SdConfig): SdConfig {
       Object.entries(config.providers).map(([id, provider]) => [id, cloneProvider(provider)]),
     ),
     sessions: config.sessions ? { ...config.sessions } : undefined,
+    memory: config.memory
+      ? {
+          ...config.memory,
+          auto: config.memory.auto ? { ...config.memory.auto } : undefined,
+          context: config.memory.context ? { ...config.memory.context } : undefined,
+        }
+      : undefined,
+    extensions: config.extensions
+      ? {
+          ...config.extensions,
+          roots: config.extensions.roots ? [...config.extensions.roots] : undefined,
+          enabled: config.extensions.enabled ? [...config.extensions.enabled] : undefined,
+          disabled: config.extensions.disabled ? [...config.extensions.disabled] : undefined,
+        }
+      : undefined,
+    isolation: config.isolation ? { ...config.isolation } : undefined,
     skills: config.skills
       ? {
           ...config.skills,
@@ -83,6 +114,34 @@ function cloneConfig(config: SdConfig): SdConfig {
           reasoning: config.agent.reasoning ? { ...config.agent.reasoning } : undefined,
         }
       : undefined,
+  };
+}
+
+function mergeMemory(
+  base: SdConfig['memory'],
+  overlay: Omit<SdMemoryConfig, 'root'> | undefined,
+): SdConfig['memory'] {
+  if (!base && !overlay) return undefined;
+  return {
+    ...(base ?? {}),
+    ...(overlay ?? {}),
+    root: base?.root,
+    auto: { ...(base?.auto ?? {}), ...(overlay?.auto ?? {}) },
+    context: { ...(base?.context ?? {}), ...(overlay?.context ?? {}) },
+  };
+}
+
+function mergeExtensions(
+  base: SdConfig['extensions'],
+  overlay: SdExtensionsConfig | undefined,
+): SdConfig['extensions'] {
+  if (!base && !overlay) return undefined;
+  return {
+    ...(base ?? {}),
+    ...(overlay ?? {}),
+    roots: overlay?.roots ? [...overlay.roots] : base?.roots,
+    enabled: overlay?.enabled ? [...overlay.enabled] : base?.enabled,
+    disabled: overlay?.disabled ? [...overlay.disabled] : base?.disabled,
   };
 }
 

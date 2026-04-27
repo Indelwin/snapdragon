@@ -39,6 +39,11 @@ export const BUILTIN_SLASH_COMMANDS = [
   '/delete-session',
   '/profiles',
   '/profile',
+  '/memory',
+  '/remember',
+  '/extensions',
+  '/skills',
+  '/skill',
   '/tools',
   '/providers',
   '/provider',
@@ -68,6 +73,9 @@ export async function handleCommand(
   if (command === '/delete-session') return deleteSessionCommand(arg, runtime, io, attachments);
   if (command === '/profiles') return writeResult(io, profilesSummary(runtime), attachments);
   if (command === '/profile') return profileCommand(arg, runtime, io, attachments);
+  if (command === '/memory') return writeResult(io, memorySummary(runtime, arg), attachments);
+  if (command === '/remember') return rememberCommand(arg, runtime, io, attachments);
+  if (command === '/extensions') return writeResult(io, extensionsSummary(runtime), attachments);
   if (command === '/skills') return writeResult(io, skillsSummary(runtime), attachments);
   if (command === '/skill') return skillCommand(line, arg, runtime, io, attachments);
   if (command === '/tools') return writeResult(io, toolsSummary(runtime), attachments);
@@ -301,6 +309,9 @@ function slashHelp(): string {
     '  /delete-session <id>  Delete a session',
     '  /profiles             List profiles',
     '  /profile [name|none]  Show or switch profile',
+    '  /memory [query]        Show or search durable memory',
+    '  /remember <note>       Append a durable memory note',
+    '  /extensions            List discovered extensions',
     '  /skills               List skills',
     '  /skill <id> [task]    Run a skill for one request',
     '  /tools                List enabled tools',
@@ -310,6 +321,63 @@ function slashHelp(): string {
     '  /model [id]           Show or switch model on active provider',
     '  /attach <path-or-url> Attach an image to the next prompt',
     '  /clear-attachments    Clear pending attachments',
+  ].join('\n');
+}
+
+function memorySummary(runtime: SdRuntime, query: string): string {
+  if (runtime.config.memory?.enabled === false) return 'Memory is disabled.';
+  if (query) {
+    const results = runtime.memory.search({ query, limit: 10 });
+    return [
+      `Memory matches for "${query}":`,
+      ...(results.length
+        ? results.map((entry) => `  ${entry.id} ${entry.title ?? ''} - ${entry.content}`)
+        : ['  (none)']),
+    ].join('\n');
+  }
+  const info = runtime.memory.info();
+  const entries = runtime.memory.read({ limit: 20 }).entries;
+  return [
+    `Memory: ${info.path ?? info.id}`,
+    ...entries.map((entry) => `  ${entry.id} ${entry.title ?? ''}`.trimEnd()),
+    entries.length === 0 ? '  (empty)' : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+}
+
+function rememberCommand(
+  arg: string,
+  runtime: SdRuntime,
+  io: SdIo,
+  attachments: PendingAttachment[],
+): CommandResult {
+  if (!arg) return writeResult(io, 'Usage: /remember <note>', attachments);
+  const result = runtime.memory.append({
+    title: 'Manual note',
+    content: arg,
+    source: 'sd.command',
+  });
+  return writeResult(
+    io,
+    result.success ? (result.message ?? 'Memory updated.') : (result.error ?? 'Memory failed.'),
+    attachments,
+  );
+}
+
+function extensionsSummary(runtime: SdRuntime): string {
+  const extensions = runtime.extensions.list();
+  if (extensions.length === 0) return 'No extensions found.';
+  return [
+    'Extensions:',
+    ...extensions.map((extension) => {
+      const enabled = extension.enabled ? '+' : '-';
+      const capabilities = extension.capabilities?.length
+        ? ` [${extension.capabilities.join(', ')}]`
+        : '';
+      const description = extension.description ? ` - ${extension.description}` : '';
+      return `${enabled} ${extension.id} (${extension.name})${capabilities}${description}`;
+    }),
   ].join('\n');
 }
 

@@ -18,6 +18,10 @@
       "types": "./dist/toolsets/file.d.ts",
       "import": "./dist/toolsets/file.js"
     },
+    "./toolsets/memory": {
+      "types": "./dist/toolsets/memory.d.ts",
+      "import": "./dist/toolsets/memory.js"
+    },
     "./toolsets/shell": {
       "types": "./dist/toolsets/shell.d.ts",
       "import": "./dist/toolsets/shell.js"

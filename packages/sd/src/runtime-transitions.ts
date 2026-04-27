@@ -1,5 +1,7 @@
 import type { Message } from '@snapdragon-ai/host';
 import type { JsonlSession, SessionInfo } from '@snapdragon-ai/session';
+import { createSdExtensionStore } from './extensions.js';
+import { createSdMemoryStore } from './memory.js';
 import type { SdProfileInfo } from './profile.js';
 import { resolveSdRuntimeConfig, type SdRuntimeCliOverrides } from './profile-runtime.js';
 import { makeSdProvider } from './provider.js';
@@ -29,12 +31,15 @@ export async function rebuildSdRuntime(
   const { config, systemPrompt } = resolveSdRuntimeConfig(runtime.baseConfig, profile, overrides);
   const provider = makeSdProvider(config, {}, runtime.env);
   const skills = createSdSkillStore(config, profile);
+  const memory = createSdMemoryStore(config, profile);
+  const extensions = createSdExtensionStore(config, profile);
   const agent = await createSdAgent(
     runtime.options,
     config,
     provider,
     session,
     skills,
+    memory,
     systemPrompt,
   );
 
@@ -45,6 +50,8 @@ export async function rebuildSdRuntime(
   runtime.session = session;
   runtime.sessionRoot = session ? sessionRoot(config) : undefined;
   runtime.skills = skills;
+  runtime.memory = memory;
+  runtime.extensions = extensions;
   runtime.systemPrompt = systemPrompt;
 }
 

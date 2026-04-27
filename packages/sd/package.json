@@ -23,7 +23,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "build": "tsc -p tsconfig.build.json && cp -R src/first-party dist/first-party && chmod +x dist/cli.js",
     "clean": "rm -rf dist",
     "typecheck": "tsc -b tsconfig.build.json --pretty false",
     "test": "node --test --import tsx test/*.test.ts"

@@ -5,4 +5,4 @@
 "@snapdragon-ai/sd": minor
 ---
 
-Add descriptor-first skill contracts, generic skill tools, one-request sd skill commands, and profile-local skill/session homes.
+Add descriptor-first skill contracts, generic skill tools, one-request sd skill commands, profile-local skill/session homes, memory provider contracts, Markdown memory tools, first-party skills/profile templates, and extension manifest discovery.
