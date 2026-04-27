@@ -38,6 +38,7 @@
     "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },
   "dependencies": {
+    "@snapdragon-ai/content": "0.1.1",
     "@snapdragon-ai/core": "0.1.1",
     "@snapdragon-ai/host": "0.1.1"
   },

@@ -91,8 +91,8 @@ export function useSdTuiInput({ runtime, controller, exit }: SdTuiInputOptions):
   );
 
   const commands = useMemo<SdTuiCommand[]>(
-    () => defaultCommands(runSlashCommand),
-    [runSlashCommand],
+    () => defaultCommands(runSlashCommand, runtime),
+    [runSlashCommand, runtime],
   );
 
   useEffect(() => {
@@ -198,5 +198,10 @@ function completionCatalog(runtime: SdRuntime): PromptCompletionCatalog {
         valid: profile.valid,
       })),
     ],
+    skills: runtime.skills.list().map((skill) => ({
+      id: skill.id,
+      command: skill.command,
+      description: skill.description,
+    })),
   };
 }

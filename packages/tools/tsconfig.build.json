@@ -7,6 +7,7 @@
     "outDir": "dist"
   },
   "references": [
+    { "path": "../content/tsconfig.build.json" },
     { "path": "../core/tsconfig.build.json" },
     { "path": "../host/tsconfig.build.json" }
   ],

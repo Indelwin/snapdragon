@@ -1,6 +1,7 @@
 import { createCodingReplAgent, type SnapdragonAgent } from '@snapdragon-ai/agent';
 import { normalizeToolsetsConfig } from '@snapdragon-ai/config';
 import type { JsonlSession } from '@snapdragon-ai/session';
+import { skillToolset } from '@snapdragon-ai/tools';
 import type { SdCliArgs } from './args-types.js';
 import { loadSdConfig, loadSdEnvironment, type SdConfig } from './config.js';
 import { type SdProfileInfo, SdProfileStore } from './profile.js';
@@ -8,6 +9,7 @@ import { resolveSdRuntimeConfig } from './profile-runtime.js';
 import { makeSdProvider, type SdProviderRuntime } from './provider.js';
 import { normalizeRuntimeOptions, type SdRuntimeOptions } from './runtime-options.js';
 import { createRuntimeSession, sessionRoot } from './runtime-session.js';
+import { createSdSkillStore, type SdSkillStore } from './skills.js';
 
 export interface SdRuntime {
   agent: SnapdragonAgent;
@@ -18,6 +20,7 @@ export interface SdRuntime {
   profileStore: SdProfileStore;
   session?: JsonlSession;
   sessionRoot?: string;
+  skills: SdSkillStore;
   systemPrompt?: string;
   options: SdRuntimeOptions;
   env: NodeJS.ProcessEnv;
@@ -38,7 +41,8 @@ export async function createSdRuntime(
   });
   const provider = makeSdProvider(config, {}, env);
   const session = createRuntimeSession(options, config, provider);
-  const agent = await createSdAgent(options, config, provider, session, systemPrompt);
+  const skills = createSdSkillStore(config, profile);
+  const agent = await createSdAgent(options, config, provider, session, skills, systemPrompt);
   return {
     agent,
     baseConfig,
@@ -48,6 +52,7 @@ export async function createSdRuntime(
     profileStore,
     session,
     sessionRoot: session ? sessionRoot(config) : undefined,
+    skills,
     systemPrompt,
     options,
     env,
@@ -59,6 +64,7 @@ export async function createSdAgent(
   config: SdConfig,
   provider: SdProviderRuntime,
   session: JsonlSession | undefined,
+  skills: SdSkillStore,
   systemPrompt?: string,
 ): Promise<SnapdragonAgent> {
   const agent = await createCodingReplAgent({
@@ -71,6 +77,9 @@ export async function createSdAgent(
     maxTokens: config.agent?.max_tokens,
     reasoning: config.agent?.reasoning ?? provider.reasoning,
   });
+  await agent.registry.register(
+    skillToolset({ catalog: skills, authoring: config.skills?.authoring ?? true }),
+  );
   const toolsets = normalizeToolsetsConfig(config.toolsets);
   agent.registry.applyConfig({
     enabled: toolsets.enabled,

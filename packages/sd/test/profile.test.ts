@@ -35,6 +35,21 @@ test('SdProfileStore loads YAML profiles, SOUL.md persona, and sticky default', 
   }
 });
 
+test('SdProfileStore scaffolds isolated profile homes', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-profile-home-'));
+  try {
+    const root = join(workspace, 'profiles');
+    const info = new SdProfileStore({ root }).create('daily', { description: 'Daily driver' });
+
+    assert.equal(info.valid, true);
+    for (const child of ['SOUL.md', 'skills', 'sessions', 'workspace', 'logs', 'home']) {
+      assert.ok(await exists(join(root, 'daily', child)));
+    }
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
 test('profile persona_inline wins over persona and profile model overlays base config', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-profile-overlay-'));
   try {
@@ -77,4 +92,13 @@ async function writeProfile(root: string, name: string, lines: string[]): Promis
   const dir = join(root, name);
   await mkdir(dir, { recursive: true });
   await writeFile(join(dir, 'profile.yaml'), lines.join('\n'), 'utf8');
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await import('node:fs/promises').then((fs) => fs.stat(path));
+    return true;
+  } catch {
+    return false;
+  }
 }

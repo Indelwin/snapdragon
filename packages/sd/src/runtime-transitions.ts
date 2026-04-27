@@ -10,6 +10,7 @@ import {
   runtimeSessionStore,
   sessionRoot,
 } from './runtime-session.js';
+import { createSdSkillStore } from './skills.js';
 
 export interface SdRuntimeRebuildOptions {
   profile?: SdProfileInfo | null;
@@ -27,7 +28,15 @@ export async function rebuildSdRuntime(
   const overrides = runtimeOverrides(runtime, options);
   const { config, systemPrompt } = resolveSdRuntimeConfig(runtime.baseConfig, profile, overrides);
   const provider = makeSdProvider(config, {}, runtime.env);
-  const agent = await createSdAgent(runtime.options, config, provider, session, systemPrompt);
+  const skills = createSdSkillStore(config, profile);
+  const agent = await createSdAgent(
+    runtime.options,
+    config,
+    provider,
+    session,
+    skills,
+    systemPrompt,
+  );
 
   runtime.config = config;
   runtime.provider = provider;
@@ -35,6 +44,7 @@ export async function rebuildSdRuntime(
   runtime.profile = profile;
   runtime.session = session;
   runtime.sessionRoot = session ? sessionRoot(config) : undefined;
+  runtime.skills = skills;
   runtime.systemPrompt = systemPrompt;
 }
 
@@ -83,7 +93,20 @@ export async function switchRuntimeProfile(
   name: string | null,
 ): Promise<SdProfileInfo | undefined> {
   const profile = name === null ? undefined : runtime.profileStore.load(name);
-  await rebuildSdRuntime(runtime, { profile, session: runtime.session });
+  const { config } = resolveSdRuntimeConfig(
+    runtime.baseConfig,
+    profile,
+    runtimeOverrides(runtime, {}),
+  );
+  const provider = makeSdProvider(config, {}, runtime.env);
+  const session =
+    runtime.options.noSession || config.sessions?.enabled === false
+      ? undefined
+      : runtimeSessionStore(config).create(
+          undefined,
+          runtimeSessionMeta(runtime.options, provider),
+        );
+  await rebuildSdRuntime(runtime, { profile, session });
   recordSystemCommand(
     runtime,
     profile ? `Switched profile to ${profile.name}.` : 'Profile cleared.',

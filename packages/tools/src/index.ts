@@ -9,6 +9,8 @@ export type { ReplToolsetOptions } from './toolsets/repl.js';
 export { replToolset } from './toolsets/repl.js';
 export type { ShellToolsetOptions } from './toolsets/shell.js';
 export { shellToolset } from './toolsets/shell.js';
+export type { SkillToolsetOptions } from './toolsets/skill.js';
+export { skillToolset } from './toolsets/skill.js';
 export type {
   RegisteredTool,
   Tool,

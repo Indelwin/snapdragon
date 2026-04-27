@@ -17,11 +17,38 @@ import {
   switchRuntimeProfile,
 } from './runtime-transitions.js';
 import { sessionCommandSummary } from './session-command-display.js';
+import { buildSkillInvocation, type SkillInvocation, skillForSlashCommand } from './skills.js';
 
 export interface CommandResult {
   quit: boolean;
   attachments: PendingAttachment[];
+  prompt?: CommandPromptRun;
 }
+
+export type CommandPromptRun = SkillInvocation;
+
+export const BUILTIN_SLASH_COMMANDS = [
+  '/help',
+  '/quit',
+  '/exit',
+  '/clear',
+  '/session',
+  '/sessions',
+  '/resume',
+  '/new-session',
+  '/delete-session',
+  '/profiles',
+  '/profile',
+  '/tools',
+  '/providers',
+  '/provider',
+  '/models',
+  '/model',
+  '/attach',
+  '/clear-attachments',
+  '/events',
+  '/palette',
+];
 
 export async function handleCommand(
   line: string,
@@ -41,6 +68,8 @@ export async function handleCommand(
   if (command === '/delete-session') return deleteSessionCommand(arg, runtime, io, attachments);
   if (command === '/profiles') return writeResult(io, profilesSummary(runtime), attachments);
   if (command === '/profile') return profileCommand(arg, runtime, io, attachments);
+  if (command === '/skills') return writeResult(io, skillsSummary(runtime), attachments);
+  if (command === '/skill') return skillCommand(line, arg, runtime, io, attachments);
   if (command === '/tools') return writeResult(io, toolsSummary(runtime), attachments);
   if (command === '/providers') return writeResult(io, providersSummary(runtime), attachments);
   if (command === '/provider') return providerCommand(arg, runtime, io, attachments);
@@ -51,8 +80,43 @@ export async function handleCommand(
     return writeResult(io, 'Cleared pending attachments.', []);
   }
 
+  const skill = skillForSlashCommand(runtime.skills, command, BUILTIN_SLASH_COMMANDS);
+  if (skill) {
+    return skillPrompt(line, skill.id, arg, runtime, attachments);
+  }
+
   io.error.write(`Unknown command: ${command}\n`);
   return { quit: false, attachments };
+}
+
+function skillCommand(
+  line: string,
+  arg: string,
+  runtime: SdRuntime,
+  io: SdIo,
+  attachments: PendingAttachment[],
+): CommandResult {
+  if (!arg) return writeResult(io, skillsSummary(runtime), attachments);
+  const [target = '', ...rest] = arg.split(/\s+/);
+  return skillPrompt(line, target, rest.join(' ').trim(), runtime, attachments);
+}
+
+function skillPrompt(
+  line: string,
+  target: string,
+  task: string,
+  runtime: SdRuntime,
+  attachments: PendingAttachment[],
+): CommandResult {
+  const skill = runtime.skills.load(target);
+  if (!skill) {
+    throw new Error(`Skill not found: ${target}`);
+  }
+  return {
+    quit: false,
+    attachments,
+    prompt: buildSkillInvocation(skill, line, task),
+  };
 }
 
 async function providerCommand(
@@ -237,6 +301,8 @@ function slashHelp(): string {
     '  /delete-session <id>  Delete a session',
     '  /profiles             List profiles',
     '  /profile [name|none]  Show or switch profile',
+    '  /skills               List skills',
+    '  /skill <id> [task]    Run a skill for one request',
     '  /tools                List enabled tools',
     '  /providers            List configured providers',
     '  /provider [id] [model] Show or switch provider',
@@ -262,6 +328,15 @@ function profilesSummary(runtime: SdRuntime): string {
       const description = profile.config?.description ? ` - ${profile.config.description}` : '';
       return `${active} ${profile.name}${description}`;
     }),
+  ].join('\n');
+}
+
+function skillsSummary(runtime: SdRuntime): string {
+  const skills = runtime.skills.list();
+  if (skills.length === 0) return 'No skills found.';
+  return [
+    'Skills:',
+    ...skills.map((skill) => `  ${skill.id} (${skill.command}) - ${skill.description}`),
   ].join('\n');
 }
 
