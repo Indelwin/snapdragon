@@ -39,6 +39,7 @@ function makeTitleProvider(runtime: SdRuntime, options: EnsureSessionTitleOption
     runtime.config,
     { provider: titleProvider(runtime, options), model: titleModel(runtime, options) },
     runtime.env,
+    runtime.extensionRuntime?.providers,
   );
 }
 

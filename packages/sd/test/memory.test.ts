@@ -47,7 +47,10 @@ test('first-party uncle-bob profile template is instantiated with profile-local 
     });
 
     assert.equal(runtime.profile?.name, 'uncle-bob');
-    assert.match(runtime.memory.path, /profiles\/uncle-bob\/memory\/MEMORY.md$/);
+    assert.match(
+      (await runtime.memory.info()).path ?? '',
+      /profiles\/uncle-bob\/memory\/MEMORY.md$/,
+    );
     assert.ok(runtime.skills.load('code-review'));
   } finally {
     await rm(workspace, { force: true, recursive: true });
@@ -101,6 +104,7 @@ async function writeMockConfig(workspace: string): Promise<string> {
       'memory:',
       `  root: "${escapeYaml(join(workspace, 'memory'))}"`,
       'extensions:',
+      '  builtins: false',
       '  roots:',
       `    - "${escapeYaml(join(workspace, 'extensions'))}"`,
       'toolsets:',

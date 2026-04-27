@@ -203,6 +203,7 @@ export interface ExtensionContributionManifest {
   profiles?: string[];
   tools?: string[];
   providers?: string[];
+  memory?: string[];
   ui?: string[];
   sandboxes?: string[];
 }

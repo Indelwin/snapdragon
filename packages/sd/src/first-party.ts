@@ -9,6 +9,7 @@ import {
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_SD_EXTENSION_ROOT, type SdConfig } from './config.js';
 
 export function ensureFirstPartySkills(root: string): void {
   copyChildren(firstPartyPath('skills'), root);
@@ -23,6 +24,15 @@ export function ensureFirstPartyProfile(root: string, name: string): boolean {
 
 export function ensureFirstPartyProfiles(root: string): void {
   copyChildren(firstPartyPath('profiles'), root);
+}
+
+export function ensureFirstPartyExtensions(root: string): void {
+  copyChildren(firstPartyPath('extensions'), root);
+}
+
+export function ensureFirstPartyExtensionsForConfig(config: SdConfig): void {
+  if (config.extensions?.builtins === false) return;
+  ensureFirstPartyExtensions(config.extensions?.roots?.[0] ?? DEFAULT_SD_EXTENSION_ROOT);
 }
 
 function firstPartyPath(...parts: string[]): string {

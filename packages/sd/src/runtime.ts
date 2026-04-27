@@ -4,9 +4,10 @@ import type { JsonlSession } from '@snapdragon-ai/session';
 import { memoryToolset, skillToolset } from '@snapdragon-ai/tools';
 import type { SdCliArgs } from './args-types.js';
 import { loadSdConfig, loadSdEnvironment, type SdConfig } from './config.js';
+import { activateSdExtensions, type SdExtensionRuntime } from './extension-runtime.js';
 import { createSdExtensionStore, type SdExtensionStore } from './extensions.js';
-import { ensureFirstPartyProfile } from './first-party.js';
-import { createSdMemoryStore, type SdMemoryStore } from './memory.js';
+import { ensureFirstPartyExtensionsForConfig, ensureFirstPartyProfile } from './first-party.js';
+import { createSdMemoryStore, type SdMemoryProvider } from './memory.js';
 import { type SdProfileInfo, SdProfileStore } from './profile.js';
 import { resolveSdRuntimeConfig } from './profile-runtime.js';
 import { makeSdProvider, type SdProviderRuntime } from './provider.js';
@@ -24,8 +25,9 @@ export interface SdRuntime {
   session?: JsonlSession;
   sessionRoot?: string;
   skills: SdSkillStore;
-  memory: SdMemoryStore;
+  memory: SdMemoryProvider;
   extensions: SdExtensionStore;
+  extensionRuntime: SdExtensionRuntime;
   systemPrompt?: string;
   options: SdRuntimeOptions;
   env: NodeJS.ProcessEnv;
@@ -45,11 +47,19 @@ export async function createSdRuntime(
     provider: options.provider,
     model: options.model,
   });
-  const provider = makeSdProvider(config, {}, env);
-  const session = createRuntimeSession(options, config, provider);
-  const skills = createSdSkillStore(config, profile);
-  const memory = createSdMemoryStore(config, profile);
+  ensureFirstPartyExtensionsForConfig(config);
   const extensions = createSdExtensionStore(config, profile);
+  const extensionRuntime = await activateSdExtensions({
+    store: extensions,
+    config,
+    profile,
+    runtimeOptions: options,
+    env,
+  });
+  const provider = makeSdProvider(config, {}, env, extensionRuntime.providers);
+  const session = createRuntimeSession(options, config, provider);
+  const skills = createSdSkillStore(config, profile, extensionRuntime.skillRoots);
+  const memory = createSdMemoryStore(config, profile, extensionRuntime.memoryProviders);
   const agent = await createSdAgent(
     options,
     config,
@@ -57,6 +67,7 @@ export async function createSdRuntime(
     session,
     skills,
     memory,
+    extensionRuntime,
     systemPrompt,
   );
   return {
@@ -71,6 +82,7 @@ export async function createSdRuntime(
     skills,
     memory,
     extensions,
+    extensionRuntime,
     systemPrompt,
     options,
     env,
@@ -89,7 +101,8 @@ export async function createSdAgent(
   provider: SdProviderRuntime,
   session: JsonlSession | undefined,
   skills: SdSkillStore,
-  memory: SdMemoryStore,
+  memory: SdMemoryProvider,
+  extensionRuntime: SdExtensionRuntime,
   systemPrompt?: string,
 ): Promise<SnapdragonAgent> {
   const agent = await createCodingReplAgent({
@@ -108,6 +121,7 @@ export async function createSdAgent(
   await agent.registry.register(
     memoryToolset({ provider: memory, authoring: config.memory?.authoring ?? true }),
   );
+  await agent.registry.registerMany(extensionRuntime.toolsets);
   const toolsets = normalizeToolsetsConfig(config.toolsets);
   agent.registry.applyConfig({
     enabled: toolsets.enabled,
