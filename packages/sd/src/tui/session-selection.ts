@@ -1,5 +1,6 @@
 import type { SdRuntime } from '../runtime.js';
 import { listSessions } from '../runtime-transitions.js';
+import { summaryForSession } from '../session-info.js';
 import type { PromptCompletionState } from './input-completion.js';
 
 export function sessionSelection(
@@ -32,6 +33,7 @@ function sessionDescription(
   runtime: SdRuntime,
 ): string {
   const active = session.session_id === runtime.session?.sessionId ? 'active' : '';
+  const title = summaryForSession(runtime.config, session.session_id)?.title;
   const updated = new Date(session.updated_at * 1000).toISOString();
-  return [active, updated, `${session.jsonl_size} bytes`].filter(Boolean).join(' ');
+  return [active, title, updated, `${session.jsonl_size} bytes`].filter(Boolean).join(' ');
 }

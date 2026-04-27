@@ -2,7 +2,8 @@ import { stderr, stdin, stdout } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 import type { LlmChatResponse } from '@snapdragon-ai/host';
 import { contentWithAttachments, type PendingAttachment } from './attachments.js';
-import { handleCommand } from './commands.js';
+import { type CommandPromptRun, type CommandResult, handleCommand } from './commands.js';
+import { maybeAutoCaptureMemory, requestInputWithMemory } from './memory.js';
 import { RunRenderer } from './renderer.js';
 import type { SdRuntime } from './runtime.js';
 
@@ -19,12 +20,29 @@ export async function runOneShot(
   prompt: string,
   attachments: PendingAttachment[] = [],
   io: SdIo = defaultIo,
+  options: { requestInput?: string } = {},
 ): Promise<LlmChatResponse> {
   const renderer = new RunRenderer(io);
   const unsubscribe = runtime.agent.subscribe((event) => renderer.accept(event));
   try {
-    const response = await runtime.agent.prompt(contentWithAttachments(prompt, attachments));
+    const visibleInput = contentWithAttachments(prompt, attachments);
+    const response = await runtime.agent.prompt(visibleInput, {
+      requestInput: requestInputWithMemory(
+        runtime.config,
+        runtime.memory,
+        visibleInput,
+        options.requestInput,
+      ),
+    });
     renderer.finish(response);
+    maybeAutoCaptureMemory({
+      config: runtime.config,
+      memory: runtime.memory,
+      visibleInput,
+      response,
+      source: 'sd.repl',
+      sessionAppendMeta: (meta) => runtime.session?.appendMeta(meta),
+    });
     return response;
   } finally {
     unsubscribe();
@@ -43,6 +61,7 @@ export async function runInteractive(runtime: SdRuntime, io: SdIo = defaultIo): 
       if (trimmed.startsWith('/')) {
         const result = await tryCommand(trimmed, runtime, attachments, io);
         attachments = result.attachments;
+        if (result.prompt) await runCommandPrompt(runtime, result.prompt, io);
         if (result.quit) break;
         continue;
       }
@@ -59,12 +78,21 @@ export async function runInteractive(runtime: SdRuntime, io: SdIo = defaultIo): 
   }
 }
 
+export async function runCommandPrompt(
+  runtime: SdRuntime,
+  prompt: CommandPromptRun,
+  io: SdIo = defaultIo,
+): Promise<LlmChatResponse> {
+  runtime.session?.appendMeta(prompt.meta);
+  return runOneShot(runtime, prompt.visibleInput, [], io, { requestInput: prompt.requestInput });
+}
+
 async function tryCommand(
   line: string,
   runtime: SdRuntime,
   attachments: PendingAttachment[],
   io: SdIo,
-): Promise<{ quit: boolean; attachments: PendingAttachment[] }> {
+): Promise<CommandResult> {
   try {
     return await handleCommand(line, runtime, attachments, io);
   } catch (error) {

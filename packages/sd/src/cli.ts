@@ -11,11 +11,14 @@ import {
   writeDefaultConfig,
   writeEnvTemplate,
 } from './config.js';
+import { ensureFirstPartyProfiles, ensureFirstPartySkills } from './first-party.js';
 import { helpText } from './help.js';
 import { type SdProfileInfo, SdProfileStore } from './profile.js';
-import { runInteractive, runOneShot } from './repl.js';
+import { runSelectedMode } from './run-mode.js';
 import { createSdRuntime } from './runtime.js';
-import { listRuntimeSessions, runtimeSessionStore } from './runtime-session.js';
+import { runtimeSessionStore } from './runtime-session.js';
+import { printSessionList } from './session-list-output.js';
+import { DEFAULT_SD_SKILL_ROOT } from './skills.js';
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   const args = parseArgs(argv);
@@ -28,7 +31,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     return;
   }
   if (args.mode === 'setup') {
-    await setup(args.configPath);
+    await setup(args.configPath, args.profileRoot);
     return;
   }
   if (args.mode === 'list-sessions') {
@@ -49,21 +52,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 }
 
 async function listSessions(configPath: string): Promise<void> {
-  const config = await loadSdConfig(configPath);
-  const sessions = listRuntimeSessions(config);
-  if (sessions.length === 0) {
-    stdout.write('No sessions found.\n');
-    return;
-  }
-  stdout.write(
-    sessions
-      .map(
-        (session) =>
-          `${session.session_id}\t${new Date(session.updated_at * 1000).toISOString()}\t${session.jsonl_size} bytes`,
-      )
-      .join('\n')
-      .concat('\n'),
-  );
+  await printSessionList(configPath, stdout);
 }
 
 async function deleteSession(configPath: string, sessionId: string | undefined): Promise<void> {
@@ -89,33 +78,21 @@ function profileLine(profile: SdProfileInfo): string {
   return `${active} ${profile.name}${description}`;
 }
 
-async function runSelectedMode(
-  mode: 'tui' | 'repl' | 'print',
-  runtime: Awaited<ReturnType<typeof createSdRuntime>>,
-  prompt: string | undefined,
-): Promise<void> {
-  if (mode === 'print') {
-    if (!prompt) throw new Error('Print mode requires a prompt.');
-    await runOneShot(runtime, prompt);
-  } else if (mode === 'repl') {
-    await runInteractive(runtime);
-  } else {
-    const { runTui } = await import('./tui/index.js');
-    await runTui(runtime);
-  }
-}
-
 export { helpText } from './help.js';
 
-async function setup(configPath: string): Promise<void> {
+async function setup(configPath: string, profileRoot?: string): Promise<void> {
   const wroteConfig = await writeDefaultConfig(configPath);
   const wroteEnv = await writeEnvTemplate();
+  const config = await loadSdConfig(configPath);
+  ensureFirstPartySkills(config.skills?.root ?? DEFAULT_SD_SKILL_ROOT);
+  ensureFirstPartyProfiles(new SdProfileStore({ root: profileRoot }).root);
   stdout.write(
     [
       wroteConfig ? `Created ${configPath}` : `Config already exists: ${configPath}`,
       wroteEnv
         ? `Created ${DEFAULT_SD_ENV_PATH}`
         : `Env file already exists: ${DEFAULT_SD_ENV_PATH}`,
+      'Installed first-party skills and profile templates.',
       '',
     ].join('\n'),
   );

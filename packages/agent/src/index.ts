@@ -88,6 +88,10 @@ export class SnapdragonAgent {
     const runId = options.runId ?? `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     await this.#emit({ type: 'run_start', runId });
     const userMessage: Message = { role: 'user', content: input };
+    const requestUserMessage: Message =
+      options.requestInput === undefined
+        ? userMessage
+        : { ...userMessage, content: options.requestInput };
     await this.#appendMessage(userMessage);
     await this.#emit({ type: 'message', message: userMessage });
 
@@ -99,7 +103,7 @@ export class SnapdragonAgent {
       const response = await this.#provider(
         {
           role: 'assistant',
-          messages: this.#requestMessages(),
+          messages: this.#requestMessages({ visible: userMessage, request: requestUserMessage }),
           tools: this.registry.listDefinitions(),
           tool_choice: this.registry.listDefinitions().length > 0 ? 'auto' : 'none',
           temperature: this.#temperature,
@@ -152,10 +156,15 @@ export class SnapdragonAgent {
     throw new Error(`Agent exceeded maxTurns=${this.#maxTurns}`);
   }
 
-  #requestMessages(): Message[] {
+  #requestMessages(replacement?: { visible: Message; request: Message }): Message[] {
     const system: Message[] =
       this.#systemPrompt.length > 0 ? [{ role: 'system', content: this.#systemPrompt }] : [];
-    return [...system, ...this.messages];
+    const messages = replacement
+      ? this.messages.map((message) =>
+          message === replacement.visible ? replacement.request : message,
+        )
+      : this.messages;
+    return [...system, ...messages];
   }
 
   async #appendMessage(message: Message): Promise<void> {

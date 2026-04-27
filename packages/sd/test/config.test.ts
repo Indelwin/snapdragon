@@ -16,6 +16,12 @@ test('default config uses Anthropic Opus 4.7 without storing secrets', () => {
   assert.equal(config.default_provider, 'anthropic');
   assert.equal(config.providers.anthropic?.api_key_env, 'ANTHROPIC_API_KEY');
   assert.equal(config.providers.anthropic?.model, 'claude-opus-4-7');
+  assert.deepEqual(config.sessions?.title, {
+    enabled: true,
+    provider: 'anthropic',
+    model: 'claude-haiku-4-5-20251001',
+    max_tokens: 48,
+  });
   assert.equal(JSON.stringify(config).includes('sk-ant-'), false);
 });
 
@@ -41,6 +47,34 @@ test('loadSdConfig merges YAML with defaults', async () => {
     assert.equal(config.default_provider, 'mock');
     assert.equal(config.providers.mock?.model, 'local-mock');
     assert.equal(config.providers.anthropic?.model, 'claude-opus-4-7');
+    assert.equal(config.sessions?.title?.provider, 'anthropic');
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('loadSdConfig deep merges session title settings', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-title-config-'));
+  const configPath = join(workspace, 'config.yaml');
+  try {
+    await writeFile(
+      configPath,
+      [
+        'version: 1',
+        'sessions:',
+        '  title:',
+        '    provider: mock',
+        '    model: mock-title',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = await loadSdConfig(configPath);
+    assert.equal(config.sessions?.title?.enabled, true);
+    assert.equal(config.sessions?.title?.provider, 'mock');
+    assert.equal(config.sessions?.title?.model, 'mock-title');
+    assert.equal(config.sessions?.title?.max_tokens, 48);
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }

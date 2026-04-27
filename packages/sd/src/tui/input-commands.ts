@@ -1,8 +1,9 @@
 import { Writable } from 'node:stream';
 import type { MutableRefObject } from 'react';
 import { contentWithAttachments, type PendingAttachment } from '../attachments.js';
-import { type CommandResult, handleCommand } from '../commands.js';
-import { defaultIo, type SdIo } from '../repl.js';
+import { BUILTIN_SLASH_COMMANDS, type CommandResult, handleCommand } from '../commands.js';
+import { maybeAutoCaptureMemory, requestInputWithMemory } from '../memory.js';
+import { defaultIo, runCommandPrompt, type SdIo } from '../repl.js';
 import type { SdRuntime } from '../runtime.js';
 import { matchCommandLine, type SdTuiCommand } from './commands.js';
 import { runInlineShellCommand } from './inline-shell.js';
@@ -11,8 +12,11 @@ import { type PaletteState, rememberHistory } from './input-keymap.js';
 import { type PromptSelection, selectionForLine } from './input-selection.js';
 import type { SdUiController } from './ui.js';
 
-export function defaultCommands(runSlashCommand: (line: string) => Promise<void>): SdTuiCommand[] {
-  return [
+export function defaultCommands(
+  runSlashCommand: (line: string) => Promise<void>,
+  runtime?: SdRuntime,
+): SdTuiCommand[] {
+  const commands = [
     command('/help', 'show slash commands', runSlashCommand),
     command('/clear', 'clear in-memory chat history', runSlashCommand),
     command('/session', 'show session details', runSlashCommand),
@@ -22,6 +26,9 @@ export function defaultCommands(runSlashCommand: (line: string) => Promise<void>
     command('/delete-session', 'delete a session', runSlashCommand, '<id>'),
     command('/profiles', 'list profiles', runSlashCommand),
     command('/profile', 'show or switch profile', runSlashCommand, '[name|none]'),
+    command('/memory', 'show or search memory', runSlashCommand, '[query]'),
+    command('/remember', 'append memory note', runSlashCommand, '<note>'),
+    command('/extensions', 'list extensions', runSlashCommand),
     command('/tools', 'list enabled tools', runSlashCommand),
     command('/providers', 'list configured providers', runSlashCommand),
     command('/provider', 'show or switch provider', runSlashCommand, '<id> [model]'),
@@ -33,6 +40,12 @@ export function defaultCommands(runSlashCommand: (line: string) => Promise<void>
     command('/palette', 'open command palette', runSlashCommand),
     command('/quit', 'exit sd', runSlashCommand),
   ];
+  const reserved = new Set(BUILTIN_SLASH_COMMANDS);
+  for (const skill of runtime?.skills.list() ?? []) {
+    if (reserved.has(skill.command)) continue;
+    commands.push(command(skill.command, `skill: ${skill.description}`, runSlashCommand, '[task]'));
+  }
+  return commands;
 }
 
 export async function runSlashLine(args: {
@@ -88,6 +101,14 @@ export async function runSlashLine(args: {
   if (isTranscriptResetCommand(args.line)) args.controller.loadRuntimeTranscript();
   args.controller.appendCommandOutput(capture.output());
   args.controller.appendCommandOutput(capture.error(), 'error');
+  if (result.prompt) {
+    try {
+      args.controller.bindRuntimeAgent();
+      await runCommandPrompt(args.runtime, result.prompt, capture.io);
+    } catch (error) {
+      args.controller.markRunError(error);
+    }
+  }
   if (args.line.startsWith('/provider') || args.line.startsWith('/model')) {
     args.controller.refreshRuntimeStatus();
   }
@@ -123,7 +144,18 @@ export async function submitLine(args: {
   args.setAttachments([]);
   try {
     args.controller.bindRuntimeAgent();
-    await args.runtime.agent.prompt(contentWithAttachments(args.line, attachments));
+    const visibleInput = contentWithAttachments(args.line, attachments);
+    const response = await args.runtime.agent.prompt(visibleInput, {
+      requestInput: requestInputWithMemory(args.runtime.config, args.runtime.memory, visibleInput),
+    });
+    maybeAutoCaptureMemory({
+      config: args.runtime.config,
+      memory: args.runtime.memory,
+      visibleInput,
+      response,
+      source: 'sd.tui',
+      sessionAppendMeta: (meta) => args.runtime.session?.appendMeta(meta),
+    });
   } catch (error) {
     args.controller.markRunError(error);
   }

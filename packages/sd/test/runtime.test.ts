@@ -175,6 +175,8 @@ test('REPL profile and session commands rebuild runtime state', async () => {
 
     assert.equal(runtime.profile?.name, 'limited');
     assert.equal(runtime.provider.model, 'mock-profile');
+    assert.notEqual(runtime.session?.sessionId, 'alpha');
+    assert.match(runtime.sessionRoot ?? '', /profiles\/limited\/sessions$/);
     assert.equal(
       runtime.agent.registry.listEnabled().some((tool) => tool.name === 'run_shell'),
       false,
@@ -184,8 +186,8 @@ test('REPL profile and session commands rebuild runtime state', async () => {
     await handleCommand('/new-session beta', runtime, [], io.io);
     assert.equal(runtime.session?.sessionId, 'beta');
 
-    await handleCommand('/resume alpha', runtime, [], io.io);
-    assert.equal(runtime.session?.sessionId, 'alpha');
+    await handleCommand('/resume beta', runtime, [], io.io);
+    assert.equal(runtime.session?.sessionId, 'beta');
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }

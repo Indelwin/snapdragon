@@ -9,6 +9,10 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 export const DEFAULT_SD_CONFIG_PATH = resolve(homedir(), '.snapdragon/sd/config.yaml');
 export const DEFAULT_SD_ENV_PATH = resolve(homedir(), '.snapdragon/.env');
 export const DEFAULT_SD_SESSION_ROOT = resolve(homedir(), '.snapdragon/sd/sessions');
+export const DEFAULT_SD_MEMORY_ROOT = resolve(homedir(), '.snapdragon/sd/memory');
+export const DEFAULT_SD_EXTENSION_ROOT = resolve(homedir(), '.snapdragon/sd/extensions');
+export const DEFAULT_SD_SESSION_TITLE_PROVIDER = 'anthropic';
+export const DEFAULT_SD_SESSION_TITLE_MODEL = 'claude-haiku-4-5-20251001';
 
 export type SdProviderKind = 'anthropic' | 'openai' | 'openai-compatible' | 'mock' | 'openai-codex';
 
@@ -32,9 +36,60 @@ export interface SdToolsetsConfig {
   denied_tools?: string[];
 }
 
+export interface SdSkillsConfig {
+  root?: string;
+  shared_roots?: string[];
+  compatibility_roots?: string[];
+  enabled?: string[];
+  disabled?: string[];
+  authoring?: boolean;
+  builtins?: boolean;
+}
+
+export interface SdMemoryAutoConfig {
+  enabled?: boolean;
+  triggers?: string[];
+  max_entry_chars?: number;
+  include_assistant?: boolean;
+}
+
+export interface SdMemoryConfig {
+  enabled?: boolean;
+  root?: string;
+  file?: string;
+  authoring?: boolean;
+  auto?: SdMemoryAutoConfig;
+  context?: {
+    enabled?: boolean;
+    max_entries?: number;
+  };
+}
+
+export interface SdExtensionsConfig {
+  roots?: string[];
+  enabled?: string[];
+  disabled?: string[];
+  hot_reload?: boolean;
+}
+
+export interface SdIsolationConfig {
+  home?: 'profile' | 'inherit';
+  workspace?: 'profile' | 'inherit';
+  logs?: 'profile' | 'inherit';
+  auth?: 'inherit' | 'profile';
+}
+
+export interface SdSessionTitleConfig {
+  enabled?: boolean;
+  provider?: string;
+  model?: string;
+  max_tokens?: number;
+}
+
 export interface SdSessionConfig {
   enabled?: boolean;
   root?: string;
+  title?: SdSessionTitleConfig;
 }
 
 export interface SdAgentConfig {
@@ -49,6 +104,10 @@ export interface SdConfig {
   default_provider: string;
   providers: Record<string, SdProviderConfig>;
   sessions?: SdSessionConfig;
+  skills?: SdSkillsConfig;
+  memory?: SdMemoryConfig;
+  extensions?: SdExtensionsConfig;
+  isolation?: SdIsolationConfig;
   toolsets?: SdToolsetsConfig;
   agent?: SdAgentConfig;
 }
@@ -97,9 +156,50 @@ export function defaultSdConfig(): SdConfig {
     sessions: {
       enabled: true,
       root: DEFAULT_SD_SESSION_ROOT,
+      title: {
+        enabled: true,
+        provider: DEFAULT_SD_SESSION_TITLE_PROVIDER,
+        model: DEFAULT_SD_SESSION_TITLE_MODEL,
+        max_tokens: 48,
+      },
+    },
+    skills: {
+      authoring: true,
+      builtins: true,
+      shared_roots: [],
+      compatibility_roots: [],
+      enabled: [],
+      disabled: [],
+    },
+    memory: {
+      enabled: true,
+      root: DEFAULT_SD_MEMORY_ROOT,
+      file: 'MEMORY.md',
+      authoring: true,
+      auto: {
+        enabled: true,
+        max_entry_chars: 1200,
+        include_assistant: false,
+      },
+      context: {
+        enabled: true,
+        max_entries: 5,
+      },
+    },
+    extensions: {
+      roots: [DEFAULT_SD_EXTENSION_ROOT],
+      enabled: [],
+      disabled: [],
+      hot_reload: true,
+    },
+    isolation: {
+      home: 'profile',
+      workspace: 'profile',
+      logs: 'profile',
+      auth: 'inherit',
     },
     toolsets: {
-      enabled: ['file', 'shell', 'repl'],
+      enabled: ['file', 'shell', 'repl', 'skill', 'memory'],
       disabled: [],
       denied_tools: [],
     },
@@ -127,9 +227,63 @@ export function withDefaults(input: Partial<SdConfig>): SdConfig {
     version: 1,
     default_provider: input.default_provider ?? defaults.default_provider,
     providers,
-    sessions: { ...defaults.sessions, ...(input.sessions ?? {}) },
+    sessions: mergeSessionConfig(defaults.sessions, input.sessions),
+    skills: mergeSkillsConfig(defaults.skills, input.skills),
+    memory: mergeMemoryConfig(defaults.memory, input.memory),
+    extensions: mergeExtensionsConfig(defaults.extensions, input.extensions),
+    isolation: { ...defaults.isolation, ...(input.isolation ?? {}) },
     toolsets: { ...defaults.toolsets, ...(input.toolsets ?? {}) },
     agent: { ...defaults.agent, ...(input.agent ?? {}) },
+  };
+}
+
+function mergeSkillsConfig(
+  defaults: SdSkillsConfig | undefined,
+  input: SdSkillsConfig | undefined,
+): SdSkillsConfig {
+  return {
+    ...defaults,
+    ...(input ?? {}),
+    shared_roots: input?.shared_roots ?? defaults?.shared_roots,
+    compatibility_roots: input?.compatibility_roots ?? defaults?.compatibility_roots,
+    enabled: input?.enabled ?? defaults?.enabled,
+    disabled: input?.disabled ?? defaults?.disabled,
+  };
+}
+
+function mergeMemoryConfig(
+  defaults: SdMemoryConfig | undefined,
+  input: SdMemoryConfig | undefined,
+): SdMemoryConfig {
+  return {
+    ...defaults,
+    ...(input ?? {}),
+    auto: { ...(defaults?.auto ?? {}), ...(input?.auto ?? {}) },
+    context: { ...(defaults?.context ?? {}), ...(input?.context ?? {}) },
+  };
+}
+
+function mergeExtensionsConfig(
+  defaults: SdExtensionsConfig | undefined,
+  input: SdExtensionsConfig | undefined,
+): SdExtensionsConfig {
+  return {
+    ...defaults,
+    ...(input ?? {}),
+    roots: input?.roots ?? defaults?.roots,
+    enabled: input?.enabled ?? defaults?.enabled,
+    disabled: input?.disabled ?? defaults?.disabled,
+  };
+}
+
+function mergeSessionConfig(
+  defaults: SdSessionConfig | undefined,
+  input: SdSessionConfig | undefined,
+): SdSessionConfig {
+  return {
+    ...defaults,
+    ...(input ?? {}),
+    title: { ...(defaults?.title ?? {}), ...(input?.title ?? {}) },
   };
 }
 
