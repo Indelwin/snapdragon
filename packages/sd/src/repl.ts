@@ -27,7 +27,7 @@ export async function runOneShot(
   try {
     const visibleInput = contentWithAttachments(prompt, attachments);
     const response = await runtime.agent.prompt(visibleInput, {
-      requestInput: requestInputWithMemory(
+      requestInput: await requestInputWithMemory(
         runtime.config,
         runtime.memory,
         visibleInput,
@@ -35,7 +35,7 @@ export async function runOneShot(
       ),
     });
     renderer.finish(response);
-    maybeAutoCaptureMemory({
+    await maybeAutoCaptureMemory({
       config: runtime.config,
       memory: runtime.memory,
       visibleInput,

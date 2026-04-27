@@ -27,6 +27,7 @@ import {
   validateSkillMarkdown,
 } from '@snapdragon-ai/content';
 import type { SdConfig } from './config.js';
+import type { SdExtensionSkillRoot } from './extension-runtime.js';
 import { ensureFirstPartySkills } from './first-party.js';
 import type { SdProfileInfo } from './profile.js';
 
@@ -37,7 +38,8 @@ const ALLOWED_SUPPORT_DIRS = new Set(['references', 'templates', 'scripts', 'ass
 export interface SdSkillRoot {
   root: string;
   writable: boolean;
-  source: 'profile' | 'sd' | 'shared' | 'compat';
+  source: 'profile' | 'sd' | 'shared' | 'compat' | 'extension';
+  extensionId?: string;
 }
 
 export interface SdSkillStoreOptions {
@@ -264,8 +266,12 @@ export class SdSkillStore implements SkillCatalog {
   }
 }
 
-export function createSdSkillStore(config: SdConfig, profile?: SdProfileInfo): SdSkillStore {
-  const roots = resolveSdSkillRoots(config, profile);
+export function createSdSkillStore(
+  config: SdConfig,
+  profile?: SdProfileInfo,
+  extensionRoots: SdExtensionSkillRoot[] = [],
+): SdSkillStore {
+  const roots = [...resolveSdSkillRoots(config, profile), ...extensionRoots.map(toSkillRoot)];
   if (config.skills?.builtins !== false) {
     for (const root of roots.filter((candidate) => candidate.writable)) {
       ensureFirstPartySkills(root.root);
@@ -276,6 +282,15 @@ export function createSdSkillStore(config: SdConfig, profile?: SdProfileInfo): S
     enabled: config.skills?.enabled,
     disabled: config.skills?.disabled,
   });
+}
+
+function toSkillRoot(root: SdExtensionSkillRoot): SdSkillRoot {
+  return {
+    root: root.root,
+    writable: root.writable ?? false,
+    source: 'extension',
+    extensionId: root.extensionId,
+  };
 }
 
 export function resolveSdSkillRoots(config: SdConfig, profile?: SdProfileInfo): SdSkillRoot[] {

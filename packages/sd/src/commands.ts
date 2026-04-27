@@ -13,6 +13,7 @@ import {
   currentProfileName,
   deleteRuntimeSession,
   newRuntimeSession,
+  rebuildSdRuntime,
   resumeRuntimeSession,
   switchRuntimeProfile,
 } from './runtime-transitions.js';
@@ -73,9 +74,9 @@ export async function handleCommand(
   if (command === '/delete-session') return deleteSessionCommand(arg, runtime, io, attachments);
   if (command === '/profiles') return writeResult(io, profilesSummary(runtime), attachments);
   if (command === '/profile') return profileCommand(arg, runtime, io, attachments);
-  if (command === '/memory') return writeResult(io, memorySummary(runtime, arg), attachments);
+  if (command === '/memory') return writeResult(io, await memorySummary(runtime, arg), attachments);
   if (command === '/remember') return rememberCommand(arg, runtime, io, attachments);
-  if (command === '/extensions') return writeResult(io, extensionsSummary(runtime), attachments);
+  if (command === '/extensions') return extensionsCommand(arg, runtime, io, attachments);
   if (command === '/skills') return writeResult(io, skillsSummary(runtime), attachments);
   if (command === '/skill') return skillCommand(line, arg, runtime, io, attachments);
   if (command === '/tools') return writeResult(io, toolsSummary(runtime), attachments);
@@ -275,7 +276,12 @@ async function modelsForCommand(
   providerId: string,
 ): Promise<{ models: ProviderModel[]; warning?: string }> {
   try {
-    const models = await discoverSdModels(runtime.config, providerId);
+    const models = await discoverSdModels(
+      runtime.config,
+      providerId,
+      runtime.env,
+      runtime.extensionRuntime.providers,
+    );
     if (models.length > 0) return { models };
     const configured = configuredProviderModels(runtime, providerId);
     if (configured.length > 0) {
@@ -311,7 +317,7 @@ function slashHelp(): string {
     '  /profile [name|none]  Show or switch profile',
     '  /memory [query]        Show or search durable memory',
     '  /remember <note>       Append a durable memory note',
-    '  /extensions            List discovered extensions',
+    '  /extensions [reload]   List or reload discovered extensions',
     '  /skills               List skills',
     '  /skill <id> [task]    Run a skill for one request',
     '  /tools                List enabled tools',
@@ -324,10 +330,10 @@ function slashHelp(): string {
   ].join('\n');
 }
 
-function memorySummary(runtime: SdRuntime, query: string): string {
+async function memorySummary(runtime: SdRuntime, query: string): Promise<string> {
   if (runtime.config.memory?.enabled === false) return 'Memory is disabled.';
   if (query) {
-    const results = runtime.memory.search({ query, limit: 10 });
+    const results = await runtime.memory.search({ query, limit: 10 });
     return [
       `Memory matches for "${query}":`,
       ...(results.length
@@ -335,8 +341,8 @@ function memorySummary(runtime: SdRuntime, query: string): string {
         : ['  (none)']),
     ].join('\n');
   }
-  const info = runtime.memory.info();
-  const entries = runtime.memory.read({ limit: 20 }).entries;
+  const info = await runtime.memory.info();
+  const entries = (await runtime.memory.read({ limit: 20 })).entries;
   return [
     `Memory: ${info.path ?? info.id}`,
     ...entries.map((entry) => `  ${entry.id} ${entry.title ?? ''}`.trimEnd()),
@@ -346,14 +352,14 @@ function memorySummary(runtime: SdRuntime, query: string): string {
     .join('\n');
 }
 
-function rememberCommand(
+async function rememberCommand(
   arg: string,
   runtime: SdRuntime,
   io: SdIo,
   attachments: PendingAttachment[],
-): CommandResult {
+): Promise<CommandResult> {
   if (!arg) return writeResult(io, 'Usage: /remember <note>', attachments);
-  const result = runtime.memory.append({
+  const result = await runtime.memory.append({
     title: 'Manual note',
     content: arg,
     source: 'sd.command',
@@ -378,7 +384,25 @@ function extensionsSummary(runtime: SdRuntime): string {
       const description = extension.description ? ` - ${extension.description}` : '';
       return `${enabled} ${extension.id} (${extension.name})${capabilities}${description}`;
     }),
+    runtime.extensionRuntime.errors.length ? '' : undefined,
+    ...runtime.extensionRuntime.errors.map((error) => `! ${error.extensionId}: ${error.message}`),
   ].join('\n');
+}
+
+async function extensionsCommand(
+  arg: string,
+  runtime: SdRuntime,
+  io: SdIo,
+  attachments: PendingAttachment[],
+): Promise<CommandResult> {
+  if (arg === 'reload') {
+    await rebuildSdRuntime(runtime, {
+      provider: runtime.provider.id,
+      model: runtime.provider.model,
+    });
+    return writeResult(io, 'Reloaded extensions.', attachments);
+  }
+  return writeResult(io, extensionsSummary(runtime), attachments);
 }
 
 function profileSummary(runtime: SdRuntime): string {

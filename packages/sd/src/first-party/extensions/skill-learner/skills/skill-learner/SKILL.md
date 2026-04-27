@@ -4,7 +4,7 @@ description: Propose or refine skills from repeated workflows, corrections, and 
 tags: [skills, learning, refinement]
 ---
 
-Use this skill to improve the local skill catalog.
+Use this skill to improve the active skill catalog.
 
 Look for:
 - Repeated workflows the user keeps asking for.

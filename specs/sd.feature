@@ -84,6 +84,12 @@ Feature: sd batteries-included agent
     Then it should list the extension descriptor and capabilities
     And it should not execute extension code during discovery
 
+  Scenario: sd activates trusted extensions as runtime systems
+    Given an enabled extension declares a local module entrypoint
+    When sd activates extensions during runtime creation or reload
+    Then the extension may register toolsets, provider factories, memory providers, and skill roots
+    And those contributions should be rebuilt through the same guarded runtime transition path
+
   Scenario: sd guards runtime transitions
     Given an agent run is active in the TUI
     When the user tries to switch profiles or sessions

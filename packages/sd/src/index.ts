@@ -42,6 +42,16 @@ export {
   writeExitSummary,
 } from './exit-summary.js';
 export {
+  activateSdExtensions,
+  type SdExtensionActivationContext,
+  type SdExtensionModule,
+  type SdExtensionProviderCreateOptions,
+  type SdExtensionProviderFactory,
+  type SdExtensionProviderRuntime,
+  type SdExtensionRuntime,
+  type SdExtensionSkillRoot,
+} from './extension-runtime.js';
+export {
   createSdExtensionStore,
   EXTENSION_MANIFEST_FILES,
   resolveSdExtensionRoots,
@@ -55,6 +65,7 @@ export {
   maybeAutoCaptureMemory,
   requestInputWithMemory,
   resolveSdMemoryPath,
+  type SdMemoryProvider,
   SdMemoryStore,
   type SdMemoryStoreOptions,
 } from './memory.js';
