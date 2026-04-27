@@ -44,7 +44,12 @@ async function selectableModels(
   providerId: string,
 ): Promise<{ models: SelectableModel[]; warning?: string }> {
   try {
-    const models = await discoverSdModels(runtime.config, providerId);
+    const models = await discoverSdModels(
+      runtime.config,
+      providerId,
+      runtime.env,
+      runtime.extensionRuntime.providers,
+    );
     if (models.length > 0) return { models };
     return configuredFallback(runtime, providerId, 'live model discovery returned no models');
   } catch (error) {

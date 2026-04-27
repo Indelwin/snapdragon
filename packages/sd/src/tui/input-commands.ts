@@ -28,7 +28,7 @@ export function defaultCommands(
     command('/profile', 'show or switch profile', runSlashCommand, '[name|none]'),
     command('/memory', 'show or search memory', runSlashCommand, '[query]'),
     command('/remember', 'append memory note', runSlashCommand, '<note>'),
-    command('/extensions', 'list extensions', runSlashCommand),
+    command('/extensions', 'list or reload extensions', runSlashCommand, '[reload]'),
     command('/tools', 'list enabled tools', runSlashCommand),
     command('/providers', 'list configured providers', runSlashCommand),
     command('/provider', 'show or switch provider', runSlashCommand, '<id> [model]'),
@@ -146,9 +146,13 @@ export async function submitLine(args: {
     args.controller.bindRuntimeAgent();
     const visibleInput = contentWithAttachments(args.line, attachments);
     const response = await args.runtime.agent.prompt(visibleInput, {
-      requestInput: requestInputWithMemory(args.runtime.config, args.runtime.memory, visibleInput),
+      requestInput: await requestInputWithMemory(
+        args.runtime.config,
+        args.runtime.memory,
+        visibleInput,
+      ),
     });
-    maybeAutoCaptureMemory({
+    await maybeAutoCaptureMemory({
       config: args.runtime.config,
       memory: args.runtime.memory,
       visibleInput,
@@ -239,7 +243,8 @@ function isRuntimeTransitionCommand(line: string): boolean {
     line.startsWith('/resume') ||
     line.startsWith('/new-session') ||
     line.startsWith('/delete-session') ||
-    line.startsWith('/profile')
+    line.startsWith('/profile') ||
+    line === '/extensions reload'
   );
 }
 

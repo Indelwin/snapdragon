@@ -1,6 +1,8 @@
 import type { Message } from '@snapdragon-ai/host';
 import type { JsonlSession, SessionInfo } from '@snapdragon-ai/session';
+import { activateSdExtensions } from './extension-runtime.js';
 import { createSdExtensionStore } from './extensions.js';
+import { ensureFirstPartyExtensionsForConfig } from './first-party.js';
 import { createSdMemoryStore } from './memory.js';
 import type { SdProfileInfo } from './profile.js';
 import { resolveSdRuntimeConfig, type SdRuntimeCliOverrides } from './profile-runtime.js';
@@ -29,10 +31,18 @@ export async function rebuildSdRuntime(
   const session = sessionOrCurrent(options, runtime.session);
   const overrides = runtimeOverrides(runtime, options);
   const { config, systemPrompt } = resolveSdRuntimeConfig(runtime.baseConfig, profile, overrides);
-  const provider = makeSdProvider(config, {}, runtime.env);
-  const skills = createSdSkillStore(config, profile);
-  const memory = createSdMemoryStore(config, profile);
+  ensureFirstPartyExtensionsForConfig(config);
   const extensions = createSdExtensionStore(config, profile);
+  const extensionRuntime = await activateSdExtensions({
+    store: extensions,
+    config,
+    profile,
+    runtimeOptions: runtime.options,
+    env: runtime.env,
+  });
+  const provider = makeSdProvider(config, {}, runtime.env, extensionRuntime.providers);
+  const skills = createSdSkillStore(config, profile, extensionRuntime.skillRoots);
+  const memory = createSdMemoryStore(config, profile, extensionRuntime.memoryProviders);
   const agent = await createSdAgent(
     runtime.options,
     config,
@@ -40,6 +50,7 @@ export async function rebuildSdRuntime(
     session,
     skills,
     memory,
+    extensionRuntime,
     systemPrompt,
   );
 
@@ -52,6 +63,7 @@ export async function rebuildSdRuntime(
   runtime.skills = skills;
   runtime.memory = memory;
   runtime.extensions = extensions;
+  runtime.extensionRuntime = extensionRuntime;
   runtime.systemPrompt = systemPrompt;
 }
 
@@ -105,7 +117,16 @@ export async function switchRuntimeProfile(
     profile,
     runtimeOverrides(runtime, {}),
   );
-  const provider = makeSdProvider(config, {}, runtime.env);
+  ensureFirstPartyExtensionsForConfig(config);
+  const extensions = createSdExtensionStore(config, profile);
+  const extensionRuntime = await activateSdExtensions({
+    store: extensions,
+    config,
+    profile,
+    runtimeOptions: runtime.options,
+    env: runtime.env,
+  });
+  const provider = makeSdProvider(config, {}, runtime.env, extensionRuntime.providers);
   const session =
     runtime.options.noSession || config.sessions?.enabled === false
       ? undefined

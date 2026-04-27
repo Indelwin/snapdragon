@@ -1,0 +1,10 @@
+id: sd/skill-learner
+name: Skill Learner
+version: 0.1.0
+description: First-party skill learning and refinement extension scaffold.
+capabilities:
+  - skills
+  - learning
+contributes:
+  skills:
+    - skills

@@ -7,11 +7,16 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from './args.js';
 import {
   DEFAULT_SD_ENV_PATH,
+  DEFAULT_SD_EXTENSION_ROOT,
   loadSdConfig,
   writeDefaultConfig,
   writeEnvTemplate,
 } from './config.js';
-import { ensureFirstPartyProfiles, ensureFirstPartySkills } from './first-party.js';
+import {
+  ensureFirstPartyExtensions,
+  ensureFirstPartyProfiles,
+  ensureFirstPartySkills,
+} from './first-party.js';
 import { helpText } from './help.js';
 import { type SdProfileInfo, SdProfileStore } from './profile.js';
 import { runSelectedMode } from './run-mode.js';
@@ -85,6 +90,7 @@ async function setup(configPath: string, profileRoot?: string): Promise<void> {
   const wroteEnv = await writeEnvTemplate();
   const config = await loadSdConfig(configPath);
   ensureFirstPartySkills(config.skills?.root ?? DEFAULT_SD_SKILL_ROOT);
+  ensureFirstPartyExtensions(config.extensions?.roots?.[0] ?? DEFAULT_SD_EXTENSION_ROOT);
   ensureFirstPartyProfiles(new SdProfileStore({ root: profileRoot }).root);
   stdout.write(
     [
@@ -92,7 +98,7 @@ async function setup(configPath: string, profileRoot?: string): Promise<void> {
       wroteEnv
         ? `Created ${DEFAULT_SD_ENV_PATH}`
         : `Env file already exists: ${DEFAULT_SD_ENV_PATH}`,
-      'Installed first-party skills and profile templates.',
+      'Installed first-party skills, extensions, and profile templates.',
       '',
     ].join('\n'),
   );
