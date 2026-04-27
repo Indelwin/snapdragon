@@ -210,22 +210,28 @@
     "maxFunctionLines": 25
   },
   "packages/sd/src/cli.ts": {
-    "lines": 149,
-    "complexity": 25,
-    "crapProxy": 628,
+    "lines": 120,
+    "complexity": 21,
+    "crapProxy": 444,
     "maxFunctionLines": 30
   },
   "packages/sd/src/commands.ts": {
-    "lines": 305,
-    "complexity": 63,
-    "crapProxy": 3971,
+    "lines": 283,
+    "complexity": 58,
+    "crapProxy": 3366,
     "maxFunctionLines": 31
   },
   "packages/sd/src/config.ts": {
-    "lines": 170,
-    "complexity": 50,
-    "crapProxy": 2515,
-    "maxFunctionLines": 45
+    "lines": 197,
+    "complexity": 61,
+    "crapProxy": 3739,
+    "maxFunctionLines": 51
+  },
+  "packages/sd/src/exit-summary.ts": {
+    "lines": 61,
+    "complexity": 12,
+    "crapProxy": 148,
+    "maxFunctionLines": 9
   },
   "packages/sd/src/profile-runtime.ts": {
     "lines": 101,
@@ -280,6 +286,30 @@
     "complexity": 17,
     "crapProxy": 294,
     "maxFunctionLines": 30
+  },
+  "packages/sd/src/session-command-display.ts": {
+    "lines": 44,
+    "complexity": 11,
+    "crapProxy": 124,
+    "maxFunctionLines": 11
+  },
+  "packages/sd/src/session-summary.ts": {
+    "lines": 89,
+    "complexity": 23,
+    "crapProxy": 535,
+    "maxFunctionLines": 15
+  },
+  "packages/sd/src/session-title-provider.ts": {
+    "lines": 82,
+    "complexity": 23,
+    "crapProxy": 530,
+    "maxFunctionLines": 25
+  },
+  "packages/sd/src/session-title.ts": {
+    "lines": 52,
+    "complexity": 21,
+    "crapProxy": 445,
+    "maxFunctionLines": 8
   },
   "packages/sd/src/tui/commands.ts": {
     "lines": 46,

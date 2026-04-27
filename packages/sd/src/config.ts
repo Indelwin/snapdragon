@@ -9,6 +9,8 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 export const DEFAULT_SD_CONFIG_PATH = resolve(homedir(), '.snapdragon/sd/config.yaml');
 export const DEFAULT_SD_ENV_PATH = resolve(homedir(), '.snapdragon/.env');
 export const DEFAULT_SD_SESSION_ROOT = resolve(homedir(), '.snapdragon/sd/sessions');
+export const DEFAULT_SD_SESSION_TITLE_PROVIDER = 'anthropic';
+export const DEFAULT_SD_SESSION_TITLE_MODEL = 'claude-haiku-4-5-20251001';
 
 export type SdProviderKind = 'anthropic' | 'openai' | 'openai-compatible' | 'mock' | 'openai-codex';
 
@@ -32,9 +34,17 @@ export interface SdToolsetsConfig {
   denied_tools?: string[];
 }
 
+export interface SdSessionTitleConfig {
+  enabled?: boolean;
+  provider?: string;
+  model?: string;
+  max_tokens?: number;
+}
+
 export interface SdSessionConfig {
   enabled?: boolean;
   root?: string;
+  title?: SdSessionTitleConfig;
 }
 
 export interface SdAgentConfig {
@@ -97,6 +107,12 @@ export function defaultSdConfig(): SdConfig {
     sessions: {
       enabled: true,
       root: DEFAULT_SD_SESSION_ROOT,
+      title: {
+        enabled: true,
+        provider: DEFAULT_SD_SESSION_TITLE_PROVIDER,
+        model: DEFAULT_SD_SESSION_TITLE_MODEL,
+        max_tokens: 48,
+      },
     },
     toolsets: {
       enabled: ['file', 'shell', 'repl'],
@@ -127,9 +143,20 @@ export function withDefaults(input: Partial<SdConfig>): SdConfig {
     version: 1,
     default_provider: input.default_provider ?? defaults.default_provider,
     providers,
-    sessions: { ...defaults.sessions, ...(input.sessions ?? {}) },
+    sessions: mergeSessionConfig(defaults.sessions, input.sessions),
     toolsets: { ...defaults.toolsets, ...(input.toolsets ?? {}) },
     agent: { ...defaults.agent, ...(input.agent ?? {}) },
+  };
+}
+
+function mergeSessionConfig(
+  defaults: SdSessionConfig | undefined,
+  input: SdSessionConfig | undefined,
+): SdSessionConfig {
+  return {
+    ...defaults,
+    ...(input ?? {}),
+    title: { ...(defaults?.title ?? {}), ...(input?.title ?? {}) },
   };
 }
 
