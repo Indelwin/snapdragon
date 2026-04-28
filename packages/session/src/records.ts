@@ -30,7 +30,25 @@ export interface SessionMetaRecord {
   meta: Record<string, unknown>;
 }
 
-export type SessionRecord = SessionOpenRecord | SessionMessageRecord | SessionMetaRecord;
+export interface SessionContextChunkRecord {
+  type: 'context_chunk';
+  chunk_id: number;
+  range_start: number;
+  range_end: number;
+  summary_text: string;
+  source_token_count: number;
+  summary_token_count: number;
+  created_at: number;
+  level?: 'deterministic' | 'summary';
+  created_by_model?: string | null;
+  meta?: Record<string, unknown>;
+}
+
+export type SessionRecord =
+  | SessionOpenRecord
+  | SessionMessageRecord
+  | SessionMetaRecord
+  | SessionContextChunkRecord;
 
 export function appendRecord(path: string, record: SessionRecord): void {
   mkdirSync(dirname(path), { recursive: true });

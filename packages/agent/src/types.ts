@@ -6,6 +6,18 @@ export type { AgentEvent, AgentEventListener } from './events.js';
 export interface AgentSession {
   appendMessage(message: Message): unknown | Promise<unknown>;
   messages(): Message[];
+  assembleContext?(options: AgentContextOptions): Message[] | Promise<Message[]>;
+  compactContext?(options: AgentContextOptions): unknown | Promise<unknown>;
+}
+
+export interface AgentContextOptions {
+  enabled?: boolean;
+  freshTailCount?: number;
+  maxRequestTokens?: number;
+  chunkTargetTokens?: number;
+  summaryTargetTokens?: number;
+  minChunkMessages?: number;
+  maxCompactionPasses?: number;
 }
 
 export interface AgentOptions {
@@ -16,6 +28,8 @@ export interface AgentOptions {
   session?: AgentSession;
   profile?: Profile;
   maxTurns?: number;
+  maxToolResultBytes?: number;
+  context?: AgentContextOptions;
   temperature?: number;
   maxTokens?: number;
 }
@@ -37,6 +51,8 @@ export interface SnapdragonAgentArgs {
   systemPrompt: string;
   profile?: Profile;
   maxTurns: number;
+  maxToolResultBytes: number;
+  context?: AgentContextOptions;
   temperature?: number;
   maxTokens?: number;
   session?: AgentSession;

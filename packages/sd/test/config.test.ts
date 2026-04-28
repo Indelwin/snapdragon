@@ -22,6 +22,13 @@ test('default config uses Anthropic Opus 4.7 without storing secrets', () => {
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 48,
   });
+  assert.deepEqual(config.agent?.context, {
+    enabled: true,
+    fresh_tail_count: 32,
+    max_request_tokens: 120_000,
+    chunk_target_tokens: 8_000,
+    summary_target_tokens: 1_500,
+  });
   assert.equal(JSON.stringify(config).includes('sk-ant-'), false);
 });
 
@@ -75,6 +82,26 @@ test('loadSdConfig deep merges session title settings', async () => {
     assert.equal(config.sessions?.title?.provider, 'mock');
     assert.equal(config.sessions?.title?.model, 'mock-title');
     assert.equal(config.sessions?.title?.max_tokens, 48);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('loadSdConfig deep merges agent context settings', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-context-config-'));
+  const configPath = join(workspace, 'config.yaml');
+  try {
+    await writeFile(
+      configPath,
+      ['version: 1', 'agent:', '  context:', '    max_request_tokens: 64000', ''].join('\n'),
+      'utf8',
+    );
+
+    const config = await loadSdConfig(configPath);
+    assert.equal(config.agent?.context?.enabled, true);
+    assert.equal(config.agent?.context?.fresh_tail_count, 32);
+    assert.equal(config.agent?.context?.max_request_tokens, 64_000);
+    assert.equal(config.agent?.context?.chunk_target_tokens, 8_000);
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }

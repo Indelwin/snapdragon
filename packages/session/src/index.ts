@@ -1,7 +1,21 @@
 export {
+  type ContextWindowOptions,
+  DEFAULT_CONTEXT_WINDOW_OPTIONS,
+  type ResolvedContextWindowOptions,
+  resolveContextWindowOptions,
+} from './context-options.js';
+export { type ContextChunkInput, renderContextChunk } from './context-summary.js';
+export {
+  assembleContextWindow,
+  type ContextAssemblyResult,
+  type ContextPlanResult,
+  planContextCompaction,
+} from './context-window.js';
+export {
   appendRecord,
   readRecords,
   SESSION_SCHEMA_VERSION,
+  type SessionContextChunkRecord,
   type SessionMessageRecord,
   type SessionMetaRecord,
   type SessionOpenRecord,
@@ -9,6 +23,7 @@ export {
 } from './records.js';
 export {
   type AppendMessageOptions,
+  type ContextCompactionResult,
   createSessionFile,
   JsonlSession,
   type JsonlSessionOptions,
@@ -20,3 +35,9 @@ export {
   SessionStore,
   type SessionStoreOptions,
 } from './store.js';
+export {
+  DEFAULT_CHARS_PER_TOKEN,
+  estimateMessagesTokens,
+  HeuristicTokenCounter,
+  type TokenCounter,
+} from './tokens.js';

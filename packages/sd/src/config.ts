@@ -109,8 +109,20 @@ export interface SdSessionConfig {
   title?: SdSessionTitleConfig;
 }
 
+export interface SdAgentContextConfig {
+  enabled?: boolean;
+  fresh_tail_count?: number;
+  max_request_tokens?: number;
+  chunk_target_tokens?: number;
+  summary_target_tokens?: number;
+  min_chunk_messages?: number;
+  max_compaction_passes?: number;
+}
+
 export interface SdAgentConfig {
   max_turns?: number;
+  max_tool_result_bytes?: number;
+  context?: SdAgentContextConfig;
   temperature?: number;
   max_tokens?: number;
   reasoning?: ReasoningRequest;
@@ -228,7 +240,13 @@ export function defaultSdConfig(): SdConfig {
       denied_tools: [],
     },
     agent: {
-      max_turns: 32,
+      context: {
+        enabled: true,
+        fresh_tail_count: 32,
+        max_request_tokens: 120_000,
+        chunk_target_tokens: 8_000,
+        summary_target_tokens: 1_500,
+      },
     },
   };
 }
@@ -257,7 +275,18 @@ export function withDefaults(input: Partial<SdConfig>): SdConfig {
     extensions: mergeExtensionsConfig(defaults.extensions, input.extensions),
     isolation: { ...defaults.isolation, ...(input.isolation ?? {}) },
     toolsets: { ...defaults.toolsets, ...(input.toolsets ?? {}) },
-    agent: { ...defaults.agent, ...(input.agent ?? {}) },
+    agent: mergeAgentConfig(defaults.agent, input.agent),
+  };
+}
+
+function mergeAgentConfig(
+  defaults: SdAgentConfig | undefined,
+  input: SdAgentConfig | undefined,
+): SdAgentConfig {
+  return {
+    ...defaults,
+    ...(input ?? {}),
+    context: { ...(defaults?.context ?? {}), ...(input?.context ?? {}) },
   };
 }
 

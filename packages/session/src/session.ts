@@ -1,9 +1,13 @@
 import { existsSync } from 'node:fs';
 import type { Message } from '@snapdragon-ai/host';
+import type { ContextWindowOptions } from './context-options.js';
+import type { ContextChunkInput } from './context-summary.js';
+import { assembleContextWindow, planContextCompaction, recordToMessage } from './context-window.js';
 import {
   appendRecord,
   readRecords,
   SESSION_SCHEMA_VERSION,
+  type SessionContextChunkRecord,
   type SessionMessageRecord,
   type SessionOpenRecord,
   type SessionRecord,
@@ -19,15 +23,24 @@ export interface JsonlSessionOptions {
   jsonlPath: string;
 }
 
+export interface ContextCompactionResult {
+  compacted: boolean;
+  chunks: SessionContextChunkRecord[];
+  reason?: string;
+}
+
 export class JsonlSession {
   readonly sessionId: string;
   readonly jsonlPath: string;
   #nextStoreId = 1;
+  #nextChunkId = 1;
 
   constructor(options: JsonlSessionOptions) {
     this.sessionId = options.sessionId;
     this.jsonlPath = options.jsonlPath;
-    this.#nextStoreId = nextStoreId(readRecords(this.jsonlPath));
+    const records = readRecords(this.jsonlPath);
+    this.#nextStoreId = nextStoreId(records);
+    this.#nextChunkId = nextChunkId(records);
   }
 
   appendMessage(message: Message, options: AppendMessageOptions = {}): SessionMessageRecord {
@@ -47,6 +60,25 @@ export class JsonlSession {
     return record;
   }
 
+  appendContextChunk(input: ContextChunkInput): SessionContextChunkRecord {
+    const record: SessionContextChunkRecord = {
+      type: 'context_chunk',
+      chunk_id: this.#nextChunkId,
+      range_start: input.range_start,
+      range_end: input.range_end,
+      summary_text: input.summary_text,
+      source_token_count: input.source_token_count,
+      summary_token_count: input.summary_token_count,
+      level: input.level,
+      created_at: Date.now() / 1000,
+      created_by_model: input.created_by_model,
+    };
+    this.#nextChunkId += 1;
+    if (input.meta) record.meta = input.meta;
+    appendRecord(this.jsonlPath, record);
+    return record;
+  }
+
   appendMeta(meta: Record<string, unknown>): void {
     appendRecord(this.jsonlPath, {
       type: 'session_meta',
@@ -59,10 +91,45 @@ export class JsonlSession {
     return readRecords(this.jsonlPath);
   }
 
+  messageRecords(): SessionMessageRecord[] {
+    return this.records().filter(
+      (record): record is SessionMessageRecord => record.type === 'message',
+    );
+  }
+
   messages(): Message[] {
-    return this.records()
-      .filter((record): record is SessionMessageRecord => record.type === 'message')
-      .map(recordToMessage);
+    return this.messageRecords().map(recordToMessage);
+  }
+
+  contextChunks(): SessionContextChunkRecord[] {
+    return this.records().filter(
+      (record): record is SessionContextChunkRecord => record.type === 'context_chunk',
+    );
+  }
+
+  assembleContext(options: ContextWindowOptions = {}): Message[] {
+    return assembleContextWindow(
+      { messages: this.messageRecords(), chunks: this.contextChunks() },
+      options,
+    ).messages;
+  }
+
+  compactContext(options: ContextWindowOptions = {}): ContextCompactionResult {
+    const chunks: SessionContextChunkRecord[] = [];
+    let reason: string | undefined;
+    const maxPasses = options.maxCompactionPasses ?? 16;
+    for (let pass = 0; pass < maxPasses; pass += 1) {
+      const plan = planContextCompaction(
+        { messages: this.messageRecords(), chunks: this.contextChunks() },
+        options,
+      );
+      if (!plan.chunk) {
+        reason = plan.reason;
+        break;
+      }
+      chunks.push(this.appendContextChunk(plan.chunk));
+    }
+    return { compacted: chunks.length > 0, chunks, reason };
   }
 
   assemble(options: { system?: Message | string } = {}): Message[] {
@@ -108,12 +175,10 @@ function nextStoreId(records: SessionRecord[]): number {
   return next;
 }
 
-function recordToMessage(record: SessionMessageRecord): Message {
-  return {
-    role: record.role,
-    content: record.content,
-    tool_call_id: record.tool_call_id,
-    tool_calls: record.tool_calls,
-    thinking: record.thinking,
-  };
+function nextChunkId(records: SessionRecord[]): number {
+  let next = 1;
+  for (const record of records) {
+    if (record.type === 'context_chunk') next = Math.max(next, record.chunk_id + 1);
+  }
+  return next;
 }

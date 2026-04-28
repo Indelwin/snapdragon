@@ -30,6 +30,7 @@ export {
   loadSdConfig,
   loadSdEnvironment,
   type SdAgentConfig,
+  type SdAgentContextConfig,
   type SdConfig,
   type SdExtensionsConfig,
   type SdIsolationConfig,
