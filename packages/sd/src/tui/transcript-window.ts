@@ -8,8 +8,11 @@ export interface TranscriptRow {
   prefixColor?: string;
   prefixBold?: boolean;
   text?: string;
+  role?: string;
   color?: string;
   bold?: boolean;
+  markdown?: boolean;
+  codeBlock?: boolean;
   cursor?: boolean;
 }
 
@@ -43,7 +46,7 @@ function thinkingRows(entry: ChatEntry): TranscriptRow[] {
     .filter((line) => line.trim())
     .slice(-3)
     .map((line, index) => ({
-      key: `${entry.id}-thinking-${index}-${line}`,
+      key: `${entry.id}-thinking-${index}`,
       kind: 'line',
       prefix: 'o ',
       prefixColor: tuiColors.thinking,
@@ -61,7 +64,10 @@ function contentRows(entry: ChatEntry): TranscriptRow[] {
     prefixColor: roleColor(entry.role),
     prefixBold: line.first,
     text: line.text,
+    role: entry.role,
     color: entry.isError ? tuiColors.error : tuiColors.foreground,
+    markdown: entry.role === 'assistant',
+    codeBlock: line.codeBlock,
     cursor: line.last && entry.streaming,
   }));
 }
@@ -93,12 +99,20 @@ function lineItems(text: string): Array<{
   text: string;
   first: boolean;
   last: boolean;
+  codeBlock: boolean;
 }> {
   const lines = splitLines(text);
-  return lines.map((line, index) => ({
-    key: `${index}-${line}`,
-    text: line,
-    first: index === 0,
-    last: index === lines.length - 1,
-  }));
+  let inCodeBlock = false;
+  return lines.map((line, index) => {
+    const fence = /^\s*```/.test(line);
+    const codeBlock = inCodeBlock || fence;
+    if (fence) inCodeBlock = !inCodeBlock;
+    return {
+      key: String(index),
+      text: line,
+      first: index === 0,
+      last: index === lines.length - 1,
+      codeBlock,
+    };
+  });
 }
