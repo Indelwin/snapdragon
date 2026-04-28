@@ -29,6 +29,10 @@ test('default config uses Anthropic Opus 4.7 without storing secrets', () => {
     chunk_target_tokens: 8_000,
     summary_target_tokens: 1_500,
   });
+  assert.deepEqual(config.agent?.reasoning, {
+    enabled: true,
+    effort: 'medium',
+  });
   assert.equal(JSON.stringify(config).includes('sk-ant-'), false);
 });
 
@@ -102,6 +106,30 @@ test('loadSdConfig deep merges agent context settings', async () => {
     assert.equal(config.agent?.context?.fresh_tail_count, 32);
     assert.equal(config.agent?.context?.max_request_tokens, 64_000);
     assert.equal(config.agent?.context?.chunk_target_tokens, 8_000);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('loadSdConfig honours user reasoning override and disable', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-reasoning-config-'));
+  const configPath = join(workspace, 'config.yaml');
+  try {
+    await writeFile(
+      configPath,
+      ['version: 1', 'agent:', '  reasoning:', '    effort: high', ''].join('\n'),
+      'utf8',
+    );
+    const overridden = await loadSdConfig(configPath);
+    assert.equal(overridden.agent?.reasoning?.effort, 'high');
+
+    await writeFile(
+      configPath,
+      ['version: 1', 'agent:', '  reasoning:', '    enabled: false', ''].join('\n'),
+      'utf8',
+    );
+    const disabled = await loadSdConfig(configPath);
+    assert.equal(disabled.agent?.reasoning?.enabled, false);
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
