@@ -218,7 +218,7 @@ export class SdUiController {
     this.#currentAssistantId = undefined;
     this.world.applyMany([
       patch(SD_UI_IDS.runStatus, { status: 'error', error: message }),
-      patch(SD_UI_IDS.prompt, { running: false }),
+      patch(SD_UI_IDS.prompt, { running: false, phase: null, phaseLabel: null }),
       this.#eventEntryEvent('error', message, 'agent'),
       logEvent('error', message, 'agent'),
     ]);
@@ -231,7 +231,7 @@ export class SdUiController {
     this.#providerTurnText = '';
     return [
       patch(SD_UI_IDS.runStatus, { status: 'running', runId, error: null }),
-      patch(SD_UI_IDS.prompt, { running: true }),
+      patch(SD_UI_IDS.prompt, { running: true, phase: 'connecting', phaseLabel: null }),
       patch(SD_UI_IDS.splash, { visible: false }),
       this.#eventEntryEvent('info', `run started: ${runId}`, 'agent'),
       logEvent('info', `run started: ${runId}`, 'agent'),
@@ -245,7 +245,7 @@ export class SdUiController {
     this.#providerTurnText = '';
     const events: UiEvent[] = [
       patch(SD_UI_IDS.runStatus, { status: 'done', runId, error: null }),
-      patch(SD_UI_IDS.prompt, { running: false }),
+      patch(SD_UI_IDS.prompt, { running: false, phase: null, phaseLabel: null }),
       this.#eventEntryEvent('info', `run finished: ${runId}`, 'agent'),
       logEvent('info', `run finished: ${runId}`, 'agent'),
     ];
@@ -254,8 +254,12 @@ export class SdUiController {
   }
 
   #providerEventToUiEvents(event: StreamEvent): UiEvent[] {
-    if (event.kind === 'text') return [this.#appendAssistantText(event.delta)];
-    if (event.kind === 'thinking') return [this.#appendAssistantThinking(event.delta)];
+    if (event.kind === 'text') {
+      return [this.#appendAssistantText(event.delta), this.#phasePatch('streaming')];
+    }
+    if (event.kind === 'thinking') {
+      return [this.#appendAssistantThinking(event.delta), this.#phasePatch('thinking')];
+    }
     if (event.kind === 'tool_call_start') return this.#providerToolStartEvents(event);
     if (event.kind === 'usage') return this.#usageEvents(event);
     if (event.kind === 'started') return this.#providerStartedEvents(event);
@@ -269,10 +273,15 @@ export class SdUiController {
     return [];
   }
 
+  #phasePatch(phase: 'connecting' | 'thinking' | 'tool' | 'streaming', label?: string): UiEvent {
+    return patch(SD_UI_IDS.prompt, { phase, phaseLabel: label ?? null });
+  }
+
   #providerStartedEvents(event: Extract<StreamEvent, { kind: 'started' }>): UiEvent[] {
     this.#providerTurnText = '';
     return [
       patch(SD_UI_IDS.runStatus, { provider: event.provider, model: event.model ?? null }),
+      this.#phasePatch('connecting'),
       this.#eventEntryEvent('info', `stream started: ${event.provider}`, 'provider'),
     ];
   }
@@ -280,6 +289,7 @@ export class SdUiController {
   #providerToolStartEvents(event: Extract<StreamEvent, { kind: 'tool_call_start' }>): UiEvent[] {
     return [
       this.#upsertTool({ id: event.id, name: event.name, status: 'running' }),
+      this.#phasePatch('tool', event.name),
       this.#eventEntryEvent('info', `tool call: ${event.name}`, 'provider'),
     ];
   }
@@ -326,6 +336,7 @@ export class SdUiController {
   #toolStartEvents(call: ToolCall): UiEvent[] {
     return [
       this.#upsertTool({ id: call.id, name: call.name, status: 'running' }),
+      this.#phasePatch('tool', call.name),
       this.#eventEntryEvent('info', `tool started: ${call.name}`, 'tool'),
       logEvent('info', `tool started: ${call.name}`, 'tool'),
     ];

@@ -8,6 +8,7 @@ import {
   visibleTranscriptRows,
   wrapTranscriptRows,
 } from '../transcript-window.js';
+import { Shimmer } from './effects.js';
 import { MarkdownLine } from './markdown.js';
 
 export function ChatTranscript({
@@ -54,12 +55,19 @@ function TranscriptLine({ row }: { row: TranscriptRow }) {
       <Text color={row.prefixColor ?? row.color} bold={row.prefixBold}>
         {row.prefix}
       </Text>
-      {row.markdown ? (
-        <MarkdownLine text={row.text ?? ''} color={row.color} codeBlock={row.codeBlock} />
-      ) : (
-        (row.text ?? '')
-      )}
+      {transcriptBody(row)}
       {row.cursor ? <Text color={tuiColors.accentSoft}>{tuiChars.cursor}</Text> : null}
     </Text>
   );
+}
+
+function transcriptBody(row: TranscriptRow) {
+  const text = row.text ?? '';
+  if (row.shimmer) {
+    return <Shimmer text={text} highlight={tuiColors.thinking} base={tuiColors.thinking} />;
+  }
+  if (row.markdown) {
+    return <MarkdownLine text={text} color={row.color} codeBlock={row.codeBlock} />;
+  }
+  return text;
 }
