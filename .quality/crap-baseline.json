@@ -227,11 +227,17 @@
     "crapProxy": 844,
     "maxFunctionLines": 30
   },
+  "packages/sd/src/clipboard.ts": {
+    "lines": 205,
+    "complexity": 29,
+    "crapProxy": 853,
+    "maxFunctionLines": 15
+  },
   "packages/sd/src/commands.ts": {
-    "lines": 477,
-    "complexity": 101,
-    "crapProxy": 10205,
-    "maxFunctionLines": 46
+    "lines": 564,
+    "complexity": 114,
+    "crapProxy": 13000,
+    "maxFunctionLines": 55
   },
   "packages/sd/src/config.ts": {
     "lines": 378,
