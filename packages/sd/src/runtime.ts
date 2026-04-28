@@ -3,16 +3,23 @@ import { normalizeToolsetsConfig } from '@snapdragon-ai/config';
 import type { JsonlSession } from '@snapdragon-ai/session';
 import { memoryToolset, skillToolset } from '@snapdragon-ai/tools';
 import type { SdCliArgs } from './args-types.js';
+import {
+  type SdBackgroundService,
+  type SdBackgroundServicesHandle,
+  startSdBackgroundServices,
+} from './background.js';
 import { loadSdConfig, loadSdEnvironment, type SdConfig } from './config.js';
 import { activateSdExtensions, type SdExtensionRuntime } from './extension-runtime.js';
 import { createSdExtensionStore, type SdExtensionStore } from './extensions.js';
 import { ensureFirstPartyExtensionsForConfig, ensureFirstPartyProfile } from './first-party.js';
 import { createSdMemoryStore, type SdMemoryProvider } from './memory.js';
+import { memoryWorkerService } from './memory-worker.js';
 import { type SdProfileInfo, SdProfileStore } from './profile.js';
 import { resolveSdRuntimeConfig } from './profile-runtime.js';
 import { makeSdProvider, type SdProviderRuntime } from './provider.js';
 import { normalizeRuntimeOptions, type SdRuntimeOptions } from './runtime-options.js';
 import { createRuntimeSession, sessionRoot } from './runtime-session.js';
+import { skillBuilderService } from './skill-builder.js';
 import { createSdSkillStore, type SdSkillStore } from './skills.js';
 
 export interface SdRuntime {
@@ -26,11 +33,16 @@ export interface SdRuntime {
   sessionRoot?: string;
   skills: SdSkillStore;
   memory: SdMemoryProvider;
+  background: SdBackgroundServicesHandle;
   extensions: SdExtensionStore;
   extensionRuntime: SdExtensionRuntime;
   systemPrompt?: string;
   options: SdRuntimeOptions;
   env: NodeJS.ProcessEnv;
+}
+
+export function stopSdRuntime(runtime: SdRuntime): void {
+  runtime.background.stop();
 }
 
 export async function createSdRuntime(
@@ -60,6 +72,13 @@ export async function createSdRuntime(
   const session = createRuntimeSession(options, config, provider);
   const skills = createSdSkillStore(config, profile, extensionRuntime.skillRoots);
   const memory = createSdMemoryStore(config, profile, extensionRuntime.memoryProviders);
+  const background = startSdBackgroundServices(defaultSdBackgroundServices(), {
+    config,
+    memory,
+    profile,
+    disableAll: options.noBackground,
+    disable: collectDisabledServices(options),
+  });
   const agent = await createSdAgent(
     options,
     config,
@@ -81,6 +100,7 @@ export async function createSdRuntime(
     sessionRoot: session ? sessionRoot(config) : undefined,
     skills,
     memory,
+    background,
     extensions,
     extensionRuntime,
     systemPrompt,
@@ -143,3 +163,21 @@ function resolveRuntimeProfile(
 
 export { resolveSdRuntimeConfig } from './profile-runtime.js';
 export { normalizeRuntimeOptions, type SdRuntimeOptions } from './runtime-options.js';
+
+/**
+ * The default background-services roster wired up at runtime construction.
+ * Adding a new service is just appending to this list — its enabled/interval
+ * comes from config, lifecycle is owned by the gateway. Kept exported so
+ * tests / embedders can compose their own roster.
+ */
+export function defaultSdBackgroundServices(): SdBackgroundService[] {
+  return [memoryWorkerService(), skillBuilderService()];
+}
+
+function collectDisabledServices(options: SdRuntimeOptions): string[] {
+  const disabled: string[] = [];
+  // Legacy flag stays supported: it disables only the memory worker, the
+  // rest of the gateway (and any future services) keep running.
+  if (options.noMemoryWorker) disabled.push('memory-worker');
+  return disabled;
+}

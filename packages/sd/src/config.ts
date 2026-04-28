@@ -60,6 +60,13 @@ export interface SdMemoryAutoConfig {
   include_assistant?: boolean;
 }
 
+export interface SdMemoryWorkerConfig {
+  enabled?: boolean;
+  interval_ms?: number;
+  lookback_sessions?: number;
+  include_assistant?: boolean;
+}
+
 export interface SdMemoryConfig {
   enabled?: boolean;
   provider?: string;
@@ -71,6 +78,7 @@ export interface SdMemoryConfig {
     enabled?: boolean;
     max_entries?: number;
   };
+  worker?: SdMemoryWorkerConfig;
 }
 
 export interface SdExtensionsConfig {
@@ -194,6 +202,12 @@ export function defaultSdConfig(): SdConfig {
         enabled: true,
         max_entries: 5,
       },
+      worker: {
+        enabled: false,
+        interval_ms: 5 * 60 * 1000,
+        lookback_sessions: 10,
+        include_assistant: false,
+      },
     },
     extensions: {
       roots: [DEFAULT_SD_EXTENSION_ROOT],
@@ -270,6 +284,7 @@ function mergeMemoryConfig(
     ...(input ?? {}),
     auto: { ...(defaults?.auto ?? {}), ...(input?.auto ?? {}) },
     context: { ...(defaults?.context ?? {}), ...(input?.context ?? {}) },
+    worker: { ...(defaults?.worker ?? {}), ...(input?.worker ?? {}) },
   };
 }
 
