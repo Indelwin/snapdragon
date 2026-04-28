@@ -10,6 +10,7 @@ import { type AgentEvent, type AgentEventListener, emitProviderEvent } from './e
 import { defaultCodingSystemPrompt, defaultSystemPrompt } from './prompts.js';
 import { parseToolArgs } from './tool-args.js';
 import type {
+  AgentContextOptions,
   AgentOptions,
   AgentPromptInput,
   AgentSession,
@@ -23,6 +24,8 @@ type AgentOptionsPlus = AgentOptions & ReasoningOptions;
 type CodingOptions = CodingAgentOptions & ReasoningOptions;
 type AgentArgsPlus = SnapdragonAgentArgs & ReasoningOptions;
 
+const DEFAULT_MAX_TOOL_RESULT_BYTES = 64_000;
+
 export { defaultCodingSystemPrompt, defaultSystemPrompt } from './prompts.js';
 export type * from './types.js';
 
@@ -34,6 +37,8 @@ export class SnapdragonAgent {
   #systemPrompt: string;
   #profile?: Profile;
   #maxTurns: number;
+  #maxToolResultBytes: number;
+  #context?: AgentContextOptions;
   #temperature?: number;
   #maxTokens?: number;
   #reasoning: ReasoningRequest | undefined;
@@ -47,6 +52,8 @@ export class SnapdragonAgent {
     this.#systemPrompt = args.systemPrompt;
     this.#profile = args.profile;
     this.#maxTurns = args.maxTurns;
+    this.#maxToolResultBytes = args.maxToolResultBytes;
+    this.#context = args.context;
     this.#temperature = args.temperature;
     this.#maxTokens = args.maxTokens;
     this.#reasoning = args.reasoning;
@@ -66,7 +73,9 @@ export class SnapdragonAgent {
       registry,
       systemPrompt: options.systemPrompt ?? defaultSystemPrompt(),
       profile: options.profile,
-      maxTurns: options.maxTurns ?? 32,
+      maxTurns: options.maxTurns ?? Number.POSITIVE_INFINITY,
+      maxToolResultBytes: options.maxToolResultBytes ?? DEFAULT_MAX_TOOL_RESULT_BYTES,
+      context: options.context,
       temperature: options.temperature,
       maxTokens: options.maxTokens,
       reasoning: options.reasoning,
@@ -103,7 +112,10 @@ export class SnapdragonAgent {
       const response = await this.#provider(
         {
           role: 'assistant',
-          messages: this.#requestMessages({ visible: userMessage, request: requestUserMessage }),
+          messages: await this.#requestMessages({
+            visible: userMessage,
+            request: requestUserMessage,
+          }),
           tools: this.registry.listDefinitions(),
           tool_choice: this.registry.listDefinitions().length > 0 ? 'auto' : 'none',
           temperature: this.#temperature,
@@ -137,9 +149,10 @@ export class SnapdragonAgent {
           cwd: this.cwd,
           signal: options.signal,
         });
+        const toolContent = clampToolResult(result.content, this.#maxToolResultBytes);
         const toolMessage: Message = {
           role: 'tool',
-          content: result.content,
+          content: toolContent,
           tool_call_id: call.id,
         };
         await this.#appendMessage(toolMessage);
@@ -156,15 +169,25 @@ export class SnapdragonAgent {
     throw new Error(`Agent exceeded maxTurns=${this.#maxTurns}`);
   }
 
-  #requestMessages(replacement?: { visible: Message; request: Message }): Message[] {
+  async #requestMessages(replacement?: { visible: Message; request: Message }): Promise<Message[]> {
     const system: Message[] =
       this.#systemPrompt.length > 0 ? [{ role: 'system', content: this.#systemPrompt }] : [];
+    await this.#compactContext();
+    const contextMessages = await this.#contextMessages();
     const messages = replacement
-      ? this.messages.map((message) =>
-          message === replacement.visible ? replacement.request : message,
-        )
-      : this.messages;
+      ? replaceVisibleMessage(contextMessages, replacement)
+      : contextMessages;
     return [...system, ...messages];
+  }
+
+  async #compactContext(): Promise<void> {
+    if (!this.#context?.enabled || !this.#session?.compactContext) return;
+    await this.#session.compactContext(this.#context);
+  }
+
+  async #contextMessages(): Promise<Message[]> {
+    if (!this.#context?.enabled || !this.#session?.assembleContext) return this.messages;
+    return this.#session.assembleContext(this.#context);
   }
 
   async #appendMessage(message: Message): Promise<void> {
@@ -195,4 +218,33 @@ export async function createCodingReplAgent(options: CodingOptions): Promise<Sna
 
 function codingSession(options: CodingAgentOptions): Map<string, unknown> | undefined {
   return options.codingTools ? options.codingTools.session : undefined;
+}
+
+function clampToolResult(content: string, maxBytes: number): string {
+  if (!Number.isFinite(maxBytes) || maxBytes <= 0) return content;
+  if (Buffer.byteLength(content, 'utf8') <= maxBytes) return content;
+  const slice = Buffer.from(content, 'utf8').subarray(0, Math.floor(maxBytes)).toString('utf8');
+  return `${slice}\n[tool result truncated to ${Math.floor(maxBytes)} bytes]`;
+}
+
+function replaceVisibleMessage(
+  messages: Message[],
+  replacement: { visible: Message; request: Message },
+): Message[] {
+  const index = findEquivalentMessageIndex(messages, replacement.visible);
+  if (index < 0) return messages;
+  const out = messages.slice();
+  out[index] = replacement.request;
+  return out;
+}
+
+function findEquivalentMessageIndex(messages: Message[], target: Message): number {
+  const targetContent = JSON.stringify(target.content);
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const candidate = messages[index];
+    if (candidate.role === target.role && JSON.stringify(candidate.content) === targetContent) {
+      return index;
+    }
+  }
+  return -1;
 }

@@ -131,6 +131,8 @@ export async function createSdAgent(
     session,
     systemPrompt,
     maxTurns: config.agent?.max_turns,
+    maxToolResultBytes: config.agent?.max_tool_result_bytes,
+    context: contextOptions(config),
     temperature: config.agent?.temperature,
     maxTokens: config.agent?.max_tokens,
     reasoning: config.agent?.reasoning ?? provider.reasoning,
@@ -180,4 +182,23 @@ function collectDisabledServices(options: SdRuntimeOptions): string[] {
   // rest of the gateway (and any future services) keep running.
   if (options.noMemoryWorker) disabled.push('memory-worker');
   return disabled;
+}
+
+/**
+ * Translate the snake_case `agent.context` config block into the camelCase
+ * options the agent consumes. Returns `undefined` when no block is set so we
+ * don't override the agent's own defaults unnecessarily.
+ */
+function contextOptions(config: SdConfig) {
+  const context = config.agent?.context;
+  if (!context) return undefined;
+  return {
+    enabled: context.enabled,
+    freshTailCount: context.fresh_tail_count,
+    maxRequestTokens: context.max_request_tokens,
+    chunkTargetTokens: context.chunk_target_tokens,
+    summaryTargetTokens: context.summary_target_tokens,
+    minChunkMessages: context.min_chunk_messages,
+    maxCompactionPasses: context.max_compaction_passes,
+  };
 }
