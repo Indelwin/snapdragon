@@ -247,6 +247,14 @@ export function defaultSdConfig(): SdConfig {
         chunk_target_tokens: 8_000,
         summary_target_tokens: 1_500,
       },
+      // Extended thinking on by default. Renders inline as `o ` rows
+      // in the TUI transcript (with the most recent line shimmering
+      // while streaming). Override with `agent.reasoning.enabled: false`
+      // or set `effort` to `low`/`high`/`max` to taste.
+      reasoning: {
+        enabled: true,
+        effort: 'medium',
+      },
     },
   };
 }
