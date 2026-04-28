@@ -36,6 +36,7 @@ export function defaultCommands(
     command('/model', 'show or switch model', runSlashCommand, '<id>'),
     command('/attach', 'attach an image to the next prompt', runSlashCommand, '<path-or-url>'),
     command('/clear-attachments', 'clear pending attachments', runSlashCommand),
+    command('/paste', 'paste clipboard image (or echo text)', runSlashCommand, '[image|text]'),
     command('/events', 'toggle events panel', runSlashCommand),
     command('/palette', 'open command palette', runSlashCommand),
     command('/quit', 'exit sd', runSlashCommand),
