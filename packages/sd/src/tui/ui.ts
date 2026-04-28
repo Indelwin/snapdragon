@@ -56,6 +56,7 @@ export class SdUiController {
   readonly runtime: SdRuntime;
   #activeRunId: string | undefined;
   #currentAssistantId: string | undefined;
+  #assistantSequence = 0;
   #maxEntries: number;
   #maxLogEntries: number;
   #boundAgent: SnapdragonAgent | undefined;
@@ -223,6 +224,7 @@ export class SdUiController {
   #runStart(runId: string): UiEvent[] {
     this.#activeRunId = runId;
     this.#currentAssistantId = undefined;
+    this.#assistantSequence = 0;
     return [
       patch(SD_UI_IDS.runStatus, { status: 'running', runId, error: null }),
       patch(SD_UI_IDS.prompt, { running: true }),
@@ -351,7 +353,7 @@ export class SdUiController {
     const current = entries.find((entry) => entry.id === this.#currentAssistantId);
     if (current) return current;
     const entry: ChatEntry = {
-      id: `assistant_${this.#activeRunId ?? Date.now()}`,
+      id: this.#nextAssistantId(),
       role: 'assistant',
       content: '',
       streaming: true,
@@ -359,6 +361,11 @@ export class SdUiController {
     this.#currentAssistantId = entry.id;
     this.world.apply(this.#appendChat(entry));
     return entry;
+  }
+
+  #nextAssistantId(): string {
+    this.#assistantSequence += 1;
+    return `assistant_${this.#activeRunId ?? Date.now()}_${this.#assistantSequence}`;
   }
 
   #replaceChatEntry(entry: ChatEntry): UiEvent {

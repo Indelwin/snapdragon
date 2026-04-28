@@ -17,6 +17,8 @@ import {
   type PromptCompletionState,
 } from '../src/tui/input-completion.ts';
 import { handleGlobalInput, handlePromptInput } from '../src/tui/input-keymap.ts';
+import { chatEntries } from '../src/tui/state-readers.ts';
+import { transcriptRows } from '../src/tui/transcript-window.ts';
 import { SD_UI_IDS, SdUiController } from '../src/tui/ui.ts';
 
 test('SdUiController maps agent streams and tool events into UI ECS state', async () => {
@@ -56,6 +58,44 @@ test('SdUiController maps agent streams and tool events into UI ECS state', asyn
     assert.match(JSON.stringify(chat), /hi/);
     assert.match(JSON.stringify(tools), /read_file/);
     assert.equal(controller.isRunning, false);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('SdUiController gives each assistant stream segment stable transcript keys', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-stream-keys-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    const controller = new SdUiController(runtime);
+
+    controller.acceptAgentEvent({ type: 'run_start', runId: 'run_1' });
+    controller.acceptAgentEvent({
+      type: 'provider_event',
+      event: { kind: 'text', run_id: 'run_1', provider: 'mock', delta: '**First**' },
+    });
+    controller.acceptAgentEvent({
+      type: 'message',
+      message: {
+        role: 'assistant',
+        content: '**First**',
+        tool_calls: [{ id: 'call_1', name: 'read_file', args_json: '{}' }],
+      },
+    });
+    controller.acceptAgentEvent({
+      type: 'provider_event',
+      event: { kind: 'text', run_id: 'run_1', provider: 'mock', delta: '**Second**' },
+    });
+
+    const entries = chatEntries(controller.world.componentState(SD_UI_IDS.chat));
+    const assistantIds = entries
+      .filter((entry) => entry.role === 'assistant')
+      .map((entry) => entry.id);
+    const keys = transcriptRows(entries).map((row) => row.key);
+
+    assert.deepEqual(assistantIds, ['assistant_run_1_1', 'assistant_run_1_2']);
+    assert.equal(new Set(keys).size, keys.length);
+    assert.ok(transcriptRows(entries).some((row) => row.markdown));
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
