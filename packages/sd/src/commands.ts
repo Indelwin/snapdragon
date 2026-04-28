@@ -1,5 +1,12 @@
+import { join } from 'node:path';
 import type { ProviderModel } from '@snapdragon-ai/host';
 import { attachmentFromReference, type PendingAttachment } from './attachments.js';
+import {
+  clipboardSupported,
+  pasteImageAttachment,
+  readClipboardText,
+  unsupportedPlatformMessage,
+} from './clipboard.js';
 import {
   configuredModelsForProvider,
   discoverSdModels,
@@ -51,6 +58,7 @@ export const BUILTIN_SLASH_COMMANDS = [
   '/models',
   '/model',
   '/attach',
+  '/paste',
   '/clear-attachments',
   '/events',
   '/palette',
@@ -90,6 +98,7 @@ export async function handleCommand(
   if (command === '/models') return modelsCommand(arg, runtime, io, attachments);
   if (command === '/model') return modelCommand(arg, runtime, io, attachments);
   if (command === '/attach') return attachImage(arg, runtime, attachments, io);
+  if (command === '/paste') return pasteCommand(arg, runtime, attachments, io);
   if (command === '/clear-attachments') {
     return writeResult(io, 'Cleared pending attachments.', []);
   }
@@ -249,6 +258,83 @@ async function attachImage(
   return writeResult(io, `Attached ${attachment.label} (${next.length} pending).`, next);
 }
 
+/**
+ * `/paste` — pull an image (or text) from the OS clipboard. With no
+ * argument we auto-detect: an image is preferred when present, otherwise
+ * the clipboard's text contents are echoed back. Explicit `image` or
+ * `text` arguments force one mode and produce a clear error if the
+ * clipboard does not currently hold that kind of data.
+ *
+ * Pasted images are written to a session-scoped attachments directory
+ * (`<sessionRoot>/<sessionId>.attachments/`) so they get cleaned up when
+ * the session is deleted.
+ */
+async function pasteCommand(
+  arg: string,
+  runtime: SdRuntime,
+  attachments: PendingAttachment[],
+  io: SdIo,
+): Promise<CommandResult> {
+  if (!clipboardSupported()) {
+    return writeResult(io, unsupportedPlatformMessage(), attachments);
+  }
+  const mode = arg.trim().toLowerCase();
+  if (mode && mode !== 'image' && mode !== 'text') {
+    return writeResult(
+      io,
+      `Unknown /paste mode: ${arg}. Use '/paste', '/paste image', or '/paste text'.`,
+      attachments,
+    );
+  }
+
+  if (mode !== 'text') {
+    const dir = pasteAttachmentsDir(runtime);
+    if (!dir) {
+      // Image pasting needs a session directory to persist the file in.
+      // Fall back to text mode if we asked for auto-detect; otherwise error.
+      if (mode === 'image') {
+        return writeResult(
+          io,
+          'Cannot paste image: no active session to store it in. Start a session first.',
+          attachments,
+        );
+      }
+    } else {
+      const attachment = await pasteImageAttachment({
+        attachmentsDir: dir,
+        cwd: runtime.agent.cwd,
+      });
+      if (attachment) {
+        const next = [...attachments, attachment];
+        return writeResult(
+          io,
+          `Pasted image as ${attachment.label} (${next.length} pending).`,
+          next,
+        );
+      }
+      if (mode === 'image') {
+        return writeResult(io, 'Clipboard does not contain an image.', attachments);
+      }
+    }
+  }
+
+  const text = await readClipboardText();
+  if (!text) {
+    return writeResult(io, 'Clipboard is empty.', attachments);
+  }
+  return writeResult(io, `Clipboard text:\n${text.text}`, attachments);
+}
+
+/**
+ * Where to persist pasted images. Returns `undefined` when no session is
+ * active (e.g. `--no-session` or one-shot runs) — we deliberately avoid
+ * sprinkling temp PNGs around the user's filesystem in that case.
+ */
+function pasteAttachmentsDir(runtime: SdRuntime): string | undefined {
+  if (!runtime.session || !runtime.sessionRoot) return undefined;
+  return join(runtime.sessionRoot, `${runtime.session.sessionId}.attachments`);
+}
+
 function providerSummary(runtime: SdRuntime): string {
   return [
     `active: ${runtime.provider.id}/${runtime.provider.model} (${runtime.provider.kind})`,
@@ -331,6 +417,7 @@ function slashHelp(): string {
     '  /models [provider]    Discover/list provider models',
     '  /model [id]           Show or switch model on active provider',
     '  /attach <path-or-url> Attach an image to the next prompt',
+    '  /paste [image|text]   Attach clipboard image or echo clipboard text',
     '  /clear-attachments    Clear pending attachments',
   ].join('\n');
 }
