@@ -1,5 +1,8 @@
 import type { ChatEntry } from './state-readers.js';
 import { roleColor, tuiChars, tuiColors } from './theme.js';
+import { toolResultRows } from './transcript-tool-rows.js';
+
+export { wrapTranscriptRows } from './transcript-wrap.js';
 
 export interface TranscriptRow {
   key: string;
@@ -33,6 +36,7 @@ export function visibleTranscriptRows(
 }
 
 function entryRows(entry: ChatEntry): TranscriptRow[] {
+  if (entry.role === 'tool') return toolResultRows(entry);
   const rows: TranscriptRow[] = [{ key: `${entry.id}-space`, kind: 'spacer' }];
   rows.push(...thinkingRows(entry));
   rows.push(...contentRows(entry));
@@ -56,6 +60,7 @@ function thinkingRows(entry: ChatEntry): TranscriptRow[] {
 }
 
 function contentRows(entry: ChatEntry): TranscriptRow[] {
+  if (!entry.content && entry.role === 'assistant' && entry.toolCalls) return [];
   const content = entry.content || (entry.streaming ? '' : '(empty)');
   return lineItems(content).map((line) => ({
     key: `${entry.id}-content-${line.key}`,

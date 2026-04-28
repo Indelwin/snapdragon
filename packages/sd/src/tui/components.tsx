@@ -15,7 +15,11 @@ export function createDefaultInkRendererRegistry(): InkRendererRegistry {
   registry.register('run.status', (component) => <RunStatus component={component} />);
   registry.register('splash.banner', (component) => <SplashBanner component={component} />);
   registry.register('chat.transcript', (component, context) => (
-    <ChatTranscript component={component} viewportRows={context.viewportRows} />
+    <ChatTranscript
+      component={component}
+      viewportRows={context.viewportRows}
+      viewportColumns={context.viewportColumns ?? 80}
+    />
   ));
   registry.register('tool.panel', (component) => <ToolPanel component={component} />);
   registry.register('event.log', (component) => <EventLog component={component} />);

@@ -8,6 +8,8 @@ export interface ChatEntry {
   streaming?: boolean;
   toolCalls?: number;
   isError?: boolean;
+  toolName: string | undefined;
+  toolStatus: string | undefined;
 }
 
 export interface ToolEntry {
@@ -21,6 +23,7 @@ export interface EventEntry {
   id: string;
   level: string;
   message: string;
+  detail: string | undefined;
   source: string;
   timestamp: string;
 }
@@ -59,6 +62,8 @@ export function chatEntries(state: JsonObject): ChatEntry[] {
     streaming: entry.streaming === true,
     toolCalls: numberValue(entry.toolCalls),
     isError: entry.isError === true,
+    toolName: optionalStringValue(entry.toolName),
+    toolStatus: optionalStringValue(entry.toolStatus),
   }));
 }
 
@@ -76,6 +81,7 @@ export function eventEntries(state: JsonObject): EventEntry[] {
     id: stringValue(entry.id),
     level: stringValue(entry.level),
     message: stringValue(entry.message),
+    detail: optionalStringValue(entry.detail),
     source: stringValue(entry.source),
     timestamp: stringValue(entry.timestamp),
   }));
