@@ -42,6 +42,8 @@ interface ChatEntry {
   thinking?: string;
   toolCalls?: number;
   isError?: boolean;
+  toolName?: string;
+  toolStatus?: string;
 }
 
 interface ToolEntry {
@@ -57,6 +59,7 @@ export class SdUiController {
   #activeRunId: string | undefined;
   #currentAssistantId: string | undefined;
   #assistantSequence = 0;
+  #providerTurnText = '';
   #maxEntries: number;
   #maxLogEntries: number;
   #boundAgent: SnapdragonAgent | undefined;
@@ -225,6 +228,7 @@ export class SdUiController {
     this.#activeRunId = runId;
     this.#currentAssistantId = undefined;
     this.#assistantSequence = 0;
+    this.#providerTurnText = '';
     return [
       patch(SD_UI_IDS.runStatus, { status: 'running', runId, error: null }),
       patch(SD_UI_IDS.prompt, { running: true }),
@@ -235,14 +239,18 @@ export class SdUiController {
   }
 
   #runEnd(runId: string): UiEvent[] {
+    const assistantId = this.#currentAssistantId;
     this.#activeRunId = undefined;
     this.#currentAssistantId = undefined;
-    return [
+    this.#providerTurnText = '';
+    const events: UiEvent[] = [
       patch(SD_UI_IDS.runStatus, { status: 'done', runId, error: null }),
       patch(SD_UI_IDS.prompt, { running: false }),
       this.#eventEntryEvent('info', `run finished: ${runId}`, 'agent'),
       logEvent('info', `run finished: ${runId}`, 'agent'),
     ];
+    if (assistantId) events.unshift(this.#markChatEntryStreaming(assistantId, false));
+    return events;
   }
 
   #providerEventToUiEvents(event: StreamEvent): UiEvent[] {
@@ -262,6 +270,7 @@ export class SdUiController {
   }
 
   #providerStartedEvents(event: Extract<StreamEvent, { kind: 'started' }>): UiEvent[] {
+    this.#providerTurnText = '';
     return [
       patch(SD_UI_IDS.runStatus, { provider: event.provider, model: event.model ?? null }),
       this.#eventEntryEvent('info', `stream started: ${event.provider}`, 'provider'),
@@ -290,9 +299,10 @@ export class SdUiController {
 
   #messageToUiEvents(message: Message): UiEvent[] {
     const sessionPatch = this.#sessionMessageCountEvent();
-    if (message.role === 'assistant' && this.#currentAssistantId) {
+    if (message.role === 'assistant' && this.#activeRunId) {
       return this.#assistantFinalEvents(message).concat(sessionPatch);
     }
+    if (message.role === 'tool' && this.#activeRunId) return sessionPatch;
     return [
       this.#appendChat(messageToEntry(message)),
       patch(SD_UI_IDS.splash, { visible: false }),
@@ -300,18 +310,17 @@ export class SdUiController {
   }
 
   #assistantFinalEvents(message: Message): UiEvent[] {
-    const entries = chatEntries(this.world.componentState(SD_UI_IDS.chat)).map((entry) =>
-      entry.id === this.#currentAssistantId
-        ? {
-            ...entry,
-            content: messageContentSummary(message),
-            streaming: false,
-            toolCalls: message.tool_calls?.length ?? 0,
-          }
-        : entry,
-    );
-    this.#currentAssistantId = undefined;
-    return [patch(SD_UI_IDS.chat, { entries: trimEntries(entries, this.#maxEntries) })];
+    const entry = this.#ensureAssistantEntry();
+    const summary = messageContentSummary(message);
+    if (summary.trim()) this.#providerTurnText = summary;
+    return [
+      this.#replaceChatEntry({
+        ...entry,
+        content: summary.trim() ? summary : entry.content,
+        streaming: true,
+        toolCalls: (entry.toolCalls ?? 0) + (message.tool_calls?.length ?? 0),
+      }),
+    ];
   }
 
   #toolStartEvents(call: ToolCall): UiEvent[] {
@@ -331,14 +340,24 @@ export class SdUiController {
         status: isError ? 'error' : 'done',
         content,
       }),
-      this.#eventEntryEvent(level, `tool finished: ${call.name}`, 'tool'),
+      this.#appendChat({
+        id: `tool_${call.id}`,
+        role: 'tool',
+        content,
+        isError,
+        toolName: call.name,
+        toolStatus: isError ? 'error' : 'done',
+      }),
+      this.#eventEntryEvent(level, `tool finished: ${call.name}`, 'tool', content),
       logEvent(level, `tool finished: ${call.name}`, 'tool'),
     ];
   }
 
   #appendAssistantText(delta: string): UiEvent {
+    this.#providerTurnText += delta;
     const entry = this.#ensureAssistantEntry();
-    entry.content += delta;
+    entry.content = this.#providerTurnText;
+    entry.streaming = true;
     return this.#replaceChatEntry(entry);
   }
 
@@ -369,9 +388,11 @@ export class SdUiController {
   }
 
   #replaceChatEntry(entry: ChatEntry): UiEvent {
-    const entries = chatEntries(this.world.componentState(SD_UI_IDS.chat)).map((candidate) =>
-      candidate.id === entry.id ? entry : candidate,
-    );
+    const currentEntries = chatEntries(this.world.componentState(SD_UI_IDS.chat));
+    const entries =
+      entry.role === 'assistant' && this.#activeRunId
+        ? [...currentEntries.filter((candidate) => candidate.id !== entry.id), entry]
+        : currentEntries.map((candidate) => (candidate.id === entry.id ? entry : candidate));
     return patch(SD_UI_IDS.chat, { entries: trimEntries(entries, this.#maxEntries) });
   }
 
@@ -388,13 +409,25 @@ export class SdUiController {
     return patch(SD_UI_IDS.toolPanel, { tools: next });
   }
 
-  #eventEntryEvent(level: 'info' | 'warn' | 'error', message: string, source: string): UiEvent {
+  #eventEntryEvent(
+    level: 'info' | 'warn' | 'error',
+    message: string,
+    source: string,
+    detail?: string,
+  ): UiEvent {
     const entries = eventEntries(this.world.componentState(SD_UI_IDS.eventLog)).map(
       eventEntryToJson,
     );
     return patch(SD_UI_IDS.eventLog, {
-      entries: [...entries, makeEvent(level, message, source)].slice(-this.#maxLogEntries),
+      entries: [...entries, makeEvent(level, message, source, detail)].slice(-this.#maxLogEntries),
     });
+  }
+
+  #markChatEntryStreaming(id: string, streaming: boolean): UiEvent {
+    const entries = chatEntries(this.world.componentState(SD_UI_IDS.chat)).map((entry) =>
+      entry.id === id ? { ...entry, streaming } : entry,
+    );
+    return patch(SD_UI_IDS.chat, { entries: trimEntries(entries, this.#maxEntries) });
   }
 
   #logEvents(level: 'info' | 'warn' | 'error', message: string, source: string): UiEvent[] {
@@ -538,6 +571,7 @@ function eventEntryToJson(entry: {
   id: string;
   level: string;
   message: string;
+  detail?: string;
   source: string;
   timestamp: string;
 }): JsonObject {
@@ -545,16 +579,23 @@ function eventEntryToJson(entry: {
     id: entry.id,
     level: entry.level,
     message: entry.message,
+    ...(entry.detail ? { detail: entry.detail } : {}),
     source: entry.source,
     timestamp: entry.timestamp,
   };
 }
 
-function makeEvent(level: 'info' | 'warn' | 'error', message: string, source: string): JsonObject {
+function makeEvent(
+  level: 'info' | 'warn' | 'error',
+  message: string,
+  source: string,
+  detail?: string,
+): JsonObject {
   return {
     id: makeId('event'),
     level,
     message,
+    ...(detail ? { detail } : {}),
     source,
     timestamp: new Date().toISOString(),
   };

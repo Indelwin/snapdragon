@@ -378,10 +378,10 @@
     "maxFunctionLines": 11
   },
   "packages/sd/src/tui/index.tsx": {
-    "lines": 161,
-    "complexity": 32,
-    "crapProxy": 1030,
-    "maxFunctionLines": 62
+    "lines": 167,
+    "complexity": 34,
+    "crapProxy": 1162,
+    "maxFunctionLines": 66
   },
   "packages/sd/src/tui/inline-shell.ts": {
     "lines": 61,
@@ -438,10 +438,10 @@
     "maxFunctionLines": 22
   },
   "packages/sd/src/tui/renderers/chat.tsx": {
-    "lines": 59,
+    "lines": 66,
     "complexity": 13,
     "crapProxy": 170,
-    "maxFunctionLines": 23
+    "maxFunctionLines": 25
   },
   "packages/sd/src/tui/renderers/markdown.tsx": {
     "lines": 108,
@@ -456,10 +456,10 @@
     "maxFunctionLines": 39
   },
   "packages/sd/src/tui/renderers/panels.tsx": {
-    "lines": 68,
-    "complexity": 10,
-    "crapProxy": 102,
-    "maxFunctionLines": 31
+    "lines": 97,
+    "complexity": 15,
+    "crapProxy": 227,
+    "maxFunctionLines": 28
   },
   "packages/sd/src/tui/renderers/prompt.tsx": {
     "lines": 132,
@@ -486,7 +486,7 @@
     "maxFunctionLines": 10
   },
   "packages/sd/src/tui/state-readers.ts": {
-    "lines": 144,
+    "lines": 150,
     "complexity": 19,
     "crapProxy": 379,
     "maxFunctionLines": 15
@@ -497,16 +497,28 @@
     "crapProxy": 53,
     "maxFunctionLines": 8
   },
+  "packages/sd/src/tui/transcript-tool-rows.ts": {
+    "lines": 54,
+    "complexity": 10,
+    "crapProxy": 101,
+    "maxFunctionLines": 33
+  },
   "packages/sd/src/tui/transcript-window.ts": {
-    "lines": 119,
-    "complexity": 25,
-    "crapProxy": 628,
+    "lines": 124,
+    "complexity": 29,
+    "crapProxy": 845,
     "maxFunctionLines": 22
   },
+  "packages/sd/src/tui/transcript-wrap.ts": {
+    "lines": 56,
+    "complexity": 15,
+    "crapProxy": 226,
+    "maxFunctionLines": 14
+  },
   "packages/sd/src/tui/ui.ts": {
-    "lines": 566,
-    "complexity": 79,
-    "crapProxy": 6246,
+    "lines": 607,
+    "complexity": 96,
+    "crapProxy": 9221,
     "maxFunctionLines": 42
   },
   "packages/session/src/context-options.ts": {
