@@ -19,6 +19,20 @@ export {
 } from './background.js';
 export { helpText, isDirectEntrypoint, main } from './cli.js';
 export {
+  type ClipboardImage,
+  type ClipboardOptions,
+  type ClipboardRunner,
+  type ClipboardRunResult,
+  type ClipboardText,
+  clipboardSupported,
+  type PasteImageOptions,
+  parseAppleScriptHex,
+  pasteImageAttachment,
+  readClipboardImage,
+  readClipboardText,
+  unsupportedPlatformMessage,
+} from './clipboard.js';
+export {
   DEFAULT_SD_CONFIG_PATH,
   DEFAULT_SD_ENV_PATH,
   DEFAULT_SD_EXTENSION_ROOT,
