@@ -18,7 +18,11 @@ import {
 } from '../src/tui/input-completion.ts';
 import { handleGlobalInput, handlePromptInput } from '../src/tui/input-keymap.ts';
 import { chatEntries } from '../src/tui/state-readers.ts';
-import { transcriptRows } from '../src/tui/transcript-window.ts';
+import {
+  transcriptRows,
+  visibleTranscriptRows,
+  wrapTranscriptRows,
+} from '../src/tui/transcript-window.ts';
 import { SD_UI_IDS, SdUiController } from '../src/tui/ui.ts';
 
 test('SdUiController maps agent streams and tool events into UI ECS state', async () => {
@@ -63,42 +67,92 @@ test('SdUiController maps agent streams and tool events into UI ECS state', asyn
   }
 });
 
-test('SdUiController gives each assistant stream segment stable transcript keys', async () => {
-  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-stream-keys-'));
+test('SdUiController keeps tool-loop assistant output to one visible response', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-tool-loop-'));
   try {
     const runtime = await createMockRuntime(workspace);
     const controller = new SdUiController(runtime);
 
     controller.acceptAgentEvent({ type: 'run_start', runId: 'run_1' });
+    controller.acceptAgentEvent({ type: 'message', message: { role: 'user', content: 'test' } });
     controller.acceptAgentEvent({
       type: 'provider_event',
-      event: { kind: 'text', run_id: 'run_1', provider: 'mock', delta: '**First**' },
+      event: { kind: 'started', run_id: 'run_1', provider: 'mock' },
+    });
+    controller.acceptAgentEvent({
+      type: 'provider_event',
+      event: { kind: 'text', run_id: 'run_1', provider: 'mock', delta: 'checking' },
     });
     controller.acceptAgentEvent({
       type: 'message',
       message: {
         role: 'assistant',
-        content: '**First**',
-        tool_calls: [{ id: 'call_1', name: 'read_file', args_json: '{}' }],
+        content: 'checking',
+        tool_calls: [{ id: 'tool_1', name: 'read_file', args_json: '{}' }],
       },
     });
     controller.acceptAgentEvent({
+      type: 'tool_end',
+      call: { id: 'tool_1', name: 'read_file', args_json: '{}' },
+      content: 'line one\nline two\nline three\nline four',
+      isError: false,
+    });
+    controller.acceptAgentEvent({
       type: 'provider_event',
-      event: { kind: 'text', run_id: 'run_1', provider: 'mock', delta: '**Second**' },
+      event: { kind: 'started', run_id: 'run_1', provider: 'mock' },
+    });
+    controller.acceptAgentEvent({
+      type: 'provider_event',
+      event: { kind: 'text', run_id: 'run_1', provider: 'mock', delta: 'final answer' },
+    });
+    controller.acceptAgentEvent({
+      type: 'message',
+      message: { role: 'assistant', content: 'final answer' },
+    });
+    controller.acceptAgentEvent({
+      type: 'run_end',
+      runId: 'run_1',
+      response: { content: 'final answer' },
     });
 
-    const entries = chatEntries(controller.world.componentState(SD_UI_IDS.chat));
-    const assistantIds = entries
-      .filter((entry) => entry.role === 'assistant')
-      .map((entry) => entry.id);
-    const keys = transcriptRows(entries).map((row) => row.key);
+    const chat = controller.world.componentState(SD_UI_IDS.chat).entries as Array<{
+      role: string;
+      content: string;
+      streaming?: boolean;
+    }>;
+    const assistantEntries = chat.filter((entry) => entry.role === 'assistant');
+    const toolEntries = chat.filter((entry) => entry.role === 'tool');
+    assert.equal(assistantEntries.length, 1);
+    assert.equal(assistantEntries[0]?.content, 'final answer');
+    assert.equal(assistantEntries[0]?.streaming, false);
+    assert.equal(toolEntries.length, 1);
 
-    assert.deepEqual(assistantIds, ['assistant_run_1_1', 'assistant_run_1_2']);
+    const entries = chatEntries(controller.world.componentState(SD_UI_IDS.chat));
+    const keys = transcriptRows(entries).map((row) => row.key);
     assert.equal(new Set(keys).size, keys.length);
     assert.ok(transcriptRows(entries).some((row) => row.markdown));
+
+    const events = JSON.stringify(controller.world.componentState(SD_UI_IDS.eventLog));
+    assert.match(events, /line four/);
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
+});
+
+test('transcript wrapping is calculated before bottom viewport selection', () => {
+  const rows = wrapTranscriptRows(
+    transcriptRows([
+      {
+        id: 'a',
+        role: 'assistant',
+        content: 'first line with enough text to wrap before the final short line\nbottom',
+      },
+    ]),
+    24,
+  );
+  const visible = visibleTranscriptRows(rows, 2, 0);
+
+  assert.equal(visible.at(-1)?.text, 'bottom');
 });
 
 test('SdTuiApp renders the initial ECS shell and later tool activity', async () => {

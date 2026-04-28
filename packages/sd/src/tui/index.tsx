@@ -47,9 +47,12 @@ export function SdTuiApp({
     [registry],
   );
   const [snapshot, setSnapshot] = useState<UiWorldSnapshot>(() => controller.world.snapshot());
-  const { rows } = useWindowSize();
+  const { rows, columns } = useWindowSize();
   const terminalRows = Math.max(16, rows);
+  const terminalColumns = Math.max(40, columns);
+  const showPanel = hasRenderableSlot('panel', snapshot);
   const mainRows = Math.max(1, terminalRows - fixedChromeRows(snapshot));
+  const mainColumns = Math.max(20, terminalColumns - (showPanel ? 45 : 0));
 
   useEffect(() => controller.world.subscribe(setSnapshot), [controller]);
   useEffect(() => {
@@ -57,7 +60,6 @@ export function SdTuiApp({
     return () => controller.dispose();
   }, [controller]);
   useSdTuiInput({ runtime, controller, exit });
-  const showPanel = hasRenderableSlot('panel', snapshot);
 
   return (
     <Box flexDirection="column" height={terminalRows} overflow="hidden">
@@ -75,6 +77,7 @@ export function SdTuiApp({
             snapshot={snapshot}
             registry={rendererRegistry}
             viewportRows={mainRows}
+            viewportColumns={mainColumns}
           />
         </Box>
         {showPanel ? (
@@ -84,6 +87,7 @@ export function SdTuiApp({
               snapshot={snapshot}
               registry={rendererRegistry}
               viewportRows={mainRows}
+              viewportColumns={44}
             />
           </Box>
         ) : null}
@@ -100,11 +104,13 @@ function Slot({
   snapshot,
   registry,
   viewportRows,
+  viewportColumns,
 }: {
   slot: string;
   snapshot: UiWorldSnapshot;
   registry: InkRendererRegistry;
   viewportRows?: number;
+  viewportColumns?: number;
 }) {
   const components = Object.values(snapshot.components)
     .filter(
@@ -121,7 +127,7 @@ function Slot({
           flexShrink={fillsSlot(slot, component) ? 1 : 0}
           overflow="hidden"
         >
-          {registry.render(component, { snapshot, viewportRows })}
+          {registry.render(component, { snapshot, viewportRows, viewportColumns })}
         </Box>
       ))}
     </>

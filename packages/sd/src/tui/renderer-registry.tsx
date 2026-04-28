@@ -4,6 +4,7 @@ import type { ReactNode } from 'react';
 export interface InkRenderContext {
   snapshot: UiWorldSnapshot;
   viewportRows?: number;
+  viewportColumns?: number;
 }
 
 export type InkRenderer = (component: UiComponentSnapshot, context: InkRenderContext) => ReactNode;
