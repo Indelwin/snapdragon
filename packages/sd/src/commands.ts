@@ -74,7 +74,12 @@ export async function handleCommand(
   if (command === '/delete-session') return deleteSessionCommand(arg, runtime, io, attachments);
   if (command === '/profiles') return writeResult(io, profilesSummary(runtime), attachments);
   if (command === '/profile') return profileCommand(arg, runtime, io, attachments);
-  if (command === '/memory') return writeResult(io, await memorySummary(runtime, arg), attachments);
+  if (command === '/memory') {
+    if (arg === 'scan' || arg.startsWith('scan ')) {
+      return writeResult(io, await memoryScanCommand(runtime), attachments);
+    }
+    return writeResult(io, await memorySummary(runtime, arg), attachments);
+  }
   if (command === '/remember') return rememberCommand(arg, runtime, io, attachments);
   if (command === '/extensions') return extensionsCommand(arg, runtime, io, attachments);
   if (command === '/skills') return writeResult(io, skillsSummary(runtime), attachments);
@@ -349,6 +354,28 @@ async function memorySummary(runtime: SdRuntime, query: string): Promise<string>
     entries.length === 0 ? '  (empty)' : '',
   ]
     .filter(Boolean)
+    .join('\n');
+}
+
+async function memoryScanCommand(runtime: SdRuntime): Promise<string> {
+  if (runtime.config.memory?.enabled === false) return 'Memory is disabled.';
+  if (runtime.config.memory?.authoring === false) return 'Memory authoring is disabled.';
+  const { runSdMemoryWorkerOnce } = await import('./memory-worker.js');
+  const result = await runSdMemoryWorkerOnce({
+    config: runtime.config,
+    memory: runtime.memory,
+    profile: runtime.profile,
+  });
+  return [
+    'Memory worker scan:',
+    `  sessions:    ${result.scanned_sessions}`,
+    `  considered:  ${result.considered_messages}`,
+    `  captured:    ${result.captured}`,
+    `  duplicates:  ${result.skipped_duplicates}`,
+    result.errors.length ? `  errors:      ${result.errors.length}` : undefined,
+    ...result.errors.map((error) => `    ! ${error}`),
+  ]
+    .filter((line): line is string => typeof line === 'string')
     .join('\n');
 }
 
