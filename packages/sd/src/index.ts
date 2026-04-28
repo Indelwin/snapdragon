@@ -8,6 +8,15 @@ export {
   mediaTypeForPath,
   type PendingAttachment,
 } from './attachments.js';
+export {
+  type SdBackgroundContext,
+  type SdBackgroundService,
+  type SdBackgroundServiceResult,
+  type SdBackgroundServiceStatus,
+  type SdBackgroundServicesHandle,
+  type SdBackgroundServicesOptions,
+  startSdBackgroundServices,
+} from './background.js';
 export { helpText, isDirectEntrypoint, main } from './cli.js';
 export {
   DEFAULT_SD_CONFIG_PATH,
@@ -26,6 +35,7 @@ export {
   type SdIsolationConfig,
   type SdMemoryAutoConfig,
   type SdMemoryConfig,
+  type SdMemoryWorkerConfig,
   type SdProviderConfig,
   type SdProviderKind,
   type SdSessionConfig,
@@ -70,6 +80,14 @@ export {
   type SdMemoryStoreOptions,
 } from './memory.js';
 export {
+  memoryWorkerService,
+  runSdMemoryWorkerOnce,
+  type SdMemoryWorkerHandle,
+  type SdMemoryWorkerOptions,
+  type SdMemoryWorkerScanResult,
+  startSdMemoryWorker,
+} from './memory-worker.js';
+export {
   ACTIVE_PROFILE_FILE,
   DEFAULT_SD_PROFILE_ROOT,
   type SdProfileConfig,
@@ -94,9 +112,11 @@ export {
 } from './repl.js';
 export {
   createSdRuntime,
+  defaultSdBackgroundServices,
   normalizeRuntimeOptions,
   type SdRuntime,
   type SdRuntimeOptions,
+  stopSdRuntime,
 } from './runtime.js';
 export {
   currentProfileName,
@@ -120,6 +140,7 @@ export {
   type EnsureSessionTitleOptions,
   ensureSessionTitle,
 } from './session-title.js';
+export { type SdSkillBuilderConfig, skillBuilderService } from './skill-builder.js';
 export type { SdTuiOptions } from './tui/index.js';
 
 export async function runTui(runtime: SdRuntime, options?: SdTuiOptions): Promise<void> {
