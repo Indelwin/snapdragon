@@ -155,6 +155,84 @@ test('transcript wrapping is calculated before bottom viewport selection', () =>
   assert.equal(visible.at(-1)?.text, 'bottom');
 });
 
+test('SdUiController publishes prompt phase patches across a run lifecycle', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-phase-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    const controller = new SdUiController(runtime);
+    const phases: Array<string | undefined> = [];
+    controller.world.subscribe((snapshot) => {
+      const promptState = snapshot.components[SD_UI_IDS.prompt]?.state;
+      const phase = typeof promptState?.phase === 'string' ? promptState.phase : undefined;
+      if (phases.at(-1) !== phase) phases.push(phase);
+    });
+
+    controller.acceptAgentEvent({ type: 'run_start', runId: 'run_1' });
+    controller.acceptAgentEvent({
+      type: 'provider_event',
+      event: { kind: 'started', run_id: 'run_1', provider: 'mock' },
+    });
+    controller.acceptAgentEvent({
+      type: 'provider_event',
+      event: { kind: 'thinking', run_id: 'run_1', provider: 'mock', delta: 'reasoning...' },
+    });
+    controller.acceptAgentEvent({
+      type: 'tool_start',
+      call: { id: 'tool_1', name: 'read_file', args_json: '{}' },
+    });
+    controller.acceptAgentEvent({
+      type: 'tool_end',
+      call: { id: 'tool_1', name: 'read_file', args_json: '{}' },
+      content: 'ok',
+      isError: false,
+    });
+    controller.acceptAgentEvent({
+      type: 'provider_event',
+      event: { kind: 'text', run_id: 'run_1', provider: 'mock', delta: 'answer' },
+    });
+    controller.acceptAgentEvent({
+      type: 'run_end',
+      runId: 'run_1',
+      response: { content: 'answer' },
+    });
+
+    assert.deepEqual(phases, ['connecting', 'thinking', 'tool', 'streaming', undefined]);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('thinking transcript rows shimmer only on the latest line while streaming', () => {
+  const rows = transcriptRows([
+    {
+      id: 'a',
+      role: 'assistant',
+      content: 'visible answer',
+      thinking: 'first thought\nsecond thought\nlatest thought',
+      streaming: true,
+    },
+  ]);
+  const thinkingRows = rows.filter((row) => row.prefix === 'o ');
+  assert.equal(thinkingRows.length, 3);
+  assert.equal(thinkingRows[0]?.shimmer, false);
+  assert.equal(thinkingRows[1]?.shimmer, false);
+  assert.equal(thinkingRows[2]?.shimmer, true);
+});
+
+test('thinking transcript rows do not shimmer once streaming stops', () => {
+  const rows = transcriptRows([
+    {
+      id: 'a',
+      role: 'assistant',
+      content: 'visible answer',
+      thinking: 'final thought',
+      streaming: false,
+    },
+  ]);
+  const thinkingRow = rows.find((row) => row.prefix === 'o ');
+  assert.equal(thinkingRow?.shimmer, false);
+});
+
 test('SdTuiApp renders the initial ECS shell and later tool activity', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-render-'));
   try {

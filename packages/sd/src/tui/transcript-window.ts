@@ -17,6 +17,7 @@ export interface TranscriptRow {
   markdown?: boolean;
   codeBlock?: boolean;
   cursor?: boolean;
+  shimmer?: boolean;
 }
 
 export function transcriptRows(entries: readonly ChatEntry[]): TranscriptRow[] {
@@ -46,17 +47,21 @@ function entryRows(entry: ChatEntry): TranscriptRow[] {
 
 function thinkingRows(entry: ChatEntry): TranscriptRow[] {
   if (!entry.thinking) return [];
-  return splitLines(entry.thinking)
+  const lines = splitLines(entry.thinking)
     .filter((line) => line.trim())
-    .slice(-3)
-    .map((line, index) => ({
-      key: `${entry.id}-thinking-${index}`,
-      kind: 'line',
-      prefix: 'o ',
-      prefixColor: tuiColors.thinking,
-      text: line,
-      color: tuiColors.thinking,
-    }));
+    .slice(-3);
+  const last = lines.length - 1;
+  return lines.map((line, index) => ({
+    key: `${entry.id}-thinking-${index}`,
+    kind: 'line',
+    prefix: 'o ',
+    prefixColor: tuiColors.thinking,
+    text: line,
+    color: tuiColors.thinking,
+    // Only the most recent reasoning line shimmers while the entry is
+    // actively streaming, so older lines stay calm and readable.
+    shimmer: entry.streaming === true && index === last,
+  }));
 }
 
 function contentRows(entry: ChatEntry): TranscriptRow[] {
