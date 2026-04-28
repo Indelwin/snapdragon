@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { mockProvider } from '@snapdragon-ai/host';
 import { SessionStore } from '@snapdragon-ai/session';
-import { createCodingReplAgent } from '../src/index.ts';
+import { createAgent, createCodingReplAgent } from '../src/index.ts';
 import { parseToolArgs } from '../src/tool-args.ts';
 
 test('coding repl agent can call the REPL tool and continue', async () => {
@@ -104,6 +104,105 @@ test('agent persists user, assistant, and tool messages into a session', async (
     session.messages().map((message) => message.role),
     ['user', 'assistant', 'tool', 'assistant'],
   );
+});
+
+test('agent has no default tool-turn cap', async () => {
+  const mock = mockProvider();
+  for (let index = 0; index < 35; index += 1) {
+    mock.enqueueResponse({
+      content: '',
+      tool_calls: [
+        {
+          id: `call_${index}`,
+          name: 'repl_eval',
+          args_json: JSON.stringify({ code: JSON.stringify(index) }),
+        },
+      ],
+    });
+  }
+  mock.enqueue('done');
+
+  const agent = await createCodingReplAgent({
+    provider: mock.handler,
+    cwd: process.cwd(),
+  });
+  const response = await agent.prompt('keep going');
+
+  assert.equal(response.content, 'done');
+  assert.equal(agent.messages.filter((message) => message.role === 'tool').length, 35);
+});
+
+test('agent truncates oversized tool results before they enter provider history', async () => {
+  const mock = mockProvider();
+  mock.enqueueResponse({
+    content: '',
+    tool_calls: [
+      {
+        id: 'call_1',
+        name: 'repl_eval',
+        args_json: JSON.stringify({ code: JSON.stringify('x'.repeat(200)) }),
+      },
+    ],
+  });
+  mock.enqueue('done');
+
+  const agent = await createCodingReplAgent({
+    provider: mock.handler,
+    cwd: process.cwd(),
+    maxToolResultBytes: 40,
+  });
+  await agent.prompt('truncate this');
+
+  const toolMessage = agent.messages.find((message) => message.role === 'tool');
+  assert.match(String(toolMessage?.content), /tool result truncated to 40 bytes/);
+  assert.ok(Buffer.byteLength(String(toolMessage?.content ?? ''), 'utf8') < 100);
+});
+
+test('agent sends compacted session context when context windowing is enabled', async () => {
+  const mock = mockProvider();
+  mock.enqueue('done');
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-agent-')) });
+  const session = store.create('agent_context');
+  for (let index = 0; index < 8; index += 1) {
+    session.appendMessage({
+      role: 'user',
+      content: `old message ${index + 1} ${'x'.repeat(140)}`,
+    });
+  }
+  const requestInput = [{ type: 'text' as const, text: 'visible with injected context' }];
+
+  const agent = await createAgent({
+    provider: mock.handler,
+    cwd: process.cwd(),
+    session,
+    systemPrompt: '',
+    context: {
+      enabled: true,
+      freshTailCount: 2,
+      chunkTargetTokens: 100,
+      summaryTargetTokens: 12,
+      minChunkMessages: 2,
+      maxRequestTokens: 40,
+    },
+  });
+  await agent.prompt('visible', { requestInput });
+
+  const providerMessages = mock.history()[0].messages;
+  assert.match(
+    String(providerMessages[0].content),
+    /Context summary for earlier canonical messages/,
+  );
+  assert.equal(
+    providerMessages.some(
+      (message) =>
+        message.role === 'user' &&
+        typeof message.content === 'string' &&
+        message.content.startsWith('old message 1'),
+    ),
+    false,
+  );
+  assert.deepEqual(providerMessages.at(-1)?.content, requestInput);
+  assert.ok(session.contextChunks().length > 0);
 });
 
 test('parseToolArgs accepts empty, valid JSON, and invalid JSON', () => {
