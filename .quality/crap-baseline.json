@@ -444,10 +444,16 @@
     "maxFunctionLines": 22
   },
   "packages/sd/src/tui/renderers/chat.tsx": {
-    "lines": 66,
-    "complexity": 13,
-    "crapProxy": 170,
+    "lines": 74,
+    "complexity": 12,
+    "crapProxy": 145,
     "maxFunctionLines": 25
+  },
+  "packages/sd/src/tui/renderers/effects.tsx": {
+    "lines": 94,
+    "complexity": 8,
+    "crapProxy": 68,
+    "maxFunctionLines": 28
   },
   "packages/sd/src/tui/renderers/markdown.tsx": {
     "lines": 108,
@@ -468,9 +474,9 @@
     "maxFunctionLines": 28
   },
   "packages/sd/src/tui/renderers/prompt.tsx": {
-    "lines": 132,
-    "complexity": 21,
-    "crapProxy": 442,
+    "lines": 162,
+    "complexity": 24,
+    "crapProxy": 577,
     "maxFunctionLines": 41
   },
   "packages/sd/src/tui/renderers/splash.tsx": {
@@ -510,9 +516,9 @@
     "maxFunctionLines": 33
   },
   "packages/sd/src/tui/transcript-window.ts": {
-    "lines": 124,
-    "complexity": 29,
-    "crapProxy": 845,
+    "lines": 129,
+    "complexity": 31,
+    "crapProxy": 965,
     "maxFunctionLines": 22
   },
   "packages/sd/src/tui/transcript-wrap.ts": {
@@ -522,9 +528,9 @@
     "maxFunctionLines": 14
   },
   "packages/sd/src/tui/ui.ts": {
-    "lines": 607,
-    "complexity": 96,
-    "crapProxy": 9221,
+    "lines": 618,
+    "complexity": 99,
+    "crapProxy": 9806,
     "maxFunctionLines": 42
   },
   "packages/session/src/context-options.ts": {
