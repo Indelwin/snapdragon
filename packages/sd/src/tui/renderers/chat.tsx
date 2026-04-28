@@ -3,6 +3,7 @@ import { Box, Text } from 'ink';
 import { chatEntries } from '../state-readers.js';
 import { tuiChars, tuiColors } from '../theme.js';
 import { type TranscriptRow, transcriptRows, visibleTranscriptRows } from '../transcript-window.js';
+import { MarkdownLine } from './markdown.js';
 
 export function ChatTranscript({
   component,
@@ -46,7 +47,11 @@ function TranscriptLine({ row }: { row: TranscriptRow }) {
       <Text color={row.prefixColor ?? row.color} bold={row.prefixBold}>
         {row.prefix}
       </Text>
-      {row.text ?? ''}
+      {row.markdown ? (
+        <MarkdownLine text={row.text ?? ''} color={row.color} codeBlock={row.codeBlock} />
+      ) : (
+        (row.text ?? '')
+      )}
       {row.cursor ? <Text color={tuiColors.accentSoft}>{tuiChars.cursor}</Text> : null}
     </Text>
   );
