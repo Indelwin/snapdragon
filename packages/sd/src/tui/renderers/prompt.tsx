@@ -1,11 +1,19 @@
 import type { UiComponentSnapshot } from '@snapdragon-ai/ui';
 import { Box, Text } from 'ink';
-import { arrayOfStrings, promptCompletion, stringValue } from '../state-readers.js';
+import {
+  arrayOfStrings,
+  optionalStringValue,
+  promptCompletion,
+  stringValue,
+} from '../state-readers.js';
 import { tuiChars, tuiColors } from '../theme.js';
+import { Shimmer, Spinner } from './effects.js';
 
 export function PromptInput({ component }: { component: UiComponentSnapshot }) {
   const draft = stringValue(component.state.draft);
   const running = component.state.running === true;
+  const phase = optionalStringValue(component.state.phase);
+  const phaseLabel = optionalStringValue(component.state.phaseLabel);
   const attachments = arrayOfStrings(component.state.attachments);
   const completion = promptCompletion(component.state);
   return (
@@ -23,22 +31,44 @@ export function PromptInput({ component }: { component: UiComponentSnapshot }) {
           {attachments.length} attachment(s): {attachments.join(', ')}
         </Text>
       ) : null}
-      {lineItems(draft).map((line) => (
-        <Text key={`prompt-${line.key}`}>
-          <Text color={running ? tuiColors.warn : tuiColors.accent}>
-            {line.first ? tuiChars.prompt : ' '}
-          </Text>{' '}
-          <Text color={tuiColors.foreground}>{line.text}</Text>
-          {line.last && !running ? (
-            <Text color={tuiColors.accentSoft}>{tuiChars.cursor}</Text>
-          ) : null}
-        </Text>
-      ))}
+      {running ? (
+        <RunningIndicator phase={phase} phaseLabel={phaseLabel} />
+      ) : (
+        lineItems(draft).map((line) => (
+          <Text key={`prompt-${line.key}`}>
+            <Text color={tuiColors.accent}>{line.first ? tuiChars.prompt : ' '}</Text>{' '}
+            <Text color={tuiColors.foreground}>{line.text}</Text>
+            {line.last ? <Text color={tuiColors.accentSoft}>{tuiChars.cursor}</Text> : null}
+          </Text>
+        ))
+      )}
       {completion && completion.suggestions.length > 0 ? (
         <CompletionList completion={completion} />
       ) : null}
     </Box>
   );
+}
+
+function RunningIndicator({
+  phase,
+  phaseLabel,
+}: {
+  phase: string | undefined;
+  phaseLabel: string | undefined;
+}) {
+  const label = runningLabel(phase, phaseLabel);
+  return (
+    <Text>
+      <Spinner /> <Shimmer text={label} />
+    </Text>
+  );
+}
+
+function runningLabel(phase: string | undefined, phaseLabel: string | undefined): string {
+  if (phase === 'tool') return phaseLabel ? `Running ${phaseLabel}...` : 'Running tool...';
+  if (phase === 'thinking') return 'Thinking...';
+  if (phase === 'streaming') return 'Streaming...';
+  return 'Connecting...';
 }
 
 function CompletionList({
