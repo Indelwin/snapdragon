@@ -68,6 +68,10 @@ function runningLabel(phase: string | undefined, phaseLabel: string | undefined)
   if (phase === 'tool') return phaseLabel ? `Running ${phaseLabel}...` : 'Running tool...';
   if (phase === 'thinking') return 'Thinking...';
   if (phase === 'streaming') return 'Streaming...';
+  // Free-form phase used by long-running slash commands (e.g. /reload).
+  // The label has already been authored by the caller, so render it
+  // verbatim — no "Connecting" / "Running" prefix.
+  if (phase === 'task') return phaseLabel ?? 'Working...';
   return 'Connecting...';
 }
 

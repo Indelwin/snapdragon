@@ -191,6 +191,24 @@ export class SdUiController {
     this.world.apply(patch(SD_UI_IDS.eventLog, { open: state.open === false }));
   }
 
+  /**
+   * Show the running spinner + shimmering label for a long-running slash
+   * command (e.g. `/reload sync`). Reuses the same prompt UI machinery the
+   * agent loop drives, just with a free-form `phase: 'task'` so the
+   * renderer prints `phaseLabel` verbatim. Pair with `endTask()`.
+   */
+  beginTask(label: string): void {
+    this.world.apply(patch(SD_UI_IDS.prompt, { running: true, phase: 'task', phaseLabel: label }));
+  }
+
+  updateTask(label: string): void {
+    this.world.apply(patch(SD_UI_IDS.prompt, { phase: 'task', phaseLabel: label }));
+  }
+
+  endTask(): void {
+    this.world.apply(patch(SD_UI_IDS.prompt, { running: false, phase: null, phaseLabel: null }));
+  }
+
   appendCommandOutput(text: string, level: 'info' | 'error' = 'info'): void {
     const trimmed = text.trim();
     if (!trimmed) return;
