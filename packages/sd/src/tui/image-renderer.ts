@@ -59,9 +59,10 @@ export async function renderImageAscii(
   return renderHalfBlocks(buffer, options);
 }
 
-// Brightness ramp ordered light → dark. The first character is a real
-// space; pixels brighter than ~95% become invisible so backgrounds
-// drop out cleanly.
+// Brightness ramp ordered light → dark. We always overlay this on a
+// coloured background so the ramp character provides texture rather
+// than carrying the whole image — that way pastel/low-contrast input
+// still reads clearly because the cell is filled.
 const ASCII_RAMP = ' .:-=+*#%@';
 
 async function renderAsciiArt(buffer: Buffer, options: RenderImageOptions): Promise<string> {
@@ -81,11 +82,14 @@ interface BitmapHolder {
 
 function sampleAsciiPixels(image: BitmapHolder): string {
   const { width, height, data } = image.bitmap;
+  // Pre-walk to find the actual luminance range, so the ramp uses its
+  // full character set even for pastel/low-contrast sources.
+  const range = luminanceRange(data, width * height);
   const lines: string[] = [];
   for (let y = 0; y < height; y += 1) {
     let line = '';
     for (let x = 0; x < width; x += 1) {
-      line += pixelToAsciiCell(data, (y * width + x) * 4);
+      line += pixelToAsciiCell(data, (y * width + x) * 4, range);
     }
     // Reset attributes at the end of each row so a torn render can't
     // leak a trailing colour into the rest of the splash.
@@ -94,18 +98,66 @@ function sampleAsciiPixels(image: BitmapHolder): string {
   return lines.join('\n');
 }
 
-function pixelToAsciiCell(data: Buffer, offset: number): string {
+interface LuminanceRange {
+  min: number;
+  max: number;
+}
+
+function luminanceRange(data: Buffer, pixelCount: number): LuminanceRange {
+  let min = 255;
+  let max = 0;
+  for (let index = 0; index < pixelCount; index += 1) {
+    const offset = index * 4;
+    const a = data[offset + 3] ?? 255;
+    if (a < 24) continue;
+    const r = data[offset] ?? 0;
+    const g = data[offset + 1] ?? 0;
+    const b = data[offset + 2] ?? 0;
+    const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+    if (luma < min) min = luma;
+    if (luma > max) max = luma;
+  }
+  // Guard against zero-range (solid-colour images) — fall back to the
+  // full 0..255 span so the divisor below stays sane.
+  if (max - min < 1) return { min: 0, max: 255 };
+  return { min, max };
+}
+
+function pixelToAsciiCell(data: Buffer, offset: number, range: LuminanceRange): string {
   const r = data[offset] ?? 0;
   const g = data[offset + 1] ?? 0;
   const b = data[offset + 2] ?? 0;
   const a = data[offset + 3] ?? 255;
   if (a < 24) return ' ';
   const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+  const stretched = (luma - range.min) / (range.max - range.min);
   const ramp = ASCII_RAMP;
-  const index = Math.min(ramp.length - 1, Math.floor(((255 - luma) / 255) * ramp.length));
+  // Higher luminance → lighter character (earlier in ramp).
+  const index = clamp(Math.floor((1 - stretched) * ramp.length), 0, ramp.length - 1);
   const char = ramp[index] ?? ' ';
-  if (char === ' ') return ' ';
-  return `\u001b[38;2;${r};${g};${b}m${char}`;
+  // Foreground glyph is a darkened version of the pixel so the ramp
+  // texture reads against the background fill without losing the hue.
+  const fg = darkenChannel(r, g, b, 0.55);
+  return `\u001b[48;2;${r};${g};${b}m\u001b[38;2;${fg.r};${fg.g};${fg.b}m${char}`;
+}
+
+function darkenChannel(
+  r: number,
+  g: number,
+  b: number,
+  factor: number,
+): { r: number; g: number; b: number } {
+  return {
+    r: Math.max(0, Math.round(r * factor)),
+    g: Math.max(0, Math.round(g * factor)),
+    b: Math.max(0, Math.round(b * factor)),
+  };
+}
+
+function clamp(value: number, lower: number, upper: number): number {
+  if (value < lower) return lower;
+  if (value > upper) return upper;
+  return value;
 }
 
 function asciiTargetSize(

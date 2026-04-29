@@ -18,7 +18,12 @@ test('renderImageAscii defaults to character-based ASCII art with truecolor', as
   // ASCII art uses ramp characters (' .:-=+*#%@'), not the U+2584
   // half-block character used by the blocks renderer.
   assert.equal(ascii.includes('\u2584'), false, 'must not emit half-block characters');
-  // Truecolor RGB foreground escape — proves we coloured the cells.
+  // Truecolor RGB background escape — proves every cell is filled
+  // rather than rendering as a sparse glyph constellation.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI ESC by design
+  assert.match(ascii, /\u001b\[48;2;\d+;\d+;\d+m/);
+  // Truecolor RGB foreground escape — proves we coloured the glyph
+  // on top of the background fill.
   // biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI ESC by design
   assert.match(ascii, /\u001b\[38;2;\d+;\d+;\d+m/);
   // Resets at end of every line so a torn render can't leak colour.
