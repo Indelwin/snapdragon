@@ -128,6 +128,21 @@ export class SdUiController {
     );
   }
 
+  /**
+   * Resolve and render the user's splash.png (profile-level then
+   * sd-root) and patch the rendered ASCII/graphics-protocol string
+   * into the splash component state. Idempotent — calling it twice
+   * just re-resolves and patches again. Failures (missing file,
+   * decoder error) are silently swallowed; the ASCII cat fallback
+   * continues to render.
+   */
+  async loadSplashArt(): Promise<void> {
+    const { loadSplashImage } = await import('./splash-art.js');
+    const image = await loadSplashImage({ profile: this.runtime.profile });
+    if (!image) return;
+    this.world.apply(patch(SD_UI_IDS.splash, { image }));
+  }
+
   refreshRuntimeStatus(): void {
     this.world.applyMany([
       patch(SD_UI_IDS.sessionStatus, sessionState(this.runtime)),

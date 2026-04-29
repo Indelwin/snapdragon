@@ -1,10 +1,11 @@
 import type { UiComponentSnapshot } from '@snapdragon-ai/ui';
 import { Box, Text } from 'ink';
-import { stringValue } from '../state-readers.js';
+import { optionalStringValue, stringValue } from '../state-readers.js';
 import { trimText, tuiChars, tuiColors } from '../theme.js';
 
 export function SplashBanner({ component }: { component: UiComponentSnapshot }) {
   if (component.state.visible === false) return null;
+  const image = optionalStringValue(component.state.image);
   return (
     <Box
       flexDirection="column"
@@ -15,7 +16,7 @@ export function SplashBanner({ component }: { component: UiComponentSnapshot }) 
       marginX={1}
       marginY={1}
     >
-      <SplashArt />
+      {image ? <SplashImage image={image} /> : <SplashArt />}
       <Box marginTop={1} flexDirection="row">
         <Text color={tuiColors.accent} bold>
           {stringValue(component.state.title).toUpperCase() || 'SNAPDRAGON'}
@@ -45,6 +46,23 @@ export function SplashBanner({ component }: { component: UiComponentSnapshot }) 
       <Box marginTop={1}>
         <Text color={tuiColors.muted}>type /help or press ctrl-p for commands</Text>
       </Box>
+    </Box>
+  );
+}
+
+function SplashImage({ image }: { image: string }) {
+  // `terminal-image` returns a multi-line string where each line is
+  // pre-coloured with ANSI escapes for the upper/lower half-block
+  // pixel pair. Splitting on newline and rendering one <Text> per
+  // line lets Ink lay it out cleanly. Position-based keys are
+  // intentional and stable for the fixed-length rendered string.
+  const lines = image.split('\n');
+  return (
+    <Box flexDirection="column">
+      {lines.map((line, index) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: positional key is stable for fixed-length rendered splash
+        <Text key={index}>{line}</Text>
+      ))}
     </Box>
   );
 }
