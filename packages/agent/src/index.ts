@@ -4,6 +4,7 @@ import type {
   Profile,
   ReasoningRequest,
   StreamingChatHandler,
+  ThinkingBlock,
 } from '@snapdragon-ai/host';
 import { codingToolsets, replToolset, ToolRegistry } from '@snapdragon-ai/tools';
 import { type AgentEvent, type AgentEventListener, emitProviderEvent } from './events.js';
@@ -139,19 +140,20 @@ export class SnapdragonAgent {
       await this.#emit({ type: 'message', message: assistantMessage });
 
       if (!response.tool_calls || response.tool_calls.length === 0) {
-        // Empty assistant content with no tool calls almost always means
-        // the provider returned a degenerate response (e.g. extended
-        // thinking ended without producing a final text block, a
-        // truncated stream, or a stop reason like `refusal`/`max_tokens`
-        // that swallowed the content). Surface it as a provider error
-        // event so the UI can flag it instead of rendering a silent
-        // `(empty)` chat row.
-        if (isEmptyContent(response.content) && !response.thinking?.length) {
+        // Empty assistant content with no tool calls is always a
+        // failure mode worth surfacing — even when thinking blocks
+        // are present (in fact *especially* then: with reasoning
+        // enabled, the most common shape of this bug is "model
+        // thought a lot and then bailed without producing any text").
+        // Earlier the heuristic gated the error on `!response.thinking`
+        // which silently re-introduced the original `(empty)` row for
+        // every reasoning-enabled run that hit this path.
+        if (isEmptyContent(response.content)) {
           emitProviderEvent(this.#listeners, {
             kind: 'error',
             run_id: runId,
             provider: 'agent',
-            message: emptyResponseMessage(response.finish_reason),
+            message: emptyResponseMessage(response.finish_reason, response.thinking),
           });
         }
         await this.#emit({ type: 'run_end', runId, response });
@@ -239,8 +241,14 @@ function isEmptyContent(content: string): boolean {
   return typeof content !== 'string' || content.trim().length === 0;
 }
 
-function emptyResponseMessage(finishReason: string | undefined): string {
+function emptyResponseMessage(
+  finishReason: string | undefined,
+  thinking: ThinkingBlock[] | undefined,
+): string {
   const reason = finishReason ?? 'unknown';
+  if (thinking && thinking.length > 0) {
+    return `provider returned only reasoning, no final content (finish_reason=${reason}); the model thought through the prompt but bailed before producing text — try rephrasing or disabling reasoning`;
+  }
   return `provider returned no content (finish_reason=${reason}); the model may have stopped early or hit a content/length limit`;
 }
 
