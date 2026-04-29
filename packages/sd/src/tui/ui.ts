@@ -152,6 +152,7 @@ export class SdUiController {
         provider: this.runtime.provider.id,
         model: this.runtime.provider.model,
         profile: this.runtime.profile?.name ?? 'none',
+        stats: runtimeStats(this.runtime),
       }),
       patch(SD_UI_IDS.runStatus, {
         provider: this.runtime.provider.id,
@@ -501,6 +502,7 @@ export function initialSdUiEvents(runtime: SdRuntime): UiEvent[] {
       model: runtime.provider.model,
       profile: runtime.profile?.name ?? 'none',
       cwd: runtime.agent.cwd,
+      stats: runtimeStats(runtime),
     }),
     register(SD_UI_IDS.chat, 'chat.transcript', 'main', 0, { entries: [] }),
     register(SD_UI_IDS.toolPanel, 'tool.panel', 'panel', 0, { tools: [], open: true }),
@@ -543,6 +545,27 @@ function register(
     type: 'ui.component.register',
     descriptor: { id, kind, slot, order },
     state,
+  };
+}
+
+/**
+ * Snapshot of runtime "what's loaded" counts for the splash stats
+ * panel. Cheap to compute (everything is sync, no network or fs
+ * walks), so we re-run it on every `refreshRuntimeStatus`. Future
+ * counts (e.g. recent sessions) can fold in here once they have a
+ * sync source.
+ */
+function runtimeStats(runtime: SdRuntime): JsonObject {
+  const reasoning = runtime.config.agent?.reasoning;
+  return {
+    tools: runtime.agent.registry.listDefinitions().length,
+    skills: runtime.skills.list().length,
+    profiles: runtime.profileStore.list().length,
+    services: runtime.background.list().length,
+    extensions: runtime.extensions.list().length,
+    reasoning: reasoning?.enabled === false ? 'off' : (reasoning?.effort ?? 'medium'),
+    contextTokens: runtime.config.agent?.context?.max_request_tokens ?? null,
+    outputTokens: runtime.config.agent?.max_tokens ?? null,
   };
 }
 

@@ -1,6 +1,6 @@
-import type { UiComponentSnapshot } from '@snapdragon-ai/ui';
+import type { JsonObject, UiComponentSnapshot } from '@snapdragon-ai/ui';
 import { Box, Text } from 'ink';
-import { optionalStringValue, stringValue } from '../state-readers.js';
+import { numberValue, optionalStringValue, stringValue } from '../state-readers.js';
 import { trimText, tuiChars, tuiColors } from '../theme.js';
 import { AsciiTitle } from './ascii-title.js';
 import { ColoredBrailleImage } from './colored-braille.js';
@@ -25,7 +25,10 @@ export function SplashBanner({ component }: { component: UiComponentSnapshot }) 
       marginX={1}
       marginY={1}
     >
-      {imagePath ? <SplashImage src={imagePath} /> : <SplashArt />}
+      <Box flexDirection="row">
+        {imagePath ? <SplashImage src={imagePath} /> : <SplashArt />}
+        <SplashStats stats={(component.state.stats as JsonObject | undefined) ?? {}} />
+      </Box>
       <Box marginTop={1} flexDirection="column">
         <AsciiTitle
           text={stringValue(component.state.title) || 'snapdragon'}
@@ -109,4 +112,60 @@ function splashLineColor(index: number): string {
   if (index === 2) return tuiColors.accent;
   if (index === 4) return tuiColors.accentPale;
   return tuiColors.accentSoft;
+}
+
+/**
+ * Right-side stats panel. Reads a `stats` object out of the splash
+ * state (computed by `runtimeStats` in the controller) and renders
+ * a compact dashboard. Counts are right-padded so the column reads
+ * cleanly even with single- or three-digit numbers.
+ */
+function SplashStats({ stats }: { stats: JsonObject }) {
+  const tools = numberValue(stats.tools);
+  const skills = numberValue(stats.skills);
+  const profiles = numberValue(stats.profiles);
+  const services = numberValue(stats.services);
+  const extensions = numberValue(stats.extensions);
+  const reasoning = optionalStringValue(stats.reasoning);
+  const contextTokens = numberValue(stats.contextTokens);
+  const outputTokens = numberValue(stats.outputTokens);
+  return (
+    <Box flexDirection="column" paddingLeft={3}>
+      <StatRow label="tools" value={tools} />
+      <StatRow label="skills" value={skills} />
+      <StatRow label="profiles" value={profiles} />
+      <StatRow label="services" value={services} />
+      <StatRow label="extensions" value={extensions} />
+      <Box marginTop={1} flexDirection="column">
+        <StatRow label="reasoning" value={reasoning ?? '—'} />
+        <StatRow label="context" value={contextTokens ? formatTokenCount(contextTokens) : '—'} />
+        <StatRow label="output" value={outputTokens ? formatTokenCount(outputTokens) : '—'} />
+      </Box>
+    </Box>
+  );
+}
+
+function StatRow({ label, value }: { label: string; value: number | string | undefined }) {
+  const display = value === undefined ? '—' : String(value);
+  // Pad the label column to a fixed width so the value column lines
+  // up across rows. Values are right-aligned in their own narrow
+  // column so digit counts don't make the layout jitter.
+  return (
+    <Box flexDirection="row">
+      <Box width={11}>
+        <Text color={tuiColors.dim}>{label}</Text>
+      </Box>
+      <Box width={6} justifyContent="flex-end">
+        <Text color={tuiColors.accentSoft} bold>
+          {display}
+        </Text>
+      </Box>
+    </Box>
+  );
+}
+
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+  if (tokens >= 1_000) return `${Math.round(tokens / 1_000)}K`;
+  return String(tokens);
 }
