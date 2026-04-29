@@ -112,6 +112,48 @@ test('reloadSdRuntime with build runs the configured build command', async () =>
   }
 });
 
+test('reloadSdRuntime calls progress before each step', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-reload-progress-'));
+  try {
+    const configPath = await writeMockConfig(workspace);
+    const runtime = await createSdRuntime(parseArgs(['--config', configPath, '--cwd', workspace]));
+    const { runner } = fakeRunner();
+    const labels: string[] = [];
+
+    await reloadSdRuntime(runtime, {
+      pull: true,
+      build: true,
+      runner,
+      progress: (label) => labels.push(label),
+    });
+
+    // Three beats: pull → build → rebuild. Bare reload only fires the rebuild
+    // beat; tested separately below.
+    assert.equal(labels.length, 3);
+    assert.match(labels[0] ?? '', /git pull/);
+    assert.match(labels[1] ?? '', /building/);
+    assert.match(labels[2] ?? '', /rebuilding/);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('reloadSdRuntime bare reload still emits the rebuild progress beat', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-reload-progress-bare-'));
+  try {
+    const configPath = await writeMockConfig(workspace);
+    const runtime = await createSdRuntime(parseArgs(['--config', configPath, '--cwd', workspace]));
+    const labels: string[] = [];
+
+    await reloadSdRuntime(runtime, { progress: (label) => labels.push(label) });
+
+    assert.deepEqual(labels.length, 1);
+    assert.match(labels[0] ?? '', /rebuilding/);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
 test('reloadSdRuntime sync runs pull then build then rebuild', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-reload-sync-'));
   try {
