@@ -12,16 +12,29 @@ const PINK_PNG_BASE64 =
   'iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAIAAAAmkwkpAAAAEElEQVR4nGP439AARwzEcQBGsR/xEHHjoQAAAABJRU5ErkJggg==';
 const PINK_PNG = Buffer.from(PINK_PNG_BASE64, 'base64');
 
-test('renderImageAscii returns ANSI block-character output for a small PNG buffer', async () => {
+test('renderImageAscii defaults to character-based ASCII art with truecolor', async () => {
+  const ascii = await renderImageAscii(PINK_PNG, { width: 16 });
+  assert.ok(ascii.length > 0, 'expected non-empty output');
+  // ASCII art uses ramp characters (' .:-=+*#%@'), not the U+2584
+  // half-block character used by the blocks renderer.
+  assert.equal(ascii.includes('\u2584'), false, 'must not emit half-block characters');
+  // Truecolor RGB foreground escape — proves we coloured the cells.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI ESC by design
+  assert.match(ascii, /\u001b\[38;2;\d+;\d+;\d+m/);
+  // Resets at end of every line so a torn render can't leak colour.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI ESC by design
+  assert.match(ascii, /\u001b\[0m/);
+});
+
+test('renderImageAscii honours style: "blocks" for half-block output', async () => {
   const before = process.env.TERM_PROGRAM;
-  // Pretend we are running under iTerm so we can prove the renderer
-  // scrubs the env var and forces the ASCII fallback path.
+  // Pretend we're running under iTerm so we can prove the renderer
+  // scrubs the env var and forces the ANSI fallback path.
   process.env.TERM_PROGRAM = 'iTerm.app';
   try {
-    const ascii = await renderImageAscii(PINK_PNG, { width: 4, height: 4 });
+    const ascii = await renderImageAscii(PINK_PNG, { width: 4, height: 4, style: 'blocks' });
     assert.ok(ascii.length > 0, 'expected non-empty output');
-    // The ANSI fallback uses U+2584 (lower-half block) — make sure we
-    // didn't get an iTerm OSC payload by checking for one.
+    // Must not emit an iTerm OSC payload — those break Ink's layout.
     assert.equal(ascii.includes('\u001b]1337;'), false, 'must not emit iTerm graphics protocol');
     assert.ok(ascii.includes('\u2584'), 'expected ANSI half-block characters');
   } finally {
@@ -30,11 +43,11 @@ test('renderImageAscii returns ANSI block-character output for a small PNG buffe
   }
 });
 
-test('renderImageAscii restores graphics-detection env vars after rendering', async () => {
+test('renderImageAscii blocks mode restores graphics-detection env vars', async () => {
   process.env.TERM_PROGRAM = 'iTerm.app';
   process.env.KITTY_WINDOW_ID = '42';
   try {
-    await renderImageAscii(PINK_PNG, { width: 4, height: 4 });
+    await renderImageAscii(PINK_PNG, { width: 4, height: 4, style: 'blocks' });
     assert.equal(process.env.TERM_PROGRAM, 'iTerm.app');
     assert.equal(process.env.KITTY_WINDOW_ID, '42');
   } finally {

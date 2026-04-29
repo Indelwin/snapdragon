@@ -54,8 +54,11 @@ function defaultSdRoot(): string {
 }
 
 function defaultSplashRenderOptions(): RenderImageOptions {
-  // Splash art lives inside the bordered box in `splash.tsx`. ~36
-  // columns and ~14 rows keeps it compact while still being recognisable
-  // (each terminal row is ~2 vertical pixels in block-character mode).
-  return { width: 36, height: 14, preserveAspectRatio: true };
+  // Splash art lives inside the bordered box in `splash.tsx`. The
+  // ASCII renderer auto-scales the height from the source image's
+  // aspect ratio, so we only need to set a width that feels right for
+  // a typical 80–120 column terminal. 64 columns gives a solid,
+  // unmistakably TUI-art splash on most setups while still leaving
+  // room for the splash box's chrome.
+  return { style: 'ascii', width: 64, preserveAspectRatio: true };
 }
