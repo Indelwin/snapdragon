@@ -1,11 +1,12 @@
 import type { UiComponentSnapshot } from '@snapdragon-ai/ui';
 import { Box, Text } from 'ink';
+import Image, { TerminalInfoProvider } from 'ink-picture';
 import { optionalStringValue, stringValue } from '../state-readers.js';
 import { trimText, tuiChars, tuiColors } from '../theme.js';
 
 export function SplashBanner({ component }: { component: UiComponentSnapshot }) {
   if (component.state.visible === false) return null;
-  const image = optionalStringValue(component.state.image);
+  const imagePath = optionalStringValue(component.state.imagePath);
   return (
     <Box
       flexDirection="column"
@@ -16,7 +17,7 @@ export function SplashBanner({ component }: { component: UiComponentSnapshot }) 
       marginX={1}
       marginY={1}
     >
-      {image ? <SplashImage image={image} /> : <SplashArt />}
+      {imagePath ? <SplashImage src={imagePath} /> : <SplashArt />}
       <Box marginTop={1} flexDirection="row">
         <Text color={tuiColors.accent} bold>
           {stringValue(component.state.title).toUpperCase() || 'SNAPDRAGON'}
@@ -50,20 +51,21 @@ export function SplashBanner({ component }: { component: UiComponentSnapshot }) 
   );
 }
 
-function SplashImage({ image }: { image: string }) {
-  // `terminal-image` returns a multi-line string where each line is
-  // pre-coloured with ANSI escapes for the upper/lower half-block
-  // pixel pair. Splitting on newline and rendering one <Text> per
-  // line lets Ink lay it out cleanly. Position-based keys are
-  // intentional and stable for the fixed-length rendered string.
-  const lines = image.split('\n');
+function SplashImage({ src }: { src: string }) {
+  // ink-picture's <Image> handles scaling, protocol selection, and
+  // the ASCII fallback inline as a real Ink component. Forcing
+  // `protocol="ascii"` gives us the chunky TUI-art look without
+  // competing with iTerm/Kitty native graphics protocols (which
+  // fight Ink's Yoga layout).
+  //
+  // The provider is scoped to just the splash so the rest of the
+  // TUI doesn't pay the terminal-capability detection cost — and so
+  // test environments without a real stdin don't get blocked waiting
+  // for capability queries.
   return (
-    <Box flexDirection="column">
-      {lines.map((line, index) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: positional key is stable for fixed-length rendered splash
-        <Text key={index}>{line}</Text>
-      ))}
-    </Box>
+    <TerminalInfoProvider>
+      <Image src={src} width={40} protocol="ascii" alt="splash" />
+    </TerminalInfoProvider>
   );
 }
 
