@@ -443,6 +443,12 @@
     "crapProxy": 257,
     "maxFunctionLines": 22
   },
+  "packages/sd/src/tui/renderers/ascii-title.tsx": {
+    "lines": 106,
+    "complexity": 26,
+    "crapProxy": 678,
+    "maxFunctionLines": 45
+  },
   "packages/sd/src/tui/renderers/chat.tsx": {
     "lines": 70,
     "complexity": 12,
@@ -486,10 +492,10 @@
     "maxFunctionLines": 41
   },
   "packages/sd/src/tui/renderers/splash.tsx": {
-    "lines": 104,
+    "lines": 113,
     "complexity": 12,
     "crapProxy": 145,
-    "maxFunctionLines": 46
+    "maxFunctionLines": 47
   },
   "packages/sd/src/tui/renderers/status.tsx": {
     "lines": 72,
