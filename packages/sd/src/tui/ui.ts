@@ -253,7 +253,7 @@ export class SdUiController {
     if (event.kind === 'max_tokens_reached') {
       return this.#logEvents('warn', 'provider reached max_tokens', 'provider');
     }
-    if (event.kind === 'error') return this.#logEvents('error', event.message, 'provider');
+    if (event.kind === 'error') return this.#providerErrorEvents(event.message, event.provider);
     if (event.kind === 'input_json_delta') {
       return [patch(SD_UI_IDS.runStatus, { toolArgsStreaming: true })];
     }
@@ -430,6 +430,26 @@ export class SdUiController {
 
   #logEvents(level: 'info' | 'warn' | 'error', message: string, source: string): UiEvent[] {
     return [this.#eventEntryEvent(level, message, source), logEvent(level, message, source)];
+  }
+
+  /**
+   * Surface a provider-side error both in the event log AND as an
+   * inline chat row, so the user sees it without having to flip the
+   * events panel open. Without the chat row, a stream that ended with
+   * empty content rendered as a silent `(empty)` row even when the
+   * provider had emitted a clear error event upstream.
+   */
+  #providerErrorEvents(message: string, provider: string): UiEvent[] {
+    return [
+      this.#appendChat({
+        id: `error_${this.#activeRunId ?? Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+        role: 'error',
+        content: `${provider}: ${message}`,
+        isError: true,
+      }),
+      this.#eventEntryEvent('error', message, provider),
+      logEvent('error', message, provider),
+    ];
   }
 
   #sessionMessageCountEvent(): UiEvent[] {

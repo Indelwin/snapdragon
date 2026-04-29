@@ -21,6 +21,13 @@ export async function readAnthropicStream(
   for await (const payload of sseLines(body)) {
     const event = safeJson<Record<string, unknown>>(payload);
     if (!event) continue;
+    if (event.type === 'error') {
+      // Anthropic sends mid-stream `error` events for overloads, content
+      // policy hits, etc. Without this branch the loop would silently
+      // drop them and we'd return an empty response, which surfaces as
+      // a confusing `(empty)` assistant message in the UI.
+      throw extractAnthropicStreamError(event);
+    }
     if (event.type === 'message_start') readStartUsage(event, usage);
     if (event.type === 'content_block_start') active = startBlock(event, context);
     if (event.type === 'content_block_delta' && active)
@@ -30,7 +37,27 @@ export async function readAnthropicStream(
     }
     if (event.type === 'message_delta') finishReason = readMessageDelta(event, usage);
   }
+  // If we drained the stream without ever seeing a `message_delta` we
+  // either hit a connection drop mid-stream or the provider failed to
+  // emit a final stop reason. Treat that as an error rather than
+  // returning whatever fragment we accumulated.
+  if (finishReason === undefined) {
+    throw new Error(
+      'anthropic: stream ended without a stop reason (likely an upstream interruption)',
+    );
+  }
   return finishAnthropic(aggregate, toolCalls, thinking, usage, finishReason, context);
+}
+
+function extractAnthropicStreamError(event: Record<string, unknown>): Error {
+  const errorField = event.error;
+  if (errorField && typeof errorField === 'object') {
+    const error = errorField as Record<string, unknown>;
+    const type = typeof error.type === 'string' ? error.type : 'error';
+    const message = typeof error.message === 'string' ? error.message : 'unknown error';
+    return new Error(`anthropic stream error (${type}): ${message}`);
+  }
+  return new Error('anthropic stream error: unknown payload');
 }
 
 type ActiveBlock =
