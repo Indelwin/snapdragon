@@ -61,28 +61,58 @@ function runCommand(
   signal?: AbortSignal,
 ): Promise<ToolResult> {
   return new Promise((resolve) => {
+    // `detached: true` makes the spawned `sh` a process-group leader so we can
+    // signal the entire pipeline (sh + npm + node --test + leaked TUI children
+    // + …) by sending the signal to `-pid`. Without this, `child.kill()` only
+    // reaps `sh`; its grandchildren keep running, keep the inherited stdout/
+    // stderr pipes open, and `close` never fires — the Promise hangs forever
+    // even though the timeout fired. That was the run_shell-blocks-forever bug.
     const child = spawn(command, {
       cwd,
       shell: true,
+      detached: true,
       env: process.env,
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '';
     let timedOut = false;
+    let settled = false;
     const append = (chunk: Buffer) => {
       output += chunk.toString('utf8');
       if (output.length > maxOutputBytes) output = output.slice(0, maxOutputBytes);
     };
+    const killGroup = (sig: NodeJS.Signals) => {
+      if (child.pid == null) return;
+      try {
+        process.kill(-child.pid, sig);
+      } catch {
+        // Group already gone (ESRCH) or no permission — fall back to direct.
+        try {
+          child.kill(sig);
+        } catch {
+          /* ignore */
+        }
+      }
+    };
+    let killTimer: NodeJS.Timeout | null = null;
     const timer = setTimeout(() => {
       timedOut = true;
-      child.kill('SIGTERM');
+      killGroup('SIGTERM');
+      // Escalate if the group ignores SIGTERM (e.g. a stuck native binary).
+      killTimer = setTimeout(() => killGroup('SIGKILL'), 2_000);
     }, timeoutMs);
-    const abort = () => child.kill('SIGTERM');
+    const abort = () => {
+      killGroup('SIGTERM');
+      killTimer = setTimeout(() => killGroup('SIGKILL'), 2_000);
+    };
     signal?.addEventListener('abort', abort, { once: true });
     child.stdout?.on('data', append);
     child.stderr?.on('data', append);
-    child.on('close', (code) => {
+    const finish = (code: number | null) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
+      if (killTimer) clearTimeout(killTimer);
       signal?.removeEventListener('abort', abort);
       const suffix = timedOut
         ? `\n[timeout after ${timeoutMs}ms]`
@@ -94,7 +124,9 @@ function runCommand(
         isError: timedOut || (code ?? 0) !== 0,
         data: { exit_code: code, timed_out: timedOut },
       });
-    });
+    };
+    child.on('close', finish);
+    child.on('error', () => finish(null));
   });
 }
 

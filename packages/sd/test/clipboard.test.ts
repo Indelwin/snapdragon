@@ -104,8 +104,10 @@ test('pasteImageAttachment writes a PNG and returns a base64 attachment', async 
     }
     const files = await readdir(workspace);
     assert.equal(files.length, 1);
-    assert.match(files[0]!, /^clipboard-[0-9a-f]{12}\.png$/);
-    const written = await readFile(join(workspace, files[0]!));
+    const [file] = files;
+    assert.ok(file);
+    assert.match(file, /^clipboard-[0-9a-f]{12}\.png$/);
+    const written = await readFile(join(workspace, file));
     assert.deepEqual(written, PNG_BYTES);
   } finally {
     await rm(workspace, { force: true, recursive: true });

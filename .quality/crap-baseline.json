@@ -96,10 +96,10 @@
     "maxFunctionLines": 26
   },
   "packages/host/src/providers/anthropic-format.ts": {
-    "lines": 105,
-    "complexity": 23,
-    "crapProxy": 531,
-    "maxFunctionLines": 22
+    "lines": 210,
+    "complexity": 48,
+    "crapProxy": 2307,
+    "maxFunctionLines": 50
   },
   "packages/host/src/providers/anthropic-stream.ts": {
     "lines": 212,
@@ -492,10 +492,10 @@
     "maxFunctionLines": 41
   },
   "packages/sd/src/tui/renderers/splash.tsx": {
-    "lines": 113,
-    "complexity": 12,
-    "crapProxy": 145,
-    "maxFunctionLines": 47
+    "lines": 332,
+    "complexity": 40,
+    "crapProxy": 1601,
+    "maxFunctionLines": 58
   },
   "packages/sd/src/tui/renderers/status.tsx": {
     "lines": 72,
@@ -546,10 +546,10 @@
     "maxFunctionLines": 14
   },
   "packages/sd/src/tui/ui.ts": {
-    "lines": 658,
-    "complexity": 99,
-    "crapProxy": 9806,
-    "maxFunctionLines": 42
+    "lines": 734,
+    "complexity": 118,
+    "crapProxy": 13929,
+    "maxFunctionLines": 43
   },
   "packages/session/src/context-options.ts": {
     "lines": 67,
@@ -636,10 +636,10 @@
     "maxFunctionLines": 39
   },
   "packages/tools/src/toolsets/shell.ts": {
-    "lines": 104,
-    "complexity": 26,
-    "crapProxy": 678,
-    "maxFunctionLines": 44
+    "lines": 136,
+    "complexity": 31,
+    "crapProxy": 963,
+    "maxFunctionLines": 76
   },
   "packages/tools/src/toolsets/skill.ts": {
     "lines": 199,
