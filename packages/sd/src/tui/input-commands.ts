@@ -63,7 +63,7 @@ export async function runSlashLine(args: {
   attachmentsRef: MutableRefObject<PendingAttachment[]>;
   setAttachments: (attachments: PendingAttachment[]) => void;
   setPalette: (patch: Partial<PaletteState>) => void;
-  openSelection?: (draft: string, completion: PromptCompletionState) => void;
+  openSelection?: (draft: string, options?: { completion?: PromptCompletionState }) => void;
 }): Promise<void> {
   if (args.line === '/events') {
     toggleEvents(args.controller);
@@ -89,7 +89,7 @@ export async function runSlashLine(args: {
     return;
   }
   if (selection && args.openSelection) {
-    args.openSelection(selection.draft, selection.completion);
+    args.openSelection(selection.draft, { completion: selection.completion });
     if (selection.warning) args.controller.appendCommandOutput(selection.warning, 'error');
     return;
   }

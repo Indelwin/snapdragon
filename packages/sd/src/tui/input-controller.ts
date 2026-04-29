@@ -25,6 +25,7 @@ export interface SdTuiInputOptions {
 
 export function useSdTuiInput({ runtime, controller, exit }: SdTuiInputOptions): void {
   const draftRef = useRef('');
+  const cursorRef = useRef(0);
   const attachmentsRef = useRef<PendingAttachment[]>([]);
   const historyRef = useRef<string[]>([]);
   const historyIndexRef = useRef(-1);
@@ -35,10 +36,15 @@ export function useSdTuiInput({ runtime, controller, exit }: SdTuiInputOptions):
   const completionRef = useRef<PromptCompletionState | undefined>(undefined);
 
   const setDraft = useCallback(
-    (draft: string, completion?: PromptCompletionState) => {
+    (draft: string, options?: { cursor?: number; completion?: PromptCompletionState }) => {
       draftRef.current = draft;
+      // Default cursor lands at the end of the new draft — natural for
+      // history apply, clear, and tab-complete. Explicit-cursor callers
+      // (arrow keys, char insert mid-line, etc.) pass it in `options`.
+      const cursor = clampCursorOffset(draft, options?.cursor ?? draft.length);
+      cursorRef.current = cursor;
       const nextCompletion =
-        completion ??
+        options?.completion ??
         buildPromptCompletion(
           draft,
           commandsRef.current,
@@ -46,7 +52,7 @@ export function useSdTuiInput({ runtime, controller, exit }: SdTuiInputOptions):
           completionCatalogForDraft(runtime, draft),
         );
       completionRef.current = nextCompletion;
-      controller.setPromptInput(draft, nextCompletion);
+      controller.setPromptInput(draft, nextCompletion, cursor);
     },
     [controller, runtime],
   );
@@ -147,6 +153,7 @@ export function useSdTuiInput({ runtime, controller, exit }: SdTuiInputOptions):
     if (controller.isRunning) return;
     handlePromptInput(input, key, {
       draftRef,
+      cursorRef,
       historyRef,
       historyIndexRef,
       historyDraftRef,
@@ -158,4 +165,10 @@ export function useSdTuiInput({ runtime, controller, exit }: SdTuiInputOptions):
       submit,
     });
   });
+}
+
+function clampCursorOffset(text: string, cursor: number): number {
+  if (cursor < 0) return 0;
+  if (cursor > text.length) return text.length;
+  return cursor;
 }

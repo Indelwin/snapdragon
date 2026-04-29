@@ -1,5 +1,6 @@
 import type { UiComponentSnapshot } from '@snapdragon-ai/ui';
 import { Box, Text } from 'ink';
+import { locateCursor } from '../draft-edit.js';
 import {
   arrayOfStrings,
   optionalStringValue,
@@ -11,6 +12,8 @@ import { Shimmer, Spinner } from './effects.js';
 
 export function PromptInput({ component }: { component: UiComponentSnapshot }) {
   const draft = stringValue(component.state.draft);
+  const rawCursor = component.state.cursor;
+  const cursor = typeof rawCursor === 'number' ? rawCursor : draft.length;
   const running = component.state.running === true;
   const phase = optionalStringValue(component.state.phase);
   const phaseLabel = optionalStringValue(component.state.phaseLabel);
@@ -34,13 +37,7 @@ export function PromptInput({ component }: { component: UiComponentSnapshot }) {
       {running ? (
         <RunningIndicator phase={phase} phaseLabel={phaseLabel} />
       ) : (
-        lineItems(draft).map((line) => (
-          <Text key={`prompt-${line.key}`}>
-            <Text color={tuiColors.accent}>{line.first ? tuiChars.prompt : ' '}</Text>{' '}
-            <Text color={tuiColors.foreground}>{line.text}</Text>
-            {line.last ? <Text color={tuiColors.accentSoft}>{tuiChars.cursor}</Text> : null}
-          </Text>
-        ))
+        renderDraftLines(draft, cursor)
       )}
       {completion && completion.suggestions.length > 0 ? (
         <CompletionList completion={completion} />
@@ -149,17 +146,46 @@ function splitLines(text: string): string[] {
   return text.length > 0 ? text.split('\n') : [''];
 }
 
-function lineItems(text: string): Array<{
-  key: string;
-  text: string;
-  first: boolean;
-  last: boolean;
-}> {
-  const lines = splitLines(text);
-  return lines.map((line, index) => ({
-    key: `${index}-${line}`,
-    text: line,
-    first: index === 0,
-    last: index === lines.length - 1,
-  }));
+/**
+ * Render the draft as one `<Text>` per logical line, splitting the cursor's
+ * line into prefix + cursor block + suffix. The cursor block visually
+ * occupies one column, drawn over the character it sits on (or after the
+ * line's last char when the cursor is at end-of-line).
+ */
+function renderDraftLines(draft: string, cursor: number) {
+  const lines = splitLines(draft);
+  const cursorPos = locateCursor(draft, cursor);
+  return lines.map((lineText, index) => {
+    const isFirst = index === 0;
+    const gutter = (
+      <>
+        <Text color={tuiColors.accent}>{isFirst ? tuiChars.prompt : ' '}</Text>{' '}
+      </>
+    );
+    // Prompt lines don't reorder — they're regenerated each render from
+    // splitLines(draft). Index-in-key is therefore stable; suppressing the
+    // generic noArrayIndexKey rule for this positional structure.
+    if (index !== cursorPos.line) {
+      return (
+        // biome-ignore lint/suspicious/noArrayIndexKey: stable positional key for prompt lines
+        <Text key={`prompt-${index}-${lineText}`}>
+          {gutter}
+          <Text color={tuiColors.foreground}>{lineText}</Text>
+        </Text>
+      );
+    }
+    const col = Math.min(cursorPos.column, lineText.length);
+    const before = lineText.slice(0, col);
+    const at = lineText.slice(col, col + 1);
+    const after = lineText.slice(col + 1);
+    return (
+      // biome-ignore lint/suspicious/noArrayIndexKey: stable positional key for prompt lines
+      <Text key={`prompt-${index}-${lineText}-c${col}`}>
+        {gutter}
+        <Text color={tuiColors.foreground}>{before}</Text>
+        <Text color={tuiColors.accentSoft}>{at || tuiChars.cursor}</Text>
+        {at ? <Text color={tuiColors.foreground}>{after}</Text> : null}
+      </Text>
+    );
+  });
 }
