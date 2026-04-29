@@ -1,6 +1,6 @@
 import type { UiComponentSnapshot } from '@snapdragon-ai/ui';
 import { Box, Text } from 'ink';
-import { AsciiImage, type TerminalInfo, TerminalInfoContext } from 'ink-picture';
+import { BrailleImage, type TerminalInfo, TerminalInfoContext } from 'ink-picture';
 import { optionalStringValue, stringValue } from '../state-readers.js';
 import { trimText, tuiChars, tuiColors } from '../theme.js';
 
@@ -51,19 +51,12 @@ export function SplashBanner({ component }: { component: UiComponentSnapshot }) 
   );
 }
 
-// ASCII rendering puts one glyph per cell. A higher-contrast source
-// (clear outlines, solid colour regions) reads well at this size —
-// each char carries enough luminance signal to outline shape, and
-// the colours come from the per-pixel RGB tint chalk emits.
-//
-// `AsciiImage` internally halves the specified height for terminal
-// aspect compensation (cells are ~2× as tall as they are wide), so
-// we pass twice the row count we actually want — the rendered output
-// fills `SPLASH_IMAGE_HEIGHT` cells while sampling `_HEIGHT * 2`
-// pixels of the source.
+// 50×25 cells. Each braille glyph packs 2×4 dots, so the renderer
+// samples a 100×100 pixel slice of the source — high enough to keep
+// the dragon's outlines and flowers recognisable, low enough to fit
+// neatly inside the splash box on a typical 80–120 column terminal.
 const SPLASH_IMAGE_WIDTH = 50;
 const SPLASH_IMAGE_HEIGHT = 25;
-const ASCII_HEIGHT_PROP = SPLASH_IMAGE_HEIGHT * 2;
 
 // We bypass `ink-picture`'s `TerminalInfoProvider` because its
 // terminal-capability probes (OSC queries written to stdout, responses
@@ -96,10 +89,10 @@ function SplashImage({ src }: { src: string }) {
   return (
     <TerminalInfoContext.Provider value={SPLASH_TERMINAL_INFO}>
       <Box width={SPLASH_IMAGE_WIDTH} height={SPLASH_IMAGE_HEIGHT} flexShrink={0}>
-        <AsciiImage
+        <BrailleImage
           src={src}
           width={SPLASH_IMAGE_WIDTH}
-          height={ASCII_HEIGHT_PROP}
+          height={SPLASH_IMAGE_HEIGHT}
           alt="splash"
           onSupportDetected={() => {}}
         />
