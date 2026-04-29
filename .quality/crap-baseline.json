@@ -528,9 +528,9 @@
     "maxFunctionLines": 14
   },
   "packages/sd/src/tui/ui.ts": {
-    "lines": 618,
-    "complexity": 99,
-    "crapProxy": 9806,
+    "lines": 628,
+    "complexity": 103,
+    "crapProxy": 10614,
     "maxFunctionLines": 42
   },
   "packages/session/src/context-options.ts": {
