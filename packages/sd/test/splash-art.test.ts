@@ -15,17 +15,17 @@ const PINK_PNG = Buffer.from(PINK_PNG_BASE64, 'base64');
 test('renderImageAscii defaults to character-based ASCII art with truecolor', async () => {
   const ascii = await renderImageAscii(PINK_PNG, { width: 16 });
   assert.ok(ascii.length > 0, 'expected non-empty output');
-  // ASCII art uses ramp characters (' .:-=+*#%@'), not the U+2584
-  // half-block character used by the blocks renderer.
+  // ASCII art uses the wide brightness ramp, not the U+2584 half-block
+  // character used by the blocks renderer.
   assert.equal(ascii.includes('\u2584'), false, 'must not emit half-block characters');
-  // Truecolor RGB background escape — proves every cell is filled
-  // rather than rendering as a sparse glyph constellation.
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI ESC by design
-  assert.match(ascii, /\u001b\[48;2;\d+;\d+;\d+m/);
-  // Truecolor RGB foreground escape — proves we coloured the glyph
-  // on top of the background fill.
+  // Truecolor RGB foreground escape — proves we coloured each glyph.
   // biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI ESC by design
   assert.match(ascii, /\u001b\[38;2;\d+;\d+;\d+m/);
+  // No BG fill is emitted — the terminal's own background shows through
+  // so the glyph shapes carry the image rather than being noise on top
+  // of coloured tiles.
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI ESC by design
+  assert.equal(/\u001b\[48;2;\d+;\d+;\d+m/.test(ascii), false);
   // Resets at end of every line so a torn render can't leak colour.
   // biome-ignore lint/suspicious/noControlCharactersInRegex: matching ANSI ESC by design
   assert.match(ascii, /\u001b\[0m/);

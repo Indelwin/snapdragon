@@ -384,9 +384,9 @@
     "maxFunctionLines": 11
   },
   "packages/sd/src/tui/image-renderer.ts": {
-    "lines": 224,
-    "complexity": 48,
-    "crapProxy": 2308,
+    "lines": 215,
+    "complexity": 50,
+    "crapProxy": 2504,
     "maxFunctionLines": 25
   },
   "packages/sd/src/tui/index.tsx": {
