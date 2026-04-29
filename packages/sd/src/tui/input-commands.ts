@@ -29,6 +29,12 @@ export function defaultCommands(
     command('/memory', 'show or search memory', runSlashCommand, '[query]'),
     command('/remember', 'append memory note', runSlashCommand, '<note>'),
     command('/extensions', 'list or reload extensions', runSlashCommand, '[reload]'),
+    command(
+      '/reload',
+      'hot-reload runtime (extensions, skills, profiles)',
+      runSlashCommand,
+      '[pull|build|sync]',
+    ),
     command('/tools', 'list enabled tools', runSlashCommand),
     command('/providers', 'list configured providers', runSlashCommand),
     command('/provider', 'show or switch provider', runSlashCommand, '<id> [model]'),
@@ -255,7 +261,8 @@ function isRuntimeTransitionCommand(line: string): boolean {
     line.startsWith('/new-session') ||
     line.startsWith('/delete-session') ||
     line.startsWith('/profile') ||
-    line === '/extensions reload'
+    line === '/extensions reload' ||
+    line.startsWith('/reload')
   );
 }
 
