@@ -322,7 +322,7 @@ test('SdTuiApp renders the initial ECS shell and later tool activity', async () 
 
     await new Promise((resolve) => setImmediate(resolve));
     assert.match(app.lastFrame() ?? '', /SNAPDRAGON/);
-    assert.match(app.lastFrame() ?? '', /ctrl-p for commands/);
+    assert.match(app.lastFrame() ?? '', /ctrl-p palette/);
     controller.acceptAgentEvent({
       type: 'tool_start',
       call: { id: 'tool_1', name: 'read_file', args_json: '{}' },
