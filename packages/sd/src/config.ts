@@ -247,10 +247,21 @@ export function defaultSdConfig(): SdConfig {
       denied_tools: [],
     },
     agent: {
+      // Output budget — counts thinking + final text. With reasoning
+      // enabled by default the model can burn a chunk of this on
+      // thinking, so the cap needs real headroom or we'll see
+      // `finish_reason=max_tokens` with no content. 32K is well
+      // under Anthropic's 64K hard cap on Opus/Sonnet 4.x and leaves
+      // plenty of room for thinking + a substantial reply.
+      max_tokens: 32_000,
       context: {
         enabled: true,
         fresh_tail_count: 32,
-        max_request_tokens: 120_000,
+        // Input budget for context windowing. Claude's 1M-token
+        // context allows up to ~400K of input before quality starts
+        // to degrade noticeably — that's the headroom target rather
+        // than the absolute model limit.
+        max_request_tokens: 400_000,
         chunk_target_tokens: 8_000,
         summary_target_tokens: 1_500,
       },
