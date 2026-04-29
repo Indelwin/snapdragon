@@ -32,28 +32,22 @@ test('run_shell times out and reports it (simple sleep)', async () => {
   assert.equal((result.data as { timed_out?: boolean })?.timed_out, true);
 });
 
-test(
-  'run_shell unblocks even when a backgrounded grandchild keeps stdout open',
-  async () => {
-    // Reproduces the run_shell-blocks-forever bug: sh exits but a backgrounded
-    // child inherits stdout and keeps the pipe open. With `detached: true` and
-    // a process-group SIGTERM, the whole group dies on timeout and `close`
-    // fires. Without the fix, this test hangs until the outer node-test timer.
-    const t0 = Date.now();
-    // Spawn a backgrounded sleeper that holds stdout, then exit sh's foreground
-    // process. The pipe stays open via the backgrounded sleeper's stdout fd.
-    const result = await runShell({
-      command: 'sh -c "sleep 30 & echo started; exit 0"',
-      timeout_ms: 800,
-    });
-    const elapsed = Date.now() - t0;
-    assert.ok(
-      elapsed < 5_000,
-      `should not hang on leaked grandchild, took ${elapsed}ms`,
-    );
-    // It either timed out (group kill) or closed cleanly because the group
-    // got reaped — either way it must not hang. Output should at least show
-    // the "started" line we printed before backgrounding.
-    assert.match(String(result.content), /started/);
-  },
-);
+test('run_shell unblocks even when a backgrounded grandchild keeps stdout open', async () => {
+  // Reproduces the run_shell-blocks-forever bug: sh exits but a backgrounded
+  // child inherits stdout and keeps the pipe open. With `detached: true` and
+  // a process-group SIGTERM, the whole group dies on timeout and `close`
+  // fires. Without the fix, this test hangs until the outer node-test timer.
+  const t0 = Date.now();
+  // Spawn a backgrounded sleeper that holds stdout, then exit sh's foreground
+  // process. The pipe stays open via the backgrounded sleeper's stdout fd.
+  const result = await runShell({
+    command: 'sh -c "sleep 30 & echo started; exit 0"',
+    timeout_ms: 800,
+  });
+  const elapsed = Date.now() - t0;
+  assert.ok(elapsed < 5_000, `should not hang on leaked grandchild, took ${elapsed}ms`);
+  // It either timed out (group kill) or closed cleanly because the group
+  // got reaped — either way it must not hang. Output should at least show
+  // the "started" line we printed before backgrounding.
+  assert.match(String(result.content), /started/);
+});

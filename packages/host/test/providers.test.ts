@@ -143,15 +143,16 @@ test('Anthropic synthesizes a tool_result stub when one is missing', () => {
     },
   );
 
-  const messages = body.messages as Array<{ role: string; content: Array<Record<string, unknown>> }>;
+  const messages = body.messages as Array<{
+    role: string;
+    content: Array<Record<string, unknown>>;
+  }>;
   // user(hi) -> assistant(tool_use x2) -> user(tool_result a + stub b + "follow-up")
   assert.equal(messages.length, 3);
   assert.equal(messages[0].role, 'user');
   assert.equal(messages[1].role, 'assistant');
   assert.equal(messages[2].role, 'user');
-  const ids = messages[2].content
-    .filter((b) => b.type === 'tool_result')
-    .map((b) => b.tool_use_id);
+  const ids = messages[2].content.filter((b) => b.type === 'tool_result').map((b) => b.tool_use_id);
   assert.deepEqual(ids, ['toolu_a', 'toolu_b']);
   const stub = messages[2].content.find(
     (b) => b.type === 'tool_result' && b.tool_use_id === 'toolu_b',
@@ -174,12 +175,13 @@ test('Anthropic folds consecutive user messages into one', () => {
       ],
     },
   );
-  const messages = body.messages as Array<{ role: string; content: Array<Record<string, unknown>> }>;
+  const messages = body.messages as Array<{
+    role: string;
+    content: Array<Record<string, unknown>>;
+  }>;
   assert.equal(messages.length, 1);
   assert.equal(messages[0].role, 'user');
-  const texts = messages[0].content
-    .filter((b) => b.type === 'text')
-    .map((b) => b.text);
+  const texts = messages[0].content.filter((b) => b.type === 'text').map((b) => b.text);
   assert.deepEqual(texts, ['first', 'second', 'third']);
 });
 
@@ -195,7 +197,10 @@ test('Anthropic drops orphan tool messages with no matching tool_use', () => {
       ],
     },
   );
-  const messages = body.messages as Array<{ role: string; content: Array<Record<string, unknown>> }>;
+  const messages = body.messages as Array<{
+    role: string;
+    content: Array<Record<string, unknown>>;
+  }>;
   // The orphan tool message must be dropped, leaving the two user messages
   // which then get folded.
   assert.equal(messages.length, 1);
