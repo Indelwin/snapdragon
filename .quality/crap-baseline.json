@@ -492,10 +492,10 @@
     "maxFunctionLines": 41
   },
   "packages/sd/src/tui/renderers/splash.tsx": {
-    "lines": 113,
-    "complexity": 12,
-    "crapProxy": 145,
-    "maxFunctionLines": 47
+    "lines": 172,
+    "complexity": 21,
+    "crapProxy": 442,
+    "maxFunctionLines": 50
   },
   "packages/sd/src/tui/renderers/status.tsx": {
     "lines": 72,
@@ -546,10 +546,10 @@
     "maxFunctionLines": 14
   },
   "packages/sd/src/tui/ui.ts": {
-    "lines": 658,
-    "complexity": 99,
-    "crapProxy": 9806,
-    "maxFunctionLines": 42
+    "lines": 681,
+    "complexity": 112,
+    "crapProxy": 12549,
+    "maxFunctionLines": 43
   },
   "packages/session/src/context-options.ts": {
     "lines": 67,
