@@ -60,7 +60,7 @@
     "maxFunctionLines": 99
   },
   "packages/agent/src/index.ts": {
-    "lines": 275,
+    "lines": 283,
     "complexity": 59,
     "crapProxy": 3486,
     "maxFunctionLines": 11

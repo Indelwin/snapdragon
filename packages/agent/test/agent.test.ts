@@ -236,6 +236,34 @@ test('agent emits a provider error event when content is empty with no tool call
   assert.match(events[0].message ?? '', /no content.*finish_reason=end_turn/);
 });
 
+test('agent emits a provider error when content is empty even if thinking blocks are present', async () => {
+  // This is the regression case for the `(empty)` row that kept
+  // appearing for the user with reasoning enabled by default — the
+  // model produced thinking but bailed before generating text, and
+  // the previous heuristic excluded that path from the error event.
+  const mock = mockProvider();
+  mock.enqueueResponse({
+    content: '',
+    finish_reason: 'end_turn',
+    thinking: [{ text: 'okay so the user wants...' }, { text: '...and I think...' }],
+  });
+
+  const agent = await createCodingReplAgent({
+    provider: mock.handler,
+    cwd: process.cwd(),
+  });
+  const messages: string[] = [];
+  agent.subscribe((event) => {
+    if (event.type === 'provider_event' && event.event.kind === 'error') {
+      messages.push(event.event.message);
+    }
+  });
+
+  await agent.prompt('hi');
+  assert.equal(messages.length, 1);
+  assert.match(messages[0], /only reasoning.*no final content/);
+});
+
 test('agent does not emit an empty-content error when tool calls are present', async () => {
   const mock = mockProvider();
   mock.enqueueResponse({
