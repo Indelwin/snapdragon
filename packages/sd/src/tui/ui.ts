@@ -1,7 +1,9 @@
+import { execFileSync } from 'node:child_process';
 import type { AgentEvent, SnapdragonAgent } from '@snapdragon-ai/agent';
 import type { Message, StreamEvent, ToolCall } from '@snapdragon-ai/host';
 import { type JsonObject, type JsonValue, type UiEvent, UiWorld, uiLog } from '@snapdragon-ai/ui';
 import type { PendingAttachment } from '../attachments.js';
+import { listRuntimeSessions } from '../runtime-session.js';
 import type { SdRuntime } from '../runtime.js';
 import type { PromptCompletionState } from './input-completion.js';
 import { promptCompletionJson } from './prompt-completion-json.js';
@@ -550,10 +552,10 @@ function register(
 
 /**
  * Snapshot of runtime "what's loaded" counts for the splash stats
- * panel. Cheap to compute (everything is sync, no network or fs
- * walks), so we re-run it on every `refreshRuntimeStatus`. Future
- * counts (e.g. recent sessions) can fold in here once they have a
- * sync source.
+ * panel. Everything here is synchronous (no network, no async file
+ * walks beyond what `readFileSync` already does), so we re-run it on
+ * every `refreshRuntimeStatus` to stay current after skill reloads,
+ * profile switches, etc.
  */
 function runtimeStats(runtime: SdRuntime): JsonObject {
   const reasoning = runtime.config.agent?.reasoning;
@@ -563,10 +565,61 @@ function runtimeStats(runtime: SdRuntime): JsonObject {
     profiles: runtime.profileStore.list().length,
     services: runtime.background.list().length,
     extensions: runtime.extensions.list().length,
+    sessions: countSessionsSafely(runtime),
+    memories: countMemoriesSafely(runtime),
+    git: gitStatus(runtime.agent.cwd),
     reasoning: reasoning?.enabled === false ? 'off' : (reasoning?.effort ?? 'medium'),
     contextTokens: runtime.config.agent?.context?.max_request_tokens ?? null,
     outputTokens: runtime.config.agent?.max_tokens ?? null,
   };
+}
+
+function countSessionsSafely(runtime: SdRuntime): number {
+  try {
+    return listRuntimeSessions(runtime.config).length;
+  } catch {
+    return 0;
+  }
+}
+
+function countMemoriesSafely(runtime: SdRuntime): number {
+  try {
+    const result = runtime.memory.read();
+    // Default `SdMemoryStore.read` is synchronous; some custom
+    // providers return a Promise. We don't await here because the
+    // splash render happens once and a hanging memory provider
+    // shouldn't delay it.
+    if (result instanceof Promise) return 0;
+    return result.entries.length;
+  } catch {
+    return 0;
+  }
+}
+
+function gitStatus(cwd: string): JsonObject | null {
+  // Cheap, best-effort: bail silently if the cwd isn't a git checkout
+  // or if git is missing. We never want a slow/missing git to delay
+  // the splash render.
+  try {
+    const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 250,
+    })
+      .toString()
+      .trim();
+    const sha = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
+      cwd,
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 250,
+    })
+      .toString()
+      .trim();
+    if (!branch || !sha) return null;
+    return { branch, sha };
+  } catch {
+    return null;
+  }
 }
 
 function sessionState(runtime: SdRuntime): JsonObject {
