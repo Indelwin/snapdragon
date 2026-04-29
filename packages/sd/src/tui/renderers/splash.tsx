@@ -70,7 +70,8 @@ function SplashImage({ src }: { src: string }) {
         src={src}
         width={SPLASH_IMAGE_WIDTH}
         height={SPLASH_IMAGE_HEIGHT}
-        color={tuiColors.accentSoft}
+        shimmer
+        shimmerColor={tuiColors.accent}
         alt="loading splash…"
       />
     </Box>
