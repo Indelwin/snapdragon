@@ -2,7 +2,15 @@ import type { UiComponentSnapshot } from '@snapdragon-ai/ui';
 import { Box, Text } from 'ink';
 import { optionalStringValue, stringValue } from '../state-readers.js';
 import { trimText, tuiChars, tuiColors } from '../theme.js';
+import { AsciiTitle } from './ascii-title.js';
 import { ColoredBrailleImage } from './colored-braille.js';
+
+// Pink → lilac vertical gradient for the splash title. Top stop is
+// the SD accent pink so the title sits visually adjacent to the
+// dragon's shimmer; bottom stop is the existing `thinking` lilac
+// from the theme so we're reusing palette colours rather than
+// inventing new ones.
+const SPLASH_TITLE_GRADIENT = [tuiColors.accent, tuiColors.thinking] as const;
 
 export function SplashBanner({ component }: { component: UiComponentSnapshot }) {
   if (component.state.visible === false) return null;
@@ -18,12 +26,13 @@ export function SplashBanner({ component }: { component: UiComponentSnapshot }) 
       marginY={1}
     >
       {imagePath ? <SplashImage src={imagePath} /> : <SplashArt />}
-      <Box marginTop={1} flexDirection="row">
-        <Text color={tuiColors.accent} bold>
-          {stringValue(component.state.title).toUpperCase() || 'SNAPDRAGON'}
-        </Text>
+      <Box marginTop={1} flexDirection="column">
+        <AsciiTitle
+          text={stringValue(component.state.title) || 'snapdragon'}
+          font="Slant"
+          colors={SPLASH_TITLE_GRADIENT}
+        />
         <Text color={tuiColors.muted}>
-          {' '}
           {tuiChars.bullet} {stringValue(component.state.subtitle) || 'Ready for a workspace task'}
         </Text>
       </Box>
