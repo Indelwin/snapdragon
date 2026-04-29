@@ -1,6 +1,6 @@
 import type { StreamingChatHandler } from '../registry.js';
 import type { ProviderDescriptor } from '../types.js';
-import { anthropicSystem, convertMessageToAnthropic } from './anthropic-format.js';
+import { anthropicSystem, convertMessagesToAnthropic } from './anthropic-format.js';
 import { anthropicReasoning } from './anthropic-reasoning.js';
 import { readAnthropicStream } from './anthropic-stream.js';
 import { type FetchLike, fetchImpl } from './shared.js';
@@ -62,7 +62,7 @@ export function anthropicBody(
     model: options.model,
     max_tokens: request.max_tokens ?? options.defaultMaxTokens ?? 4096,
     stream: true,
-    messages: request.messages.map(convertMessageToAnthropic).filter(Boolean),
+    messages: convertMessagesToAnthropic(request.messages),
   };
   const system = anthropicSystem(request.messages);
   if (system) body.system = system;
