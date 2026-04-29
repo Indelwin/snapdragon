@@ -1,6 +1,6 @@
 import type { UiComponentSnapshot } from '@snapdragon-ai/ui';
 import { Box, Text } from 'ink';
-import { AsciiImage, type TerminalInfo, TerminalInfoContext } from 'ink-picture';
+import { HalfBlockImage, type TerminalInfo, TerminalInfoContext } from 'ink-picture';
 import { optionalStringValue, stringValue } from '../state-readers.js';
 import { trimText, tuiChars, tuiColors } from '../theme.js';
 
@@ -51,8 +51,12 @@ export function SplashBanner({ component }: { component: UiComponentSnapshot }) 
   );
 }
 
-const SPLASH_IMAGE_WIDTH = 40;
-const SPLASH_IMAGE_HEIGHT = 20;
+// Half-block rendering packs 2 pixels per terminal cell vertically,
+// so a 50×25 cell box gives us a 50×50 pixel rendering — easily
+// recognisable at typical splash sizes without dominating the
+// 80–120 column terminals we target.
+const SPLASH_IMAGE_WIDTH = 50;
+const SPLASH_IMAGE_HEIGHT = 25;
 
 // We bypass `ink-picture`'s `TerminalInfoProvider` because its
 // terminal-capability probes (OSC queries written to stdout, responses
@@ -85,7 +89,7 @@ function SplashImage({ src }: { src: string }) {
   return (
     <TerminalInfoContext.Provider value={SPLASH_TERMINAL_INFO}>
       <Box width={SPLASH_IMAGE_WIDTH} height={SPLASH_IMAGE_HEIGHT} flexShrink={0}>
-        <AsciiImage
+        <HalfBlockImage
           src={src}
           width={SPLASH_IMAGE_WIDTH}
           height={SPLASH_IMAGE_HEIGHT}
