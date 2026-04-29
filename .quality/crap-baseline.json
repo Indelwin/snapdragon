@@ -234,9 +234,9 @@
     "maxFunctionLines": 15
   },
   "packages/sd/src/commands.ts": {
-    "lines": 564,
-    "complexity": 114,
-    "crapProxy": 13000,
+    "lines": 612,
+    "complexity": 116,
+    "crapProxy": 13461,
     "maxFunctionLines": 55
   },
   "packages/sd/src/config.ts": {
@@ -298,6 +298,24 @@
     "complexity": 67,
     "crapProxy": 4497,
     "maxFunctionLines": 40
+  },
+  "packages/sd/src/reload-format.ts": {
+    "lines": 44,
+    "complexity": 7,
+    "crapProxy": 50,
+    "maxFunctionLines": 10
+  },
+  "packages/sd/src/reload-types.ts": {
+    "lines": 50,
+    "complexity": 7,
+    "crapProxy": 54,
+    "maxFunctionLines": 7
+  },
+  "packages/sd/src/reload.ts": {
+    "lines": 146,
+    "complexity": 17,
+    "crapProxy": 294,
+    "maxFunctionLines": 18
   },
   "packages/sd/src/renderer.ts": {
     "lines": 53,
@@ -396,9 +414,9 @@
     "maxFunctionLines": 44
   },
   "packages/sd/src/tui/input-commands.ts": {
-    "lines": 289,
-    "complexity": 59,
-    "crapProxy": 3485,
+    "lines": 296,
+    "complexity": 60,
+    "crapProxy": 3604,
     "maxFunctionLines": 67
   },
   "packages/sd/src/tui/input-completion.ts": {

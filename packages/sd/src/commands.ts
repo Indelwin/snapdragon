@@ -14,6 +14,12 @@ import {
   switchSdModel,
   switchSdProvider,
 } from './provider.js';
+import {
+  formatReloadReport,
+  parseReloadArg,
+  type ReloadShellRunner,
+  reloadSdRuntime,
+} from './reload.js';
 import type { SdIo } from './repl.js';
 import type { SdRuntime } from './runtime.js';
 import {
@@ -50,6 +56,7 @@ export const BUILTIN_SLASH_COMMANDS = [
   '/memory',
   '/remember',
   '/extensions',
+  '/reload',
   '/skills',
   '/skill',
   '/tools',
@@ -90,6 +97,7 @@ export async function handleCommand(
   }
   if (command === '/remember') return rememberCommand(arg, runtime, io, attachments);
   if (command === '/extensions') return extensionsCommand(arg, runtime, io, attachments);
+  if (command === '/reload') return reloadCommand(arg, runtime, io, attachments);
   if (command === '/skills') return writeResult(io, skillsSummary(runtime), attachments);
   if (command === '/skill') return skillCommand(line, arg, runtime, io, attachments);
   if (command === '/tools') return writeResult(io, toolsSummary(runtime), attachments);
@@ -409,6 +417,7 @@ function slashHelp(): string {
     '  /memory [query]        Show or search durable memory',
     '  /remember <note>       Append a durable memory note',
     '  /extensions [reload]   List or reload discovered extensions',
+    '  /reload [pull|build|sync]  Hot-reload runtime (extensions, skills, profiles)',
     '  /skills               List skills',
     '  /skill <id> [task]    Run a skill for one request',
     '  /tools                List enabled tools',
@@ -517,6 +526,45 @@ async function extensionsCommand(
     return writeResult(io, 'Reloaded extensions.', attachments);
   }
   return writeResult(io, extensionsSummary(runtime), attachments);
+}
+
+/**
+ * `/reload [pull|build|sync]` — rebuild the runtime in place. Optional
+ * sub-args trigger `git pull --ff-only` and/or `npm run build` first.
+ *
+ * Test-only escape hatch: pass a custom shell runner via
+ * `setReloadShellRunnerForTests()` to avoid spawning real git/npm.
+ */
+async function reloadCommand(
+  arg: string,
+  runtime: SdRuntime,
+  io: SdIo,
+  attachments: PendingAttachment[],
+): Promise<CommandResult> {
+  const parsed = parseReloadArg(arg);
+  if (parsed.unknown.length > 0) {
+    return writeResult(
+      io,
+      `Unknown /reload argument(s): ${parsed.unknown.join(', ')}. Use one of: pull, build, sync.`,
+      attachments,
+    );
+  }
+  const report = await reloadSdRuntime(runtime, {
+    pull: parsed.pull,
+    build: parsed.build,
+    runner: reloadRunnerOverride,
+  });
+  return writeResult(io, formatReloadReport(report), attachments);
+}
+
+let reloadRunnerOverride: ReloadShellRunner | undefined;
+
+/**
+ * Test-only: install a fake shell runner used by `/reload`. Pass `undefined`
+ * to restore the default (real `child_process.spawn`).
+ */
+export function setReloadShellRunnerForTests(runner: ReloadShellRunner | undefined): void {
+  reloadRunnerOverride = runner;
 }
 
 function profileSummary(runtime: SdRuntime): string {
