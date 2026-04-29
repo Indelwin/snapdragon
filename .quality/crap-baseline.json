@@ -108,9 +108,9 @@
     "maxFunctionLines": 44
   },
   "packages/host/src/providers/anthropic.ts": {
-    "lines": 106,
-    "complexity": 29,
-    "crapProxy": 846,
+    "lines": 105,
+    "complexity": 27,
+    "crapProxy": 734,
     "maxFunctionLines": 27
   },
   "packages/host/src/providers/codex-auth-store.ts": {
@@ -240,10 +240,10 @@
     "maxFunctionLines": 55
   },
   "packages/sd/src/config.ts": {
-    "lines": 386,
-    "complexity": 169,
-    "crapProxy": 28588,
-    "maxFunctionLines": 107
+    "lines": 379,
+    "complexity": 161,
+    "crapProxy": 25949,
+    "maxFunctionLines": 104
   },
   "packages/sd/src/exit-summary.ts": {
     "lines": 61,
@@ -408,10 +408,10 @@
     "maxFunctionLines": 94
   },
   "packages/sd/src/tui/input-controller.ts": {
-    "lines": 208,
-    "complexity": 19,
-    "crapProxy": 363,
-    "maxFunctionLines": 39
+    "lines": 162,
+    "complexity": 10,
+    "crapProxy": 102,
+    "maxFunctionLines": 31
   },
   "packages/sd/src/tui/input-keymap.ts": {
     "lines": 209,
@@ -444,7 +444,7 @@
     "maxFunctionLines": 22
   },
   "packages/sd/src/tui/renderers/chat.tsx": {
-    "lines": 74,
+    "lines": 70,
     "complexity": 12,
     "crapProxy": 145,
     "maxFunctionLines": 25
@@ -528,9 +528,9 @@
     "maxFunctionLines": 14
   },
   "packages/sd/src/tui/ui.ts": {
-    "lines": 628,
-    "complexity": 103,
-    "crapProxy": 10614,
+    "lines": 621,
+    "complexity": 96,
+    "crapProxy": 9221,
     "maxFunctionLines": 42
   },
   "packages/session/src/context-options.ts": {

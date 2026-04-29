@@ -18,6 +18,7 @@ import {
 } from '../src/tui/input-completion.ts';
 import { handleGlobalInput, handlePromptInput } from '../src/tui/input-keymap.ts';
 import { chatEntries } from '../src/tui/state-readers.ts';
+import { visibleWrappedTranscriptRows } from '../src/tui/transcript-viewport.ts';
 import {
   transcriptRows,
   visibleTranscriptRows,
@@ -62,6 +63,38 @@ test('SdUiController maps agent streams and tool events into UI ECS state', asyn
     assert.match(JSON.stringify(chat), /hi/);
     assert.match(JSON.stringify(tools), /read_file/);
     assert.equal(controller.isRunning, false);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('SdUiController coalesces provider stream deltas before publishing UI snapshots', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-stream-buffer-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    const controller = new SdUiController(runtime);
+
+    controller.acceptAgentEvent({ type: 'run_start', runId: 'run_1' });
+    const revisionAfterStart = controller.world.revision;
+    controller.acceptAgentEvent({
+      type: 'provider_event',
+      event: { kind: 'text', run_id: 'run_1', provider: 'mock', delta: 'he' },
+    });
+    controller.acceptAgentEvent({
+      type: 'provider_event',
+      event: { kind: 'text', run_id: 'run_1', provider: 'mock', delta: 'llo' },
+    });
+
+    assert.equal(controller.world.revision, revisionAfterStart);
+    controller.acceptAgentEvent({
+      type: 'run_end',
+      runId: 'run_1',
+      response: { content: 'hello' },
+    });
+
+    const entries = chatEntries(controller.world.componentState(SD_UI_IDS.chat));
+    const assistant = entries.find((entry) => entry.role === 'assistant');
+    assert.equal(assistant?.content, 'hello');
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
@@ -153,6 +186,25 @@ test('transcript wrapping is calculated before bottom viewport selection', () =>
   const visible = visibleTranscriptRows(rows, 2, 0);
 
   assert.equal(visible.at(-1)?.text, 'bottom');
+});
+
+test('lazy transcript viewport matches full wrapped bottom selection', () => {
+  const entries = Array.from({ length: 40 }).map((_, index) => ({
+    id: `a${index}`,
+    role: 'assistant',
+    content: `entry ${index} with enough text to wrap before the final short line\nbottom ${index}`,
+  }));
+  const allRows = wrapTranscriptRows(transcriptRows(entries), 24);
+
+  for (const offset of [0, 2, 8]) {
+    const eager = visibleTranscriptRows(allRows, 6, offset);
+    const lazy = visibleWrappedTranscriptRows(entries, 6, 24, offset);
+
+    assert.deepEqual(
+      lazy.map((row) => row.text),
+      eager.map((row) => row.text),
+    );
+  }
 });
 
 test('SdUiController publishes prompt phase patches across a run lifecycle', async () => {
