@@ -383,12 +383,6 @@
     "crapProxy": 170,
     "maxFunctionLines": 11
   },
-  "packages/sd/src/tui/image-renderer.ts": {
-    "lines": 215,
-    "complexity": 50,
-    "crapProxy": 2504,
-    "maxFunctionLines": 25
-  },
   "packages/sd/src/tui/index.tsx": {
     "lines": 168,
     "complexity": 34,
@@ -486,7 +480,7 @@
     "maxFunctionLines": 41
   },
   "packages/sd/src/tui/renderers/splash.tsx": {
-    "lines": 93,
+    "lines": 95,
     "complexity": 12,
     "crapProxy": 145,
     "maxFunctionLines": 46
@@ -504,10 +498,10 @@
     "maxFunctionLines": 10
   },
   "packages/sd/src/tui/splash-art.ts": {
-    "lines": 66,
-    "complexity": 12,
-    "crapProxy": 148,
-    "maxFunctionLines": 10
+    "lines": 45,
+    "complexity": 7,
+    "crapProxy": 52,
+    "maxFunctionLines": 4
   },
   "packages/sd/src/tui/state-readers.ts": {
     "lines": 150,
@@ -540,7 +534,7 @@
     "maxFunctionLines": 14
   },
   "packages/sd/src/tui/ui.ts": {
-    "lines": 636,
+    "lines": 638,
     "complexity": 97,
     "crapProxy": 9414,
     "maxFunctionLines": 42

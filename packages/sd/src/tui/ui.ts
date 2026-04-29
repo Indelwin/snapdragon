@@ -6,6 +6,7 @@ import type { SdRuntime } from '../runtime.js';
 import type { PromptCompletionState } from './input-completion.js';
 import { promptCompletionJson } from './prompt-completion-json.js';
 import { ProviderEventBuffer } from './provider-event-buffer.js';
+import { resolveSplashImagePath } from './splash-art.js';
 import { chatEntries, eventEntries, toolEntries } from './state-readers.js';
 import type { ChatEntry, ToolEntry } from './ui-entry.js';
 
@@ -129,18 +130,19 @@ export class SdUiController {
   }
 
   /**
-   * Resolve and render the user's splash.png (profile-level then
-   * sd-root) and patch the rendered ASCII/graphics-protocol string
-   * into the splash component state. Idempotent — calling it twice
-   * just re-resolves and patches again. Failures (missing file,
-   * decoder error) are silently swallowed; the ASCII cat fallback
-   * continues to render.
+   * Resolve the user's `splash.png` (profile-level first, then the
+   * sd-root override) and patch the file path into splash component
+   * state. The `<SplashBanner>` renderer hands that path to
+   * `ink-picture`'s `<Image>` component, which handles scaling and
+   * ASCII rendering inline. We only do path resolution here so the
+   * controller stays sync — there's nothing async to fail or wait on.
+   * If neither candidate exists the splash keeps showing the ASCII
+   * cat banner.
    */
-  async loadSplashArt(): Promise<void> {
-    const { loadSplashImage } = await import('./splash-art.js');
-    const image = await loadSplashImage({ profile: this.runtime.profile });
-    if (!image) return;
-    this.world.apply(patch(SD_UI_IDS.splash, { image }));
+  loadSplashArt(): void {
+    const imagePath = resolveSplashImagePath({ profile: this.runtime.profile });
+    if (!imagePath) return;
+    this.world.apply(patch(SD_UI_IDS.splash, { imagePath }));
   }
 
   refreshRuntimeStatus(): void {

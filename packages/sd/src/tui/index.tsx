@@ -57,7 +57,7 @@ export function SdTuiApp({
   useEffect(() => controller.world.subscribe(setSnapshot), [controller]);
   useEffect(() => {
     controller.bindRuntimeAgent();
-    void controller.loadSplashArt();
+    controller.loadSplashArt();
     return () => controller.dispose();
   }, [controller]);
   useSdTuiInput({ runtime, controller, exit });
