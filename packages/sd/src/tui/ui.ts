@@ -548,7 +548,17 @@ function messageToEntry(message: Message): ChatEntry {
     role: message.role,
     content: messageContentSummary(message),
     toolCalls: message.tool_calls?.length ?? 0,
+    thinking: thinkingText(message.thinking),
   };
+}
+
+function thinkingText(blocks: Message['thinking']): string | undefined {
+  if (!blocks || blocks.length === 0) return undefined;
+  const text = blocks
+    .map((block) => block.text)
+    .filter((line) => typeof line === 'string' && line.length > 0)
+    .join('\n');
+  return text.length > 0 ? text : undefined;
 }
 
 function trimEntries(entries: ChatEntry[], maxEntries: number): JsonValue[] {
