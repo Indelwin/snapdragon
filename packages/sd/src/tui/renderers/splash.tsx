@@ -1,6 +1,6 @@
 import type { UiComponentSnapshot } from '@snapdragon-ai/ui';
 import { Box, Text } from 'ink';
-import Image, { TerminalInfoProvider } from 'ink-picture';
+import { AsciiImage, type TerminalInfo, TerminalInfoContext } from 'ink-picture';
 import { optionalStringValue, stringValue } from '../state-readers.js';
 import { trimText, tuiChars, tuiColors } from '../theme.js';
 
@@ -51,21 +51,49 @@ export function SplashBanner({ component }: { component: UiComponentSnapshot }) 
   );
 }
 
+const SPLASH_IMAGE_WIDTH = 40;
+const SPLASH_IMAGE_HEIGHT = 20;
+
+// We bypass `ink-picture`'s `TerminalInfoProvider` because its
+// terminal-capability probes (OSC queries written to stdout, responses
+// read from stdin) race with Ink's own input handler — when the
+// provider mounts after the prompt is accepting keystrokes, the
+// response bytes leak into the input buffer (we saw real escape
+// sequences land in `> ` after the splash mounted). For the splash we
+// only ever want the ASCII renderer with colour, so a hard-coded
+// context is enough: it skips the probing entirely and still satisfies
+// `AsciiImage`'s `useTerminalInfo()` requirement (which throws after
+// 2s if no context is found). The dimensions are arbitrary plausible
+// values — `AsciiImage` doesn't consult them, only the half-block /
+// graphics-protocol renderers do.
+const SPLASH_TERMINAL_INFO: TerminalInfo = {
+  dimensions: { viewportWidth: 1024, viewportHeight: 768, cellWidth: 8, cellHeight: 16 },
+  capabilities: {
+    supportsUnicode: true,
+    supportsColor: true,
+    supportsSixelGraphics: false,
+    supportsKittyGraphics: false,
+    supportsITerm2Graphics: false,
+  },
+};
+
 function SplashImage({ src }: { src: string }) {
-  // ink-picture's <Image> handles scaling, protocol selection, and
-  // the ASCII fallback inline as a real Ink component. Forcing
-  // `protocol="ascii"` gives us the chunky TUI-art look without
-  // competing with iTerm/Kitty native graphics protocols (which
-  // fight Ink's Yoga layout).
-  //
-  // The provider is scoped to just the splash so the rest of the
-  // TUI doesn't pay the terminal-capability detection cost — and so
-  // test environments without a real stdin don't get blocked waiting
-  // for capability queries.
+  // The outer fixed-size Box gives Yoga a definite container before
+  // `AsciiImage` runs `measureElement` — without it the renderer sees
+  // a near-zero container on first render and clamps the image down
+  // to a couple of cells.
   return (
-    <TerminalInfoProvider>
-      <Image src={src} width={40} protocol="ascii" alt="splash" />
-    </TerminalInfoProvider>
+    <TerminalInfoContext.Provider value={SPLASH_TERMINAL_INFO}>
+      <Box width={SPLASH_IMAGE_WIDTH} height={SPLASH_IMAGE_HEIGHT} flexShrink={0}>
+        <AsciiImage
+          src={src}
+          width={SPLASH_IMAGE_WIDTH}
+          height={SPLASH_IMAGE_HEIGHT}
+          alt="splash"
+          onSupportDetected={() => {}}
+        />
+      </Box>
+    </TerminalInfoContext.Provider>
   );
 }
 

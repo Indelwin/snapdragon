@@ -480,7 +480,7 @@
     "maxFunctionLines": 41
   },
   "packages/sd/src/tui/renderers/splash.tsx": {
-    "lines": 95,
+    "lines": 123,
     "complexity": 12,
     "crapProxy": 145,
     "maxFunctionLines": 46
