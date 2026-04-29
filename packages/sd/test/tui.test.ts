@@ -646,6 +646,68 @@ test('chat page keys update transcript scroll state before prompt handling', asy
   }
 });
 
+test('escape aborts an in-flight run without exiting', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-esc-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    const controller = new SdUiController(runtime);
+    let exitCalled = false;
+    const commonArgs = {
+      controller,
+      exit: () => {
+        exitCalled = true;
+      },
+      setDraft: () => undefined,
+      setPalette: () => undefined,
+      paletteRef: { current: { open: false, query: '', selectedIndex: 0 } },
+      historyIndexRef: { current: -1 },
+    };
+
+    // Idle: Esc is consumed (returns true) but does NOT exit and does NOT throw.
+    assert.equal(handleGlobalInput('', { escape: true }, commonArgs), true);
+    assert.equal(exitCalled, false);
+
+    // Simulate an in-flight run: agent emits run_start, then we register the
+    // controller's abort handle. abortActiveRun() should fire, signal aborts,
+    // and isRunning flips to false on the next run_end (we'll just check the
+    // signal here since markRunError/run_end is wired through the agent loop).
+    controller.acceptAgentEvent({ type: 'run_start', runId: 'run_test' });
+    assert.equal(controller.isRunning, true);
+    const abort = new AbortController();
+    controller.setActiveAbortController(abort);
+
+    assert.equal(handleGlobalInput('', { escape: true }, commonArgs), true);
+    assert.equal(abort.signal.aborted, true, 'abort signal should be triggered');
+    assert.equal(exitCalled, false, 'esc must never exit the process');
+
+    // A second Esc with no live AbortController is a no-op.
+    assert.equal(handleGlobalInput('', { escape: true }, commonArgs), true);
+    assert.equal(exitCalled, false);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('escape with palette open is left to the palette handler', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-esc-palette-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    const controller = new SdUiController(runtime);
+    const commonArgs = {
+      controller,
+      exit: () => undefined,
+      setDraft: () => undefined,
+      setPalette: () => undefined,
+      paletteRef: { current: { open: true, query: '', selectedIndex: 0 } },
+      historyIndexRef: { current: -1 },
+    };
+    // Returns false → caller (input-controller) routes the key to handlePaletteInput.
+    assert.equal(handleGlobalInput('', { escape: true }, commonArgs), false);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
 test('prompt completion supports inline shell command names', () => {
   const completion = buildPromptCompletion('!g', testCommands(), ['git', 'grep', 'npm']);
   assert.equal(completion?.mode, 'shell');

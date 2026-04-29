@@ -143,6 +143,13 @@ export async function submitLine(args: {
   rememberHistory(args.line, args.historyRef, args.controller);
   const attachments = args.attachmentsRef.current;
   args.setAttachments([]);
+  // Tie this run to an AbortController so Esc (handled by the global keymap
+  // via controller.abortActiveRun()) can cancel it without killing the
+  // process. The controller clears its internal reference on run_end /
+  // markRunError; we still abort()/clear here defensively in case the run
+  // returns or throws before the controller saw run_end.
+  const abort = new AbortController();
+  args.controller.setActiveAbortController(abort);
   try {
     args.controller.bindRuntimeAgent();
     const visibleInput = contentWithAttachments(args.line, attachments);
@@ -152,6 +159,7 @@ export async function submitLine(args: {
         args.runtime.memory,
         visibleInput,
       ),
+      signal: abort.signal,
     });
     await maybeAutoCaptureMemory({
       config: args.runtime.config,
@@ -163,6 +171,8 @@ export async function submitLine(args: {
     });
   } catch (error) {
     args.controller.markRunError(error);
+  } finally {
+    args.controller.setActiveAbortController(undefined);
   }
 }
 
