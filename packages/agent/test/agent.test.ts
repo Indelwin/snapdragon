@@ -212,3 +212,47 @@ test('parseToolArgs accepts empty, valid JSON, and invalid JSON', () => {
   assert.deepEqual(parseToolArgs('[1,2]'), [1, 2]);
   assert.deepEqual(parseToolArgs('not json'), { raw: 'not json' });
 });
+
+test('agent emits a provider error event when content is empty with no tool calls', async () => {
+  const mock = mockProvider();
+  // Degenerate response: no text, no tool calls. This is the failure
+  // mode we used to silently render as `(empty)` in the UI.
+  mock.enqueueResponse({ content: '', finish_reason: 'end_turn' });
+
+  const agent = await createCodingReplAgent({
+    provider: mock.handler,
+    cwd: process.cwd(),
+  });
+  const events: Array<{ kind: string; message?: string }> = [];
+  agent.subscribe((event) => {
+    if (event.type === 'provider_event' && event.event.kind === 'error') {
+      events.push({ kind: event.event.kind, message: event.event.message });
+    }
+  });
+
+  const response = await agent.prompt('hi');
+  assert.equal(response.content, '');
+  assert.equal(events.length, 1);
+  assert.match(events[0].message ?? '', /no content.*finish_reason=end_turn/);
+});
+
+test('agent does not emit an empty-content error when tool calls are present', async () => {
+  const mock = mockProvider();
+  mock.enqueueResponse({
+    content: '',
+    tool_calls: [{ id: '1', name: 'repl_eval', args_json: '{"code":"42"}' }],
+  });
+  mock.enqueue('done');
+
+  const agent = await createCodingReplAgent({
+    provider: mock.handler,
+    cwd: process.cwd(),
+  });
+  let errorEvents = 0;
+  agent.subscribe((event) => {
+    if (event.type === 'provider_event' && event.event.kind === 'error') errorEvents += 1;
+  });
+
+  await agent.prompt('do thing');
+  assert.equal(errorEvents, 0);
+});

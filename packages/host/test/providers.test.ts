@@ -6,6 +6,7 @@ import {
   listOpenAICompatibleModels,
 } from '../src/model-discovery.ts';
 import { anthropicBody } from '../src/providers/anthropic.ts';
+import { readAnthropicStream } from '../src/providers/anthropic-stream.ts';
 import { codexProvider } from '../src/providers/codex.ts';
 import { openAIChatBody } from '../src/providers/openai-compatible.ts';
 import { openAIResponsesBody } from '../src/providers/openai-responses-format.ts';
@@ -274,4 +275,54 @@ test('Anthropic model discovery uses the Anthropic API base URL', async () => {
 
 function sse(events: Array<Record<string, unknown>>): string {
   return events.map((event) => `data: ${JSON.stringify(event)}\n\n`).join('');
+}
+
+test('Anthropic stream throws when an SSE error event arrives mid-stream', async () => {
+  const sseText = sse([
+    { type: 'message_start', message: { usage: { input_tokens: 10 } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'text' } },
+    {
+      type: 'error',
+      error: { type: 'overloaded_error', message: 'Anthropic is currently overloaded' },
+    },
+  ]);
+  const body = streamFromString(sseText);
+  await assert.rejects(
+    () =>
+      readAnthropicStream(body, {
+        runId: 'r',
+        emit: () => undefined,
+      }),
+    /overloaded_error.*currently overloaded/,
+  );
+});
+
+test('Anthropic stream throws when the stream ends without a stop reason', async () => {
+  // No `message_delta` event at all — simulates a connection drop
+  // mid-stream after some text has been produced.
+  const sseText = sse([
+    { type: 'message_start', message: { usage: { input_tokens: 5 } } },
+    { type: 'content_block_start', index: 0, content_block: { type: 'text' } },
+    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'hi' } },
+    { type: 'content_block_stop', index: 0 },
+  ]);
+  const body = streamFromString(sseText);
+  await assert.rejects(
+    () =>
+      readAnthropicStream(body, {
+        runId: 'r',
+        emit: () => undefined,
+      }),
+    /stream ended without a stop reason/,
+  );
+});
+
+function streamFromString(text: string): ReadableStream<Uint8Array> {
+  const bytes = new TextEncoder().encode(text);
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(bytes);
+      controller.close();
+    },
+  });
 }

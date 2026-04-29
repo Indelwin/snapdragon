@@ -139,6 +139,21 @@ export class SnapdragonAgent {
       await this.#emit({ type: 'message', message: assistantMessage });
 
       if (!response.tool_calls || response.tool_calls.length === 0) {
+        // Empty assistant content with no tool calls almost always means
+        // the provider returned a degenerate response (e.g. extended
+        // thinking ended without producing a final text block, a
+        // truncated stream, or a stop reason like `refusal`/`max_tokens`
+        // that swallowed the content). Surface it as a provider error
+        // event so the UI can flag it instead of rendering a silent
+        // `(empty)` chat row.
+        if (isEmptyContent(response.content) && !response.thinking?.length) {
+          emitProviderEvent(this.#listeners, {
+            kind: 'error',
+            run_id: runId,
+            provider: 'agent',
+            message: emptyResponseMessage(response.finish_reason),
+          });
+        }
         await this.#emit({ type: 'run_end', runId, response });
         return response;
       }
@@ -218,6 +233,15 @@ export async function createCodingReplAgent(options: CodingOptions): Promise<Sna
 
 function codingSession(options: CodingAgentOptions): Map<string, unknown> | undefined {
   return options.codingTools ? options.codingTools.session : undefined;
+}
+
+function isEmptyContent(content: string): boolean {
+  return typeof content !== 'string' || content.trim().length === 0;
+}
+
+function emptyResponseMessage(finishReason: string | undefined): string {
+  const reason = finishReason ?? 'unknown';
+  return `provider returned no content (finish_reason=${reason}); the model may have stopped early or hit a content/length limit`;
 }
 
 function clampToolResult(content: string, maxBytes: number): string {
