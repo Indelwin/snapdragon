@@ -1,10 +1,9 @@
 import type { StreamingChatHandler } from '../registry.js';
 import type { ProviderDescriptor } from '../types.js';
 import { anthropicSystem, convertMessageToAnthropic } from './anthropic-format.js';
+import { anthropicReasoning } from './anthropic-reasoning.js';
 import { readAnthropicStream } from './anthropic-stream.js';
 import { type FetchLike, fetchImpl } from './shared.js';
-
-const PROVIDER = 'anthropic';
 
 export { listAnthropicModels } from '../model-discovery.js';
 
@@ -18,7 +17,7 @@ export interface AnthropicProviderOptions {
 }
 
 export const anthropicProviderDescriptor: ProviderDescriptor = {
-  id: PROVIDER,
+  id: 'anthropic',
   name: 'Anthropic Messages',
   protocol: 'anthropic.messages',
   capabilities: {
@@ -45,7 +44,7 @@ export function anthropicProvider(options: AnthropicProviderOptions): StreamingC
     context.emit({
       kind: 'started',
       run_id: context.runId,
-      provider: PROVIDER,
+      provider: 'anthropic',
       role: request.role,
       model: options.model,
     });
@@ -70,7 +69,7 @@ export function anthropicBody(
   if (request.temperature !== undefined) body.temperature = request.temperature;
   if (request.stop !== undefined) body.stop_sequences = request.stop;
   if (request.reasoning?.enabled) {
-    body.thinking = { type: 'enabled', budget_tokens: request.reasoning.budget_tokens ?? 8000 };
+    Object.assign(body, anthropicReasoning(options.model, request.reasoning));
   }
   if (request.tools && request.tools.length > 0) {
     body.tools = request.tools.map((tool) => ({

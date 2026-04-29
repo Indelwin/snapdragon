@@ -1,17 +1,12 @@
 import { useInput } from 'ink';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { PendingAttachment } from '../attachments.js';
-import { configuredModelsForProvider, listSdProviders } from '../provider.js';
 import type { SdRuntime } from '../runtime.js';
-import { listSessions } from '../runtime-transitions.js';
 import { scrollChatToBottom } from './chat-scroll.js';
 import { commandDescriptors, type SdTuiCommand } from './commands.js';
+import { completionCatalogForDraft } from './completion-catalog.js';
 import { defaultCommands, runPaletteCommand, runSlashLine, submitLine } from './input-commands.js';
-import {
-  buildPromptCompletion,
-  type PromptCompletionCatalog,
-  type PromptCompletionState,
-} from './input-completion.js';
+import { buildPromptCompletion, type PromptCompletionState } from './input-completion.js';
 import {
   clampPalette,
   handleGlobalInput,
@@ -48,11 +43,10 @@ export function useSdTuiInput({ runtime, controller, exit }: SdTuiInputOptions):
           draft,
           commandsRef.current,
           shellCommandsRef.current,
-          completionCatalog(runtime),
+          completionCatalogForDraft(runtime, draft),
         );
       completionRef.current = nextCompletion;
-      controller.setPromptDraft(draft);
-      controller.setPromptCompletion(nextCompletion);
+      controller.setPromptInput(draft, nextCompletion);
     },
     [controller, runtime],
   );
@@ -106,7 +100,7 @@ export function useSdTuiInput({ runtime, controller, exit }: SdTuiInputOptions):
       draftRef.current,
       commands,
       shellCommandsRef.current,
-      completionCatalog(runtime),
+      completionCatalogForDraft(runtime, draftRef.current),
       completionRef.current?.selectedIndex ?? 0,
     );
     controller.setPromptCompletion(completionRef.current);
@@ -159,49 +153,9 @@ export function useSdTuiInput({ runtime, controller, exit }: SdTuiInputOptions):
       commandsRef,
       shellCommandsRef,
       completionRef,
-      completionCatalog: completionCatalog(runtime),
+      completionCatalog: completionCatalogForDraft(runtime, draftRef.current),
       setDraft,
       submit,
     });
   });
-}
-
-function completionCatalog(runtime: SdRuntime): PromptCompletionCatalog {
-  return {
-    providers: listSdProviders(runtime.config, runtime.provider.id).map((provider) => ({
-      id: provider.id,
-      kind: provider.kind,
-      active: provider.active,
-    })),
-    models: configuredModelsForProvider(runtime.config, runtime.provider.id).map((id) => ({
-      id,
-      active: id === runtime.provider.model,
-    })),
-    sessions: listSessions(runtime).map((session) => ({
-      id: session.session_id,
-      active: session.session_id === runtime.session?.sessionId,
-      updatedAt: session.updated_at,
-    })),
-    profiles: [
-      {
-        id: 'none',
-        active: runtime.profile === undefined,
-        description: runtime.profile ? 'clear active profile' : 'active',
-        valid: true,
-      },
-      ...runtime.profileStore.list().map((profile) => ({
-        id: profile.name,
-        active: profile.name === runtime.profile?.name,
-        description: profile.valid
-          ? (profile.config?.description ?? 'profile')
-          : (profile.error ?? 'invalid profile'),
-        valid: profile.valid,
-      })),
-    ],
-    skills: runtime.skills.list().map((skill) => ({
-      id: skill.id,
-      command: skill.command,
-      description: skill.description,
-    })),
-  };
 }

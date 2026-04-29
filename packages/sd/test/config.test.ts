@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import {
+  DEFAULT_SD_CONFIG_PATH,
   defaultSdConfig,
   loadSdConfig,
   loadSdEnvironment,
   writeDefaultConfig,
   writeEnvTemplate,
 } from '../src/config.ts';
+import { configPathForLoad } from '../src/config-path.ts';
 
 test('default config uses Anthropic Opus 4.7 without storing secrets', () => {
   const config = defaultSdConfig();
@@ -59,6 +61,35 @@ test('loadSdConfig merges YAML with defaults', async () => {
     assert.equal(config.providers.mock?.model, 'local-mock');
     assert.equal(config.providers.anthropic?.model, 'claude-opus-4-7');
     assert.equal(config.sessions?.title?.provider, 'anthropic');
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('loadSdConfig falls back to legacy root config when default path is absent', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-legacy-config-'));
+  const configPath = join(workspace, 'sd/config.yaml');
+  const legacyPath = join(workspace, 'config.yaml');
+  try {
+    await writeFile(
+      legacyPath,
+      [
+        'version: 1',
+        'default_provider: mock',
+        'providers:',
+        '  mock:',
+        '    model: old-root',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    assert.equal(configPathForLoad(configPath, legacyPath, configPath), legacyPath);
+    assert.equal(configPathForLoad(legacyPath, configPath, DEFAULT_SD_CONFIG_PATH), legacyPath);
+
+    const config = await loadSdConfig(legacyPath, configPath);
+    assert.equal(config.default_provider, 'mock');
+    assert.equal(config.providers.mock?.model, 'old-root');
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
@@ -121,6 +152,7 @@ test('loadSdConfig honours user reasoning override and disable', async () => {
       'utf8',
     );
     const overridden = await loadSdConfig(configPath);
+    assert.equal(overridden.agent?.reasoning?.enabled, true);
     assert.equal(overridden.agent?.reasoning?.effort, 'high');
 
     await writeFile(
