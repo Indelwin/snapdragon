@@ -14,8 +14,10 @@ import { ColoredBrailleImage } from './colored-braille.js';
 const SPLASH_TITLE_GRADIENT = [tuiColors.accent, tuiColors.thinking] as const;
 
 export function SplashBanner({ component }: { component: UiComponentSnapshot }) {
-  if (component.state.visible === false) return null;
+  // Hooks must run in the same order on every render — declare them before
+  // any early return. Biome enforces this via lint/correctness/useHookAtTopLevel.
   const [booted, setBooted] = useState(false);
+  if (component.state.visible === false) return null;
   const imagePath = optionalStringValue(component.state.imagePath);
   return (
     <Box
@@ -274,25 +276,18 @@ function BootScreen({ onComplete }: { onComplete: () => void }) {
   const filled = Math.round(progress * BOOT_BAR_WIDTH);
   const empty = BOOT_BAR_WIDTH - filled;
   const percent = Math.round(progress * 100);
-  const activeLabel =
-    completed < totalStages ? BOOT_STAGES[completed] : 'ready';
+  const activeLabel = completed < totalStages ? BOOT_STAGES[completed] : 'ready';
   const spinnerFrame = BOOT_SPINNER_FRAMES[spinnerTick % BOOT_SPINNER_FRAMES.length];
 
   return (
     <Box flexDirection="column" alignItems="flex-start" paddingX={2} paddingY={1}>
-      <AsciiTitle
-        text="snapdragon"
-        font="Small"
-        colors={SPLASH_TITLE_GRADIENT}
-      />
+      <AsciiTitle text="snapdragon" font="Small" colors={SPLASH_TITLE_GRADIENT} />
       <Box marginTop={1} flexDirection="column">
         {BOOT_STAGES.map((label, index) => (
           <BootStageRow
             key={label}
             label={label}
-            status={
-              index < completed ? 'done' : index === completed ? 'active' : 'pending'
-            }
+            status={index < completed ? 'done' : index === completed ? 'active' : 'pending'}
             spinner={spinnerFrame ?? '·'}
           />
         ))}
@@ -300,10 +295,7 @@ function BootScreen({ onComplete }: { onComplete: () => void }) {
       <Box marginTop={1} flexDirection="row">
         <Text color={tuiColors.accent}>{'█'.repeat(filled)}</Text>
         <Text color={tuiColors.muted}>{'░'.repeat(empty)}</Text>
-        <Text color={tuiColors.dim}>
-          {' '}
-          {percent.toString().padStart(3, ' ')}%
-        </Text>
+        <Text color={tuiColors.dim}> {percent.toString().padStart(3, ' ')}%</Text>
       </Box>
       <Text color={tuiColors.muted}>
         {tuiChars.bullet} {activeLabel}
@@ -333,9 +325,7 @@ function BootStageRow({
       <Box width={3}>
         <Text color={color}>{glyph}</Text>
       </Box>
-      <Text color={status === 'pending' ? tuiColors.muted : tuiColors.foreground}>
-        {label}
-      </Text>
+      <Text color={status === 'pending' ? tuiColors.muted : tuiColors.foreground}>{label}</Text>
     </Box>
   );
 }

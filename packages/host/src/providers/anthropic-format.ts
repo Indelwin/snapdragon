@@ -19,9 +19,7 @@ const MISSING_TOOL_RESULT_STUB = '[unknown error, tool result missing]';
  * synthesize stubs and merge same-role neighbours so the generation can
  * proceed. The model sees the stub and can recover.
  */
-export function convertMessagesToAnthropic(
-  messages: Message[],
-): Array<Record<string, unknown>> {
+export function convertMessagesToAnthropic(messages: Message[]): Array<Record<string, unknown>> {
   const repaired = repairToolResultPairs(messages.filter((m) => m.role !== 'system'));
   const converted = repaired
     .map(convertMessageToAnthropic)
