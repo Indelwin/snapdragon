@@ -24,10 +24,11 @@ test('default config uses Anthropic Opus 4.7 without storing secrets', () => {
     model: 'claude-haiku-4-5-20251001',
     max_tokens: 48,
   });
+  assert.equal(config.agent?.max_tokens, 32_000);
   assert.deepEqual(config.agent?.context, {
     enabled: true,
     fresh_tail_count: 32,
-    max_request_tokens: 120_000,
+    max_request_tokens: 400_000,
     chunk_target_tokens: 8_000,
     summary_target_tokens: 1_500,
   });
