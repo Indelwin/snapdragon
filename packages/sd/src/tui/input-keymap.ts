@@ -1,6 +1,19 @@
 import type { MutableRefObject } from 'react';
 import { filterCommands, type SdTuiCommand } from './commands.js';
 import {
+  type DraftState,
+  deleteBackwardChar,
+  deleteBackwardWord,
+  deleteForwardChar,
+  insertAt,
+  moveCharLeft,
+  moveCharRight,
+  moveLineEnd,
+  moveLineStart,
+  moveWordLeft,
+  moveWordRight,
+} from './draft-edit.js';
+import {
   completePromptDraft,
   movePromptCompletion,
   type PromptCompletionCatalog,
@@ -18,6 +31,8 @@ export interface KeyLike {
   return?: boolean;
   upArrow?: boolean;
   downArrow?: boolean;
+  leftArrow?: boolean;
+  rightArrow?: boolean;
   pageUp?: boolean;
   pageDown?: boolean;
   end?: boolean;
@@ -29,39 +44,44 @@ export interface KeyLike {
   meta?: boolean;
 }
 
-export function handlePromptInput(
-  input: string,
-  key: KeyLike,
-  args: {
-    draftRef: MutableRefObject<string>;
-    historyRef: MutableRefObject<string[]>;
-    historyIndexRef: MutableRefObject<number>;
-    historyDraftRef: MutableRefObject<string>;
-    commandsRef: MutableRefObject<SdTuiCommand[]>;
-    shellCommandsRef: MutableRefObject<string[]>;
-    completionRef: MutableRefObject<PromptCompletionState | undefined>;
-    completionCatalog: PromptCompletionCatalog;
-    setDraft: (draft: string, completion?: PromptCompletionState) => void;
-    submit: (draft: string) => Promise<void>;
-  },
-): void {
+export interface SetDraftOptions {
+  /** Cursor offset to set after applying `draft`. Defaults to `draft.length`. */
+  cursor?: number;
+  completion?: PromptCompletionState;
+}
+
+export type SetDraft = (draft: string, options?: SetDraftOptions) => void;
+
+interface PromptInputArgs {
+  draftRef: MutableRefObject<string>;
+  cursorRef: MutableRefObject<number>;
+  historyRef: MutableRefObject<string[]>;
+  historyIndexRef: MutableRefObject<number>;
+  historyDraftRef: MutableRefObject<string>;
+  commandsRef: MutableRefObject<SdTuiCommand[]>;
+  shellCommandsRef: MutableRefObject<string[]>;
+  completionRef: MutableRefObject<PromptCompletionState | undefined>;
+  completionCatalog: PromptCompletionCatalog;
+  setDraft: SetDraft;
+  submit: (draft: string) => Promise<void>;
+}
+
+export function handlePromptInput(input: string, key: KeyLike, args: PromptInputArgs): void {
+  if (handlePromptControl(input, key, args)) return;
+  if (handlePromptEditing(input, key, args)) return;
+  if (input && !key.ctrl && !key.meta) {
+    insertText(args, input);
+  }
+}
+
+/**
+ * Non-text-edit prompt keys: Enter (submit / newline), Tab (complete),
+ * up/down (history or completion-list nav). Returns true when handled.
+ */
+function handlePromptControl(input: string, key: KeyLike, args: PromptInputArgs): boolean {
   if (key.return) {
-    submitOrNewline(key, args.draftRef, args.completionRef, args.setDraft, args.submit);
-    return;
-  }
-  if (key.backspace || key.delete) {
-    args.setDraft(args.draftRef.current.slice(0, -1));
-    return;
-  }
-  if (key.upArrow) {
-    if (moveCompletion(-1, args)) return;
-    applyHistory(-1, args);
-    return;
-  }
-  if (key.downArrow) {
-    if (moveCompletion(1, args)) return;
-    applyHistory(1, args);
-    return;
+    submitOrNewline(key, args);
+    return true;
   }
   if (key.tab || input === '\t') {
     completePromptInput(
@@ -72,9 +92,73 @@ export function handlePromptInput(
       args.completionCatalog,
       args.setDraft,
     );
-    return;
+    return true;
   }
-  if (input && !key.ctrl && !key.meta) args.setDraft(`${args.draftRef.current}${input}`);
+  if (key.upArrow) {
+    if (moveCompletion(-1, args)) return true;
+    applyHistory(-1, args);
+    return true;
+  }
+  if (key.downArrow) {
+    if (moveCompletion(1, args)) return true;
+    applyHistory(1, args);
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Cursor + delete keys. The matrix:
+ *
+ *   left/right arrow        — char movement
+ *   meta+left/right         — word movement (Option+← on macOS terminals)
+ *   ctrl+left/right         — word movement (Linux terminals / fallback)
+ *   ctrl+a / ctrl+leftArrow — start of current line   (note: ctrl+a is free)
+ *   meta+a / meta+e         — start / end of line     (alternates for keymaps
+ *                              where ctrl+a/e are taken — currently ctrl+e
+ *                              is the global event-panel toggle, so we don't
+ *                              shadow it here)
+ *   backspace               — delete char before cursor
+ *   delete (forward)        — delete char at cursor
+ *   meta+backspace          — delete word back        (ctrl+w-style)
+ *
+ * Returns true when handled.
+ */
+function handlePromptEditing(input: string, key: KeyLike, args: PromptInputArgs): boolean {
+  if (key.leftArrow) {
+    return applyEdit(args, key.meta || key.ctrl ? moveWordLeft : moveCharLeft);
+  }
+  if (key.rightArrow) {
+    return applyEdit(args, key.meta || key.ctrl ? moveWordRight : moveCharRight);
+  }
+  if (key.backspace) {
+    return applyEdit(args, key.meta ? deleteBackwardWord : deleteBackwardChar);
+  }
+  if (key.delete) {
+    // Many terminals send Delete-key as `delete:true`, but some send it as
+    // backspace. Treat `delete` as forward-delete only — backspace handles
+    // backward.
+    return applyEdit(args, deleteForwardChar);
+  }
+  // ctrl+a / ctrl+e style: start/end of current logical line. ctrl+e is
+  // already a global keybind (event panel toggle) so it's skipped here;
+  // we only bind ctrl+a → line-start and meta+e → line-end. ctrl+w deletes
+  // the previous word for parity with readline.
+  if (key.ctrl && input === 'a') return applyEdit(args, moveLineStart);
+  if (key.meta && input === 'e') return applyEdit(args, moveLineEnd);
+  if (key.ctrl && input === 'w') return applyEdit(args, deleteBackwardWord);
+  return false;
+}
+
+function applyEdit(args: PromptInputArgs, op: (state: DraftState) => DraftState): true {
+  const next = op({ text: args.draftRef.current, cursor: args.cursorRef.current });
+  args.setDraft(next.text, { cursor: next.cursor });
+  return true;
+}
+
+function insertText(args: PromptInputArgs, chunk: string): void {
+  const next = insertAt({ text: args.draftRef.current, cursor: args.cursorRef.current }, chunk);
+  args.setDraft(next.text, { cursor: next.cursor });
 }
 
 export async function handlePaletteInput(
@@ -130,39 +214,32 @@ export function clampPalette(
   return { ...palette, selectedIndex: Math.max(0, Math.min(maxIndex, palette.selectedIndex)) };
 }
 
-function submitOrNewline(
-  key: KeyLike,
-  draftRef: MutableRefObject<string>,
-  completionRef: MutableRefObject<PromptCompletionState | undefined>,
-  setDraft: (draft: string, completion?: PromptCompletionState) => void,
-  submit: (draft: string) => Promise<void>,
-): void {
+function submitOrNewline(key: KeyLike, args: PromptInputArgs): void {
+  // Newline insertion: shift+enter (when terminal supports CSI-u or kitty
+  // protocol — otherwise the byte stream is identical to plain Enter and we
+  // can't tell), or meta+enter (Option+Return on macOS), or ctrl+J (the
+  // raw LF byte, which most terminals can produce). The fallback chain
+  // means at least one of them works on any terminal.
   if (key.shift || key.meta) {
-    setDraft(`${draftRef.current}\n`);
+    insertText(args, '\n');
     return;
   }
-  const selected = selectedPromptSuggestion(completionRef.current);
-  if (selected && isSelectableCompletion(completionRef.current)) {
-    setDraft('');
-    void submit(selected.insertText);
+  const selected = selectedPromptSuggestion(args.completionRef.current);
+  if (selected && isSelectableCompletion(args.completionRef.current)) {
+    args.setDraft('');
+    void args.submit(selected.insertText);
     return;
   }
-  const draft = draftRef.current;
-  setDraft('');
-  void submit(draft);
+  const draft = args.draftRef.current;
+  args.setDraft('');
+  void args.submit(draft);
 }
 
-function moveCompletion(
-  direction: -1 | 1,
-  args: {
-    draftRef: MutableRefObject<string>;
-    completionRef: MutableRefObject<PromptCompletionState | undefined>;
-    setDraft: (draft: string, completion?: PromptCompletionState) => void;
-  },
-): boolean {
+function moveCompletion(direction: -1 | 1, args: PromptInputArgs): boolean {
   const next = movePromptCompletion(args.completionRef.current, direction);
   if (!next) return false;
-  args.setDraft(args.draftRef.current, next);
+  // Don't disturb the cursor while navigating the completion list.
+  args.setDraft(args.draftRef.current, { cursor: args.cursorRef.current, completion: next });
   return true;
 }
 
@@ -175,16 +252,7 @@ function isSelectableCompletion(completion: PromptCompletionState | undefined): 
   );
 }
 
-function applyHistory(
-  direction: -1 | 1,
-  args: {
-    draftRef: MutableRefObject<string>;
-    historyRef: MutableRefObject<string[]>;
-    historyIndexRef: MutableRefObject<number>;
-    historyDraftRef: MutableRefObject<string>;
-    setDraft: (draft: string) => void;
-  },
-): void {
+function applyHistory(direction: -1 | 1, args: PromptInputArgs): void {
   if (args.historyRef.current.length === 0) return;
   if (args.historyIndexRef.current < 0) args.historyDraftRef.current = args.draftRef.current;
   const next = Math.max(
@@ -201,8 +269,8 @@ function completePromptInput(
   shellCommands: readonly string[],
   current: PromptCompletionState | undefined,
   catalog: PromptCompletionCatalog,
-  setDraft: (draft: string, completion?: PromptCompletionState) => void,
+  setDraft: SetDraft,
 ): void {
   const next = completePromptDraft(draft, commands, shellCommands, current, catalog);
-  if (next) setDraft(next.draft, next.completion);
+  if (next) setDraft(next.draft, { completion: next.completion });
 }
