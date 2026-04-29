@@ -449,6 +449,12 @@
     "crapProxy": 145,
     "maxFunctionLines": 25
   },
+  "packages/sd/src/tui/renderers/colored-braille.tsx": {
+    "lines": 121,
+    "complexity": 21,
+    "crapProxy": 443,
+    "maxFunctionLines": 32
+  },
   "packages/sd/src/tui/renderers/effects.tsx": {
     "lines": 94,
     "complexity": 8,
@@ -480,7 +486,7 @@
     "maxFunctionLines": 41
   },
   "packages/sd/src/tui/renderers/splash.tsx": {
-    "lines": 134,
+    "lines": 103,
     "complexity": 12,
     "crapProxy": 145,
     "maxFunctionLines": 46
