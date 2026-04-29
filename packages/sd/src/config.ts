@@ -5,8 +5,11 @@ import { dirname, resolve } from 'node:path';
 import { CODEX_MODELS, type ReasoningRequest } from '@snapdragon-ai/host';
 import { parse as parseDotenv } from 'dotenv';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
+import { mergeAgentConfig } from './agent-config.js';
+import { configPathForLoad } from './config-path.js';
 
 export const DEFAULT_SD_CONFIG_PATH = resolve(homedir(), '.snapdragon/sd/config.yaml');
+export const LEGACY_SD_CONFIG_PATH = resolve(homedir(), '.snapdragon/config.yaml');
 export const DEFAULT_SD_ENV_PATH = resolve(homedir(), '.snapdragon/.env');
 export const DEFAULT_SD_SESSION_ROOT = resolve(homedir(), '.snapdragon/sd/sessions');
 export const DEFAULT_SD_MEMORY_ROOT = resolve(homedir(), '.snapdragon/sd/memory');
@@ -141,12 +144,16 @@ export interface SdConfig {
   agent?: SdAgentConfig;
 }
 
-export async function loadSdConfig(path = DEFAULT_SD_CONFIG_PATH): Promise<SdConfig> {
-  if (!existsSync(path)) return defaultSdConfig();
-  const raw = await readFile(path, 'utf8');
+export async function loadSdConfig(
+  path = DEFAULT_SD_CONFIG_PATH,
+  fallbackPath = LEGACY_SD_CONFIG_PATH,
+): Promise<SdConfig> {
+  const configPath = configPathForLoad(path, fallbackPath, DEFAULT_SD_CONFIG_PATH);
+  if (!existsSync(configPath)) return defaultSdConfig();
+  const raw = await readFile(configPath, 'utf8');
   const parsed = parseYaml(raw) as Partial<SdConfig> | null;
   if (!parsed || parsed.version !== 1) {
-    throw new Error(`Unsupported sd config at ${path}; expected version: 1`);
+    throw new Error(`Unsupported sd config at ${configPath}; expected version: 1`);
   }
   return withDefaults(parsed);
 }
@@ -247,10 +254,7 @@ export function defaultSdConfig(): SdConfig {
         chunk_target_tokens: 8_000,
         summary_target_tokens: 1_500,
       },
-      // Extended thinking on by default. Renders inline as `o ` rows
-      // in the TUI transcript (with the most recent line shimmering
-      // while streaming). Override with `agent.reasoning.enabled: false`
-      // or set `effort` to `low`/`high`/`max` to taste.
+      // Extended thinking is on by default; tune with `effort` or disable via config.
       reasoning: {
         enabled: true,
         effort: 'medium',
@@ -284,17 +288,6 @@ export function withDefaults(input: Partial<SdConfig>): SdConfig {
     isolation: { ...defaults.isolation, ...(input.isolation ?? {}) },
     toolsets: { ...defaults.toolsets, ...(input.toolsets ?? {}) },
     agent: mergeAgentConfig(defaults.agent, input.agent),
-  };
-}
-
-function mergeAgentConfig(
-  defaults: SdAgentConfig | undefined,
-  input: SdAgentConfig | undefined,
-): SdAgentConfig {
-  return {
-    ...defaults,
-    ...(input ?? {}),
-    context: { ...(defaults?.context ?? {}), ...(input?.context ?? {}) },
   };
 }
 

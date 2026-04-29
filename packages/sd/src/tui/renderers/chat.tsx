@@ -2,12 +2,8 @@ import type { UiComponentSnapshot } from '@snapdragon-ai/ui';
 import { Box, Text } from 'ink';
 import { chatEntries } from '../state-readers.js';
 import { tuiChars, tuiColors } from '../theme.js';
-import {
-  type TranscriptRow,
-  transcriptRows,
-  visibleTranscriptRows,
-  wrapTranscriptRows,
-} from '../transcript-window.js';
+import { visibleWrappedTranscriptRows } from '../transcript-viewport.js';
+import type { TranscriptRow } from '../transcript-window.js';
 import { Shimmer } from './effects.js';
 import { MarkdownLine } from './markdown.js';
 
@@ -22,10 +18,10 @@ export function ChatTranscript({
 }) {
   const entries = chatEntries(component.state);
   if (entries.length === 0) return <EmptyTranscript />;
-  const rows = wrapTranscriptRows(transcriptRows(entries), viewportColumns - 2);
-  const visibleRows = visibleTranscriptRows(
-    rows,
+  const visibleRows = visibleWrappedTranscriptRows(
+    entries,
     viewportRows,
+    viewportColumns - 2,
     typeof component.state.scrollOffset === 'number' ? component.state.scrollOffset : 0,
   );
   return (
