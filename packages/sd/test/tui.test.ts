@@ -233,6 +233,29 @@ test('thinking transcript rows do not shimmer once streaming stops', () => {
   assert.equal(thinkingRow?.shimmer, false);
 });
 
+test('loadRuntimeTranscript carries reasoning text from session-resumed messages', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-resume-thinking-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    runtime.agent.messages.push(
+      { role: 'user', content: 'hello' },
+      {
+        role: 'assistant',
+        content: 'hi back',
+        thinking: [{ text: 'first thought' }, { text: 'second thought', signature: 'sig' }],
+      },
+    );
+    const controller = new SdUiController(runtime);
+    controller.loadRuntimeTranscript();
+
+    const entries = chatEntries(controller.world.componentState(SD_UI_IDS.chat));
+    const assistant = entries.find((entry) => entry.role === 'assistant');
+    assert.equal(assistant?.thinking, 'first thought\nsecond thought');
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
 test('SdTuiApp renders the initial ECS shell and later tool activity', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-render-'));
   try {
