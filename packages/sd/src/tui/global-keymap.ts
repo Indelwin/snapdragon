@@ -18,6 +18,16 @@ export function handleGlobalInput(
   },
 ): boolean {
   if (key.ctrl && input === 'c') return runSync(args.exit);
+  // Esc: cancel an in-flight agent run when one is active. When no run is
+  // running, swallow the key so it can't accidentally do anything destructive
+  // (it used to be uncaught and would only matter if a future binding picked
+  // it up — better to be explicit). Palette open? Defer to the palette
+  // handler, which uses Esc to close itself.
+  if (key.escape && !args.paletteRef.current.open) {
+    return runSync(() => {
+      args.controller.abortActiveRun();
+    });
+  }
   if (key.ctrl && input === 'e') return runSync(() => args.controller.toggleEventPanel());
   if (key.ctrl && input === 'u')
     return runSync(() => clearDraft(args.setDraft, args.historyIndexRef));

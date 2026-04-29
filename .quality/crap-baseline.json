@@ -378,9 +378,9 @@
     "maxFunctionLines": 13
   },
   "packages/sd/src/tui/global-keymap.ts": {
-    "lines": 47,
-    "complexity": 13,
-    "crapProxy": 170,
+    "lines": 57,
+    "complexity": 15,
+    "crapProxy": 226,
     "maxFunctionLines": 11
   },
   "packages/sd/src/tui/index.tsx": {
@@ -396,7 +396,7 @@
     "maxFunctionLines": 44
   },
   "packages/sd/src/tui/input-commands.ts": {
-    "lines": 279,
+    "lines": 289,
     "complexity": 59,
     "crapProxy": 3485,
     "maxFunctionLines": 67
@@ -546,9 +546,9 @@
     "maxFunctionLines": 14
   },
   "packages/sd/src/tui/ui.ts": {
-    "lines": 734,
-    "complexity": 118,
-    "crapProxy": 13929,
+    "lines": 763,
+    "complexity": 120,
+    "crapProxy": 14405,
     "maxFunctionLines": 43
   },
   "packages/session/src/context-options.ts": {
