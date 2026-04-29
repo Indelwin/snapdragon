@@ -384,10 +384,10 @@
     "maxFunctionLines": 11
   },
   "packages/sd/src/tui/image-renderer.ts": {
-    "lines": 80,
-    "complexity": 9,
-    "crapProxy": 84,
-    "maxFunctionLines": 13
+    "lines": 172,
+    "complexity": 34,
+    "crapProxy": 1160,
+    "maxFunctionLines": 25
   },
   "packages/sd/src/tui/index.tsx": {
     "lines": 168,
@@ -504,10 +504,10 @@
     "maxFunctionLines": 10
   },
   "packages/sd/src/tui/splash-art.ts": {
-    "lines": 62,
+    "lines": 65,
     "complexity": 12,
     "crapProxy": 148,
-    "maxFunctionLines": 6
+    "maxFunctionLines": 9
   },
   "packages/sd/src/tui/state-readers.ts": {
     "lines": 150,

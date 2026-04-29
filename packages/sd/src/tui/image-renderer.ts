@@ -2,22 +2,34 @@ import { readFile } from 'node:fs/promises';
 
 /**
  * Render a PNG/JPEG buffer to a string the Ink `<Text>` renderer can
- * print. On terminals that support a graphics protocol (iTerm2, Kitty,
- * WezTerm) `terminal-image` will use that protocol so the image renders
- * at full resolution; on everything else it falls back to ANSI block
- * characters.
+ * print. Two output styles are available:
  *
- * The function is intentionally narrow: it loads `terminal-image`
- * lazily so the dep doesn't pay its `jimp` bootstrap cost on every
- * `sd` invocation, only when an image is actually rendered.
+ * - `'ascii'` (default) — character-based ASCII art. Each terminal cell
+ *   is one ASCII glyph chosen from a brightness ramp, optionally tinted
+ *   with the source pixel's RGB value. Cells are square-ish so the
+ *   image reads as a real piece of TUI art rather than a tiny photo.
+ *
+ * - `'blocks'` — half-block pixel rendering via `terminal-image`. Each
+ *   terminal cell carries two stacked pixels coloured via FG/BG ANSI
+ *   codes. Higher fidelity but visually closer to a low-res screenshot;
+ *   useful when you want photo-like output.
+ *
+ * Both paths produce a plain string with embedded ANSI escapes that
+ * Ink's `<Text>` renders correctly. We deliberately do **not** emit
+ * the iTerm/Kitty graphics-protocol payload — those escapes do not
+ * compose with Ink's Yoga layout.
  */
+export type ImageRenderStyle = 'ascii' | 'blocks';
+
 export interface RenderImageOptions {
   /** Target width in terminal columns. */
   width?: number;
-  /** Target height in terminal rows (each row ≈ 2 vertical pixels). */
+  /** Target height in terminal rows. */
   height?: number;
-  /** Preserve PNG alpha channel; defaults to true. */
+  /** Preserve source aspect ratio when scaling. Defaults to `true`. */
   preserveAspectRatio?: boolean;
+  /** Output style. Defaults to `'ascii'` for a TUI-friendly look. */
+  style?: ImageRenderStyle;
 }
 
 // Env vars that `terminal-image` / `term-img` / `supports-terminal-graphics`
@@ -43,6 +55,86 @@ export async function renderImageAscii(
   buffer: Buffer,
   options: RenderImageOptions = {},
 ): Promise<string> {
+  if ((options.style ?? 'ascii') === 'ascii') return renderAsciiArt(buffer, options);
+  return renderHalfBlocks(buffer, options);
+}
+
+// Brightness ramp ordered light → dark. The first character is a real
+// space; pixels brighter than ~95% become invisible so backgrounds
+// drop out cleanly.
+const ASCII_RAMP = ' .:-=+*#%@';
+
+async function renderAsciiArt(buffer: Buffer, options: RenderImageOptions): Promise<string> {
+  const { Jimp } = await import('jimp');
+  const image = await Jimp.read(buffer);
+  const { width, height } = asciiTargetSize(image.bitmap.width, image.bitmap.height, options);
+  // ASCII cells are roughly twice as tall as wide, so we squish the
+  // pixel grid vertically before sampling. This yields square-looking
+  // output in the terminal.
+  image.resize({ w: width, h: Math.max(1, Math.round(height)) });
+  return sampleAsciiPixels(image);
+}
+
+interface BitmapHolder {
+  bitmap: { width: number; height: number; data: Buffer };
+}
+
+function sampleAsciiPixels(image: BitmapHolder): string {
+  const { width, height, data } = image.bitmap;
+  const lines: string[] = [];
+  for (let y = 0; y < height; y += 1) {
+    let line = '';
+    for (let x = 0; x < width; x += 1) {
+      line += pixelToAsciiCell(data, (y * width + x) * 4);
+    }
+    // Reset attributes at the end of each row so a torn render can't
+    // leak a trailing colour into the rest of the splash.
+    lines.push(`${line}\u001b[0m`);
+  }
+  return lines.join('\n');
+}
+
+function pixelToAsciiCell(data: Buffer, offset: number): string {
+  const r = data[offset] ?? 0;
+  const g = data[offset + 1] ?? 0;
+  const b = data[offset + 2] ?? 0;
+  const a = data[offset + 3] ?? 255;
+  if (a < 24) return ' ';
+  const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+  const ramp = ASCII_RAMP;
+  const index = Math.min(ramp.length - 1, Math.floor(((255 - luma) / 255) * ramp.length));
+  const char = ramp[index] ?? ' ';
+  if (char === ' ') return ' ';
+  return `\u001b[38;2;${r};${g};${b}m${char}`;
+}
+
+function asciiTargetSize(
+  imageWidth: number,
+  imageHeight: number,
+  options: RenderImageOptions,
+): { width: number; height: number } {
+  const targetWidth = Math.max(8, Math.floor(options.width ?? 64));
+  const aspect = imageHeight / imageWidth;
+  // Terminal cells are about 2× taller than they are wide, so halve
+  // the height when preserving the image's aspect ratio.
+  const naturalHeight = Math.max(4, Math.round(targetWidth * aspect * 0.5));
+  if (options.preserveAspectRatio === false) {
+    return {
+      width: targetWidth,
+      height: Math.max(4, Math.floor(options.height ?? naturalHeight)),
+    };
+  }
+  if (options.height) {
+    const targetHeight = Math.max(4, Math.floor(options.height));
+    if (targetHeight < naturalHeight) {
+      const scaledWidth = Math.max(8, Math.round((targetHeight / aspect) * 2));
+      return { width: scaledWidth, height: targetHeight };
+    }
+  }
+  return { width: targetWidth, height: naturalHeight };
+}
+
+async function renderHalfBlocks(buffer: Buffer, options: RenderImageOptions): Promise<string> {
   const restore = scrubGraphicsDetectionEnv();
   try {
     const { default: terminalImage } = await import('terminal-image');
