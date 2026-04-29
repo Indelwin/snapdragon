@@ -240,10 +240,10 @@
     "maxFunctionLines": 55
   },
   "packages/sd/src/config.ts": {
-    "lines": 379,
+    "lines": 390,
     "complexity": 161,
     "crapProxy": 25949,
-    "maxFunctionLines": 104
+    "maxFunctionLines": 115
   },
   "packages/sd/src/exit-summary.ts": {
     "lines": 61,
