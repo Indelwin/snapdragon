@@ -162,7 +162,7 @@ function rowToString(
   let result = '';
   for (let colIndex = 0; colIndex < row.length; colIndex += 1) {
     const cell = row[colIndex];
-    if (!cell || !cell.char) {
+    if (!cell?.char) {
       result += ' ';
       continue;
     }
