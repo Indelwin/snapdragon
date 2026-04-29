@@ -111,4 +111,4 @@ function header(runtime: SdRuntime): string {
   ].join('\n');
 }
 
-export { handleCommand } from './commands.js';
+export { handleCommand, setReloadShellRunnerForTests } from './commands.js';
