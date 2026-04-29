@@ -90,12 +90,14 @@ test('Anthropic maps images and thinking/tool-use round trips', () => {
     {
       role: 'assistant',
       messages: [
+        { role: 'user', content: 'please read it' },
         {
           role: 'assistant',
           content: 'calling',
           thinking: [{ text: 'signed', signature: 'sig_1' }],
           tool_calls: [{ id: 'toolu_1', name: 'read', args_json: '{"path":"README.md"}' }],
         },
+        { role: 'tool', tool_call_id: 'toolu_1', content: 'README contents' },
         {
           role: 'user',
           content: [
@@ -108,12 +110,100 @@ test('Anthropic maps images and thinking/tool-use round trips', () => {
   );
 
   const messages = body.messages as Array<{ content: Array<Record<string, unknown>> }>;
-  assert.equal(messages[0].content[0].type, 'thinking');
-  assert.equal(messages[0].content[2].type, 'tool_use');
-  assert.deepEqual(messages[1].content[0], {
+  // user("please read it") -> assistant(thinking + text + tool_use) -> user(tool_result + image + text).
+  assert.equal(messages[1].content[0].type, 'thinking');
+  assert.equal(messages[1].content[2].type, 'tool_use');
+  assert.equal(messages[2].content[0].type, 'tool_result');
+  assert.deepEqual(messages[2].content[1], {
     type: 'image',
     source: { type: 'base64', media_type: 'image/png', data: 'abc' },
   });
+  assert.equal(messages[2].content[2].type, 'text');
+});
+
+test('Anthropic synthesizes a tool_result stub when one is missing', () => {
+  const body = anthropicBody(
+    { model: 'claude-test' },
+    {
+      role: 'assistant',
+      messages: [
+        { role: 'user', content: 'hi' },
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            { id: 'toolu_a', name: 'shell', args_json: '{"command":"echo a"}' },
+            { id: 'toolu_b', name: 'shell', args_json: '{"command":"echo b"}' },
+          ],
+        },
+        // Only one of the two tool calls has a corresponding tool message.
+        { role: 'tool', tool_call_id: 'toolu_a', content: 'a-result' },
+        { role: 'user', content: 'follow-up' },
+      ],
+    },
+  );
+
+  const messages = body.messages as Array<{ role: string; content: Array<Record<string, unknown>> }>;
+  // user(hi) -> assistant(tool_use x2) -> user(tool_result a + stub b + "follow-up")
+  assert.equal(messages.length, 3);
+  assert.equal(messages[0].role, 'user');
+  assert.equal(messages[1].role, 'assistant');
+  assert.equal(messages[2].role, 'user');
+  const ids = messages[2].content
+    .filter((b) => b.type === 'tool_result')
+    .map((b) => b.tool_use_id);
+  assert.deepEqual(ids, ['toolu_a', 'toolu_b']);
+  const stub = messages[2].content.find(
+    (b) => b.type === 'tool_result' && b.tool_use_id === 'toolu_b',
+  ) as { content: string };
+  assert.match(stub.content, /tool result missing/);
+  // The trailing user("follow-up") was folded into the same user message as
+  // the tool_results so roles still alternate.
+  assert.ok(messages[2].content.some((b) => b.type === 'text' && b.text === 'follow-up'));
+});
+
+test('Anthropic folds consecutive user messages into one', () => {
+  const body = anthropicBody(
+    { model: 'claude-test' },
+    {
+      role: 'assistant',
+      messages: [
+        { role: 'user', content: 'first' },
+        { role: 'user', content: 'second' },
+        { role: 'user', content: 'third' },
+      ],
+    },
+  );
+  const messages = body.messages as Array<{ role: string; content: Array<Record<string, unknown>> }>;
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].role, 'user');
+  const texts = messages[0].content
+    .filter((b) => b.type === 'text')
+    .map((b) => b.text);
+  assert.deepEqual(texts, ['first', 'second', 'third']);
+});
+
+test('Anthropic drops orphan tool messages with no matching tool_use', () => {
+  const body = anthropicBody(
+    { model: 'claude-test' },
+    {
+      role: 'assistant',
+      messages: [
+        { role: 'user', content: 'hi' },
+        { role: 'tool', tool_call_id: 'toolu_orphan', content: 'should be dropped' },
+        { role: 'user', content: 'real follow-up' },
+      ],
+    },
+  );
+  const messages = body.messages as Array<{ role: string; content: Array<Record<string, unknown>> }>;
+  // The orphan tool message must be dropped, leaving the two user messages
+  // which then get folded.
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].role, 'user');
+  const hasOrphan = messages[0].content.some(
+    (b) => b.type === 'tool_result' && b.tool_use_id === 'toolu_orphan',
+  );
+  assert.equal(hasOrphan, false);
 });
 
 test('Anthropic maps reasoning to adaptive thinking on supported Claude models', () => {
