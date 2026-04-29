@@ -1,6 +1,6 @@
 import type { UiComponentSnapshot } from '@snapdragon-ai/ui';
 import { Box, Text } from 'ink';
-import { HalfBlockImage, type TerminalInfo, TerminalInfoContext } from 'ink-picture';
+import { AsciiImage, type TerminalInfo, TerminalInfoContext } from 'ink-picture';
 import { optionalStringValue, stringValue } from '../state-readers.js';
 import { trimText, tuiChars, tuiColors } from '../theme.js';
 
@@ -51,12 +51,19 @@ export function SplashBanner({ component }: { component: UiComponentSnapshot }) 
   );
 }
 
-// Half-block rendering packs 2 pixels per terminal cell vertically,
-// so a 50×25 cell box gives us a 50×50 pixel rendering — easily
-// recognisable at typical splash sizes without dominating the
-// 80–120 column terminals we target.
+// ASCII rendering puts one glyph per cell. A higher-contrast source
+// (clear outlines, solid colour regions) reads well at this size —
+// each char carries enough luminance signal to outline shape, and
+// the colours come from the per-pixel RGB tint chalk emits.
+//
+// `AsciiImage` internally halves the specified height for terminal
+// aspect compensation (cells are ~2× as tall as they are wide), so
+// we pass twice the row count we actually want — the rendered output
+// fills `SPLASH_IMAGE_HEIGHT` cells while sampling `_HEIGHT * 2`
+// pixels of the source.
 const SPLASH_IMAGE_WIDTH = 50;
 const SPLASH_IMAGE_HEIGHT = 25;
+const ASCII_HEIGHT_PROP = SPLASH_IMAGE_HEIGHT * 2;
 
 // We bypass `ink-picture`'s `TerminalInfoProvider` because its
 // terminal-capability probes (OSC queries written to stdout, responses
@@ -89,10 +96,10 @@ function SplashImage({ src }: { src: string }) {
   return (
     <TerminalInfoContext.Provider value={SPLASH_TERMINAL_INFO}>
       <Box width={SPLASH_IMAGE_WIDTH} height={SPLASH_IMAGE_HEIGHT} flexShrink={0}>
-        <HalfBlockImage
+        <AsciiImage
           src={src}
           width={SPLASH_IMAGE_WIDTH}
-          height={SPLASH_IMAGE_HEIGHT}
+          height={ASCII_HEIGHT_PROP}
           alt="splash"
           onSupportDetected={() => {}}
         />
