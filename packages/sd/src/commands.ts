@@ -71,11 +71,21 @@ export const BUILTIN_SLASH_COMMANDS = [
   '/palette',
 ];
 
+export interface SdCommandHooks {
+  /**
+   * Progress reporter for long-running slash commands. Called with a
+   * short human-readable label before each step starts. The TUI wires
+   * this to the running-spinner label; non-interactive callers ignore it.
+   */
+  progress?: (label: string) => void;
+}
+
 export async function handleCommand(
   line: string,
   runtime: SdRuntime,
   attachments: PendingAttachment[],
   io: SdIo,
+  hooks: SdCommandHooks = {},
 ): Promise<CommandResult> {
   const [command = '', ...rest] = line.split(/\s+/);
   const arg = rest.join(' ').trim();
@@ -97,7 +107,7 @@ export async function handleCommand(
   }
   if (command === '/remember') return rememberCommand(arg, runtime, io, attachments);
   if (command === '/extensions') return extensionsCommand(arg, runtime, io, attachments);
-  if (command === '/reload') return reloadCommand(arg, runtime, io, attachments);
+  if (command === '/reload') return reloadCommand(arg, runtime, io, attachments, hooks);
   if (command === '/skills') return writeResult(io, skillsSummary(runtime), attachments);
   if (command === '/skill') return skillCommand(line, arg, runtime, io, attachments);
   if (command === '/tools') return writeResult(io, toolsSummary(runtime), attachments);
@@ -540,6 +550,7 @@ async function reloadCommand(
   runtime: SdRuntime,
   io: SdIo,
   attachments: PendingAttachment[],
+  hooks: SdCommandHooks,
 ): Promise<CommandResult> {
   const parsed = parseReloadArg(arg);
   if (parsed.unknown.length > 0) {
@@ -553,6 +564,7 @@ async function reloadCommand(
     pull: parsed.pull,
     build: parsed.build,
     runner: reloadRunnerOverride,
+    progress: hooks.progress,
   });
   return writeResult(io, formatReloadReport(report), attachments);
 }

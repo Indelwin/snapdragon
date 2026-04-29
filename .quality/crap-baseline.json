@@ -234,9 +234,9 @@
     "maxFunctionLines": 15
   },
   "packages/sd/src/commands.ts": {
-    "lines": 612,
-    "complexity": 116,
-    "crapProxy": 13461,
+    "lines": 624,
+    "complexity": 117,
+    "crapProxy": 13695,
     "maxFunctionLines": 55
   },
   "packages/sd/src/config.ts": {
@@ -306,15 +306,15 @@
     "maxFunctionLines": 10
   },
   "packages/sd/src/reload-types.ts": {
-    "lines": 50,
-    "complexity": 7,
-    "crapProxy": 54,
+    "lines": 57,
+    "complexity": 8,
+    "crapProxy": 69,
     "maxFunctionLines": 7
   },
   "packages/sd/src/reload.ts": {
-    "lines": 146,
-    "complexity": 17,
-    "crapProxy": 294,
+    "lines": 155,
+    "complexity": 19,
+    "crapProxy": 366,
     "maxFunctionLines": 18
   },
   "packages/sd/src/renderer.ts": {
@@ -414,10 +414,10 @@
     "maxFunctionLines": 44
   },
   "packages/sd/src/tui/input-commands.ts": {
-    "lines": 296,
-    "complexity": 60,
-    "crapProxy": 3604,
-    "maxFunctionLines": 67
+    "lines": 312,
+    "complexity": 62,
+    "crapProxy": 3848,
+    "maxFunctionLines": 83
   },
   "packages/sd/src/tui/input-completion.ts": {
     "lines": 261,
@@ -504,9 +504,9 @@
     "maxFunctionLines": 28
   },
   "packages/sd/src/tui/renderers/prompt.tsx": {
-    "lines": 162,
-    "complexity": 24,
-    "crapProxy": 577,
+    "lines": 166,
+    "complexity": 27,
+    "crapProxy": 730,
     "maxFunctionLines": 41
   },
   "packages/sd/src/tui/renderers/splash.tsx": {
@@ -564,7 +564,7 @@
     "maxFunctionLines": 14
   },
   "packages/sd/src/tui/ui.ts": {
-    "lines": 763,
+    "lines": 781,
     "complexity": 120,
     "crapProxy": 14405,
     "maxFunctionLines": 43

@@ -96,11 +96,27 @@ export async function runSlashLine(args: {
 
   const capture = memoryIo();
   let result: CommandResult;
+  // Drive the running-spinner for slow slash commands. handleCommand calls
+  // this for each progress beat (e.g. /reload's pull/build/rebuild steps).
+  // First call switches the prompt into running:true,phase:'task'; subsequent
+  // calls just update the label. endTask() always runs in finally so a
+  // failure mid-step doesn't leave a stuck spinner.
+  let taskActive = false;
   try {
-    result = await handleCommand(args.line, args.runtime, args.attachmentsRef.current, capture.io);
+    result = await handleCommand(args.line, args.runtime, args.attachmentsRef.current, capture.io, {
+      progress: (label) => {
+        if (taskActive) args.controller.updateTask(label);
+        else {
+          args.controller.beginTask(label);
+          taskActive = true;
+        }
+      },
+    });
   } catch (error) {
     args.controller.appendCommandOutput(errorMessage(error), 'error');
     return;
+  } finally {
+    if (taskActive) args.controller.endTask();
   }
   args.controller.bindRuntimeAgent();
   args.setAttachments(result.attachments);
