@@ -1,8 +1,8 @@
 import type { UiComponentSnapshot } from '@snapdragon-ai/ui';
 import { Box, Text } from 'ink';
-import { BrailleImage, type TerminalInfo, TerminalInfoContext } from 'ink-picture';
 import { optionalStringValue, stringValue } from '../state-readers.js';
 import { trimText, tuiChars, tuiColors } from '../theme.js';
+import { ColoredBrailleImage } from './colored-braille.js';
 
 export function SplashBanner({ component }: { component: UiComponentSnapshot }) {
   if (component.state.visible === false) return null;
@@ -58,46 +58,22 @@ export function SplashBanner({ component }: { component: UiComponentSnapshot }) 
 const SPLASH_IMAGE_WIDTH = 50;
 const SPLASH_IMAGE_HEIGHT = 25;
 
-// We bypass `ink-picture`'s `TerminalInfoProvider` because its
-// terminal-capability probes (OSC queries written to stdout, responses
-// read from stdin) race with Ink's own input handler — when the
-// provider mounts after the prompt is accepting keystrokes, the
-// response bytes leak into the input buffer (we saw real escape
-// sequences land in `> ` after the splash mounted). For the splash we
-// only ever want the ASCII renderer with colour, so a hard-coded
-// context is enough: it skips the probing entirely and still satisfies
-// `AsciiImage`'s `useTerminalInfo()` requirement (which throws after
-// 2s if no context is found). The dimensions are arbitrary plausible
-// values — `AsciiImage` doesn't consult them, only the half-block /
-// graphics-protocol renderers do.
-const SPLASH_TERMINAL_INFO: TerminalInfo = {
-  dimensions: { viewportWidth: 1024, viewportHeight: 768, cellWidth: 8, cellHeight: 16 },
-  capabilities: {
-    supportsUnicode: true,
-    supportsColor: true,
-    supportsSixelGraphics: false,
-    supportsKittyGraphics: false,
-    supportsITerm2Graphics: false,
-  },
-};
-
 function SplashImage({ src }: { src: string }) {
-  // The outer fixed-size Box gives Yoga a definite container before
-  // `AsciiImage` runs `measureElement` — without it the renderer sees
-  // a near-zero container on first render and clamps the image down
-  // to a couple of cells.
+  // We render the splash via our own colour-tinted braille component
+  // rather than `ink-picture`'s `BrailleImage` so the whole image can
+  // pick up the SD theme. `tuiColors.accentSoft` (the splash banner's
+  // existing accent) tints the glyphs without overpowering the
+  // surrounding chrome.
   return (
-    <TerminalInfoContext.Provider value={SPLASH_TERMINAL_INFO}>
-      <Box width={SPLASH_IMAGE_WIDTH} height={SPLASH_IMAGE_HEIGHT} flexShrink={0}>
-        <BrailleImage
-          src={src}
-          width={SPLASH_IMAGE_WIDTH}
-          height={SPLASH_IMAGE_HEIGHT}
-          alt="splash"
-          onSupportDetected={() => {}}
-        />
-      </Box>
-    </TerminalInfoContext.Provider>
+    <Box width={SPLASH_IMAGE_WIDTH} height={SPLASH_IMAGE_HEIGHT} flexShrink={0}>
+      <ColoredBrailleImage
+        src={src}
+        width={SPLASH_IMAGE_WIDTH}
+        height={SPLASH_IMAGE_HEIGHT}
+        color={tuiColors.accentSoft}
+        alt="loading splash…"
+      />
+    </Box>
   );
 }
 
