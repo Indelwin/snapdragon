@@ -5,14 +5,14 @@ import { readFile } from 'node:fs/promises';
  * print. Two output styles are available:
  *
  * - `'ascii'` (default) — character-based ASCII art. Each terminal cell
- *   is one ASCII glyph chosen from a brightness ramp, optionally tinted
- *   with the source pixel's RGB value. Cells are square-ish so the
- *   image reads as a real piece of TUI art rather than a tiny photo.
+ *   is one ASCII glyph chosen from a 70-character brightness ramp,
+ *   coloured with the source pixel's RGB value. The wide ramp gives
+ *   glyph shapes enough variety to carry the image themselves, so the
+ *   output reads as actual TUI art instead of a low-res photo.
  *
  * - `'blocks'` — half-block pixel rendering via `terminal-image`. Each
  *   terminal cell carries two stacked pixels coloured via FG/BG ANSI
- *   codes. Higher fidelity but visually closer to a low-res screenshot;
- *   useful when you want photo-like output.
+ *   codes. Higher fidelity but visually closer to a low-res screenshot.
  *
  * Both paths produce a plain string with embedded ANSI escapes that
  * Ink's `<Text>` renders correctly. We deliberately do **not** emit
@@ -59,11 +59,21 @@ export async function renderImageAscii(
   return renderHalfBlocks(buffer, options);
 }
 
-// Brightness ramp ordered light → dark. We always overlay this on a
-// coloured background so the ramp character provides texture rather
-// than carrying the whole image — that way pastel/low-contrast input
-// still reads clearly because the cell is filled.
-const ASCII_RAMP = ' .:-=+*#%@';
+export async function renderImageFile(
+  path: string,
+  options: RenderImageOptions = {},
+): Promise<string> {
+  const buffer = await readFile(path);
+  return renderImageAscii(buffer, options);
+}
+
+// 70-character brightness ramp ordered light → dense (Paul Bourke's
+// canonical sequence). The wide ramp gives ASCII glyphs enough
+// shape-variety to carry the image themselves — we render coloured
+// chars on the terminal background rather than overlaying them on
+// coloured BG fills, so the output reads as actual ASCII art instead
+// of a low-res photo. Index 0 = lightest pixel, last index = densest.
+const ASCII_RAMP = ` .'\`,^":;Il!i><~+_-?][}{1)(|/tfjrxnuvczXYUJCLQ0OZmwqpdbkhao*#MW&8%B@$`;
 
 async function renderAsciiArt(buffer: Buffer, options: RenderImageOptions): Promise<string> {
   const { Jimp } = await import('jimp');
@@ -135,29 +145,12 @@ function pixelToAsciiCell(data: Buffer, offset: number, range: LuminanceRange): 
   // Higher luminance → lighter character (earlier in ramp).
   const index = clamp(Math.floor((1 - stretched) * ramp.length), 0, ramp.length - 1);
   const char = ramp[index] ?? ' ';
-  // Foreground glyph is a darkened version of the pixel so the ramp
-  // texture reads against the background fill without losing the hue.
-  const fg = darkenChannel(r, g, b, 0.55);
-  return `\u001b[48;2;${r};${g};${b}m\u001b[38;2;${fg.r};${fg.g};${fg.b}m${char}`;
-}
-
-function darkenChannel(
-  r: number,
-  g: number,
-  b: number,
-  factor: number,
-): { r: number; g: number; b: number } {
-  return {
-    r: Math.max(0, Math.round(r * factor)),
-    g: Math.max(0, Math.round(g * factor)),
-    b: Math.max(0, Math.round(b * factor)),
-  };
-}
-
-function clamp(value: number, lower: number, upper: number): number {
-  if (value < lower) return lower;
-  if (value > upper) return upper;
-  return value;
+  if (char === ' ') return ' ';
+  // FG = pixel colour, no BG fill. The terminal's own background
+  // shows through, which gives the output the classic colored-ASCII-art
+  // look (every cell is a single coloured glyph rather than a coloured
+  // tile with a dark glyph on top).
+  return `\u001b[38;2;${r};${g};${b}m${char}`;
 }
 
 function asciiTargetSize(
@@ -186,6 +179,12 @@ function asciiTargetSize(
   return { width: targetWidth, height: naturalHeight };
 }
 
+function clamp(value: number, lower: number, upper: number): number {
+  if (value < lower) return lower;
+  if (value > upper) return upper;
+  return value;
+}
+
 async function renderHalfBlocks(buffer: Buffer, options: RenderImageOptions): Promise<string> {
   const restore = scrubGraphicsDetectionEnv();
   try {
@@ -212,12 +211,4 @@ function scrubGraphicsDetectionEnv(): () => void {
       else process.env[key] = value;
     }
   };
-}
-
-export async function renderImageFile(
-  path: string,
-  options: RenderImageOptions = {},
-): Promise<string> {
-  const buffer = await readFile(path);
-  return renderImageAscii(buffer, options);
 }
