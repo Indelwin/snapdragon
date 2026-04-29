@@ -28,6 +28,13 @@ export interface ReloadOptions {
   buildCommand?: readonly [string, ...string[]];
   /** Override the shell runner (for tests). */
   runner?: ReloadShellRunner;
+  /**
+   * Optional progress callback fired before each step starts (e.g. before
+   * `git pull`, before the build, before the rebuild). Used by the TUI to
+   * drive the running-spinner label so a multi-second `npm run build`
+   * doesn't look frozen. No-op by default.
+   */
+  progress?: (label: string) => void;
 }
 
 export interface ReloadStepReport {

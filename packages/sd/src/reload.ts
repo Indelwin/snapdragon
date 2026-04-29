@@ -35,18 +35,25 @@ export async function reloadSdRuntime(
 ): Promise<ReloadReport> {
   const start = Date.now();
   const runner = options.runner ?? defaultReloadShellRunner;
+  const progress = options.progress ?? noopProgress;
   const cwd = runtime.agent.cwd;
 
-  const pulled = options.pull
-    ? await runStep(runner, 'git', ['pull', '--ff-only'], cwd, 5)
-    : undefined;
-  const built = options.build
-    ? await runStep(runner, ...splitBuildCommand(options.buildCommand), cwd, 8)
-    : undefined;
+  let pulled: ReloadStepReport | undefined;
+  if (options.pull) {
+    progress('reload: git pull...');
+    pulled = await runStep(runner, 'git', ['pull', '--ff-only'], cwd, 5);
+  }
+
+  let built: ReloadStepReport | undefined;
+  if (options.build) {
+    progress('reload: building...');
+    built = await runStep(runner, ...splitBuildCommand(options.buildCommand), cwd, 8);
+  }
 
   // Rebuild the runtime regardless of pull/build outcomes — a partial
   // failure shouldn't block extension/skill refresh, and the report makes
   // any failures visible.
+  progress('reload: rebuilding runtime...');
   await rebuildSdRuntime(runtime, {
     provider: runtime.provider.id,
     model: runtime.provider.model,
@@ -110,6 +117,8 @@ function splitBuildCommand(override: ReloadOptions['buildCommand']): [string, st
   const [cmd, ...args] = override ?? DEFAULT_BUILD_COMMAND;
   return [cmd, args];
 }
+
+const noopProgress = (_label: string): void => undefined;
 
 function tailOf(result: ReloadShellResult, n: number): string {
   const text = `${result.stdout}\n${result.stderr}`.trim();

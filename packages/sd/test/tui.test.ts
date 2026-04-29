@@ -688,6 +688,39 @@ test('escape aborts an in-flight run without exiting', async () => {
   }
 });
 
+test('beginTask/updateTask/endTask drive the prompt running spinner', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-task-spinner-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    const controller = new SdUiController(runtime);
+
+    // Initial: not running.
+    let prompt = controller.world.componentState(SD_UI_IDS.prompt);
+    assert.equal(prompt.running ?? false, false);
+
+    controller.beginTask('reload: git pull...');
+    prompt = controller.world.componentState(SD_UI_IDS.prompt);
+    assert.equal(prompt.running, true);
+    assert.equal(prompt.phase, 'task');
+    assert.equal(prompt.phaseLabel, 'reload: git pull...');
+
+    controller.updateTask('reload: building...');
+    prompt = controller.world.componentState(SD_UI_IDS.prompt);
+    assert.equal(prompt.running, true);
+    assert.equal(prompt.phaseLabel, 'reload: building...');
+
+    controller.endTask();
+    prompt = controller.world.componentState(SD_UI_IDS.prompt);
+    assert.equal(prompt.running, false);
+    // `patch({ phase: null })` clears the key — the world stores nulls as
+    // "absent", so phase/phaseLabel become undefined rather than literal null.
+    assert.ok(prompt.phase == null);
+    assert.ok(prompt.phaseLabel == null);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
 test('escape with palette open is left to the palette handler', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-esc-palette-'));
   try {
