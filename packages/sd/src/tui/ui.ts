@@ -4,7 +4,10 @@ import { type JsonObject, type JsonValue, type UiEvent, UiWorld, uiLog } from '@
 import type { PendingAttachment } from '../attachments.js';
 import type { SdRuntime } from '../runtime.js';
 import type { PromptCompletionState } from './input-completion.js';
+import { promptCompletionJson } from './prompt-completion-json.js';
+import { ProviderEventBuffer } from './provider-event-buffer.js';
 import { chatEntries, eventEntries, toolEntries } from './state-readers.js';
+import type { ChatEntry, ToolEntry } from './ui-entry.js';
 
 export const SD_UI_IDS = {
   chat: 'sd.chat',
@@ -34,25 +37,6 @@ export interface SdUiControllerOptions {
   maxLogEntries?: number;
 }
 
-interface ChatEntry {
-  id: string;
-  role: string;
-  content: string;
-  streaming?: boolean;
-  thinking?: string;
-  toolCalls?: number;
-  isError?: boolean;
-  toolName?: string;
-  toolStatus?: string;
-}
-
-interface ToolEntry {
-  id: string;
-  name: string;
-  status: string;
-  content?: string;
-}
-
 export class SdUiController {
   readonly world: UiWorld;
   readonly runtime: SdRuntime;
@@ -60,6 +44,7 @@ export class SdUiController {
   #currentAssistantId: string | undefined;
   #assistantSequence = 0;
   #providerTurnText = '';
+  #providerEvents: ProviderEventBuffer;
   #maxEntries: number;
   #maxLogEntries: number;
   #boundAgent: SnapdragonAgent | undefined;
@@ -68,6 +53,7 @@ export class SdUiController {
   constructor(runtime: SdRuntime, world = new UiWorld(), options: SdUiControllerOptions = {}) {
     this.runtime = runtime;
     this.world = world;
+    this.#providerEvents = new ProviderEventBuffer((events) => this.#flushProviderEvents(events));
     this.#maxEntries = options.maxEntries ?? 80;
     this.#maxLogEntries = options.maxLogEntries ?? 80;
     this.world.applyMany(initialSdUiEvents(runtime));
@@ -90,12 +76,15 @@ export class SdUiController {
   }
 
   dispose(): void {
+    this.#providerEvents.flush();
     this.#unsubscribeAgent?.();
     this.#unsubscribeAgent = undefined;
     this.#boundAgent = undefined;
   }
 
   acceptAgentEvent(event: AgentEvent): void {
+    if (this.#providerEvents.accept(event)) return;
+    this.#providerEvents.flush();
     this.world.applyMany(this.agentEventToUiEvents(event));
   }
 
@@ -114,19 +103,17 @@ export class SdUiController {
     this.world.apply(patch(SD_UI_IDS.prompt, { draft }));
   }
 
-  setPromptCompletion(completion: PromptCompletionState | undefined): void {
+  setPromptInput(draft: string, completion: PromptCompletionState | undefined): void {
     this.world.apply(
       patch(SD_UI_IDS.prompt, {
-        completion: completion
-          ? {
-              mode: completion.mode,
-              query: completion.query,
-              selectedIndex: completion.selectedIndex,
-              suggestions: completion.suggestions.map((suggestion) => ({ ...suggestion })),
-            }
-          : null,
+        draft,
+        completion: promptCompletionJson(completion),
       }),
     );
+  }
+
+  setPromptCompletion(completion: PromptCompletionState | undefined): void {
+    this.world.apply(patch(SD_UI_IDS.prompt, { completion: promptCompletionJson(completion) }));
   }
 
   setPromptHistory(history: readonly string[]): void {
@@ -456,6 +443,12 @@ export class SdUiController {
         },
       }),
     ];
+  }
+
+  #flushProviderEvents(events: readonly StreamEvent[]): void {
+    this.world.applyMany(
+      events.flatMap((event) => this.agentEventToUiEvents({ type: 'provider_event', event })),
+    );
   }
 }
 

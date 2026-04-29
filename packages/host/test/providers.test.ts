@@ -115,6 +115,34 @@ test('Anthropic maps images and thinking/tool-use round trips', () => {
   });
 });
 
+test('Anthropic maps reasoning to adaptive thinking on supported Claude models', () => {
+  const body = anthropicBody(
+    { model: 'claude-opus-4-7' },
+    {
+      role: 'assistant',
+      messages: [{ role: 'user', content: 'think' }],
+      reasoning: { enabled: true, effort: 'xhigh', budget_tokens: 32000 },
+    },
+  );
+
+  assert.deepEqual(body.thinking, { type: 'adaptive', display: 'summarized' });
+  assert.deepEqual(body.output_config, { effort: 'xhigh' });
+});
+
+test('Anthropic keeps manual thinking for older Claude models', () => {
+  const body = anthropicBody(
+    { model: 'claude-opus-4-5-20251101' },
+    {
+      role: 'assistant',
+      messages: [{ role: 'user', content: 'think' }],
+      reasoning: { enabled: true, effort: 'high', budget_tokens: 32000 },
+    },
+  );
+
+  assert.deepEqual(body.thinking, { type: 'enabled', budget_tokens: 32000 });
+  assert.equal(body.output_config, undefined);
+});
+
 test('Codex provider streams text, reasoning, tool calls, and usage', async () => {
   const seen: unknown[] = [];
   const provider = codexProvider({

@@ -46,7 +46,7 @@ export type ToolChoice = 'auto' | 'any' | 'none' | { type: 'function'; name: str
 
 export interface ReasoningRequest {
   enabled?: boolean;
-  effort?: 'low' | 'medium' | 'high' | 'max';
+  effort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max';
   budget_tokens?: number;
   summary?: 'auto' | 'concise' | 'detailed';
 }
