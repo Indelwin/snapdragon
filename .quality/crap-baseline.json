@@ -384,10 +384,10 @@
     "maxFunctionLines": 11
   },
   "packages/sd/src/tui/index.tsx": {
-    "lines": 167,
+    "lines": 168,
     "complexity": 34,
     "crapProxy": 1162,
-    "maxFunctionLines": 66
+    "maxFunctionLines": 67
   },
   "packages/sd/src/tui/inline-shell.ts": {
     "lines": 61,
@@ -449,6 +449,12 @@
     "crapProxy": 145,
     "maxFunctionLines": 25
   },
+  "packages/sd/src/tui/renderers/colored-braille.tsx": {
+    "lines": 333,
+    "complexity": 53,
+    "crapProxy": 2812,
+    "maxFunctionLines": 35
+  },
   "packages/sd/src/tui/renderers/effects.tsx": {
     "lines": 94,
     "complexity": 8,
@@ -480,10 +486,10 @@
     "maxFunctionLines": 41
   },
   "packages/sd/src/tui/renderers/splash.tsx": {
-    "lines": 75,
-    "complexity": 11,
-    "crapProxy": 122,
-    "maxFunctionLines": 45
+    "lines": 104,
+    "complexity": 12,
+    "crapProxy": 145,
+    "maxFunctionLines": 46
   },
   "packages/sd/src/tui/renderers/status.tsx": {
     "lines": 72,
@@ -496,6 +502,12 @@
     "complexity": 9,
     "crapProxy": 82,
     "maxFunctionLines": 10
+  },
+  "packages/sd/src/tui/splash-art.ts": {
+    "lines": 45,
+    "complexity": 7,
+    "crapProxy": 52,
+    "maxFunctionLines": 4
   },
   "packages/sd/src/tui/state-readers.ts": {
     "lines": 150,
@@ -528,9 +540,9 @@
     "maxFunctionLines": 14
   },
   "packages/sd/src/tui/ui.ts": {
-    "lines": 641,
-    "complexity": 98,
-    "crapProxy": 9609,
+    "lines": 658,
+    "complexity": 99,
+    "crapProxy": 9806,
     "maxFunctionLines": 42
   },
   "packages/session/src/context-options.ts": {
