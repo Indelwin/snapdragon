@@ -504,10 +504,10 @@
     "maxFunctionLines": 10
   },
   "packages/sd/src/tui/splash-art.ts": {
-    "lines": 65,
+    "lines": 66,
     "complexity": 12,
     "crapProxy": 148,
-    "maxFunctionLines": 9
+    "maxFunctionLines": 10
   },
   "packages/sd/src/tui/state-readers.ts": {
     "lines": 150,
