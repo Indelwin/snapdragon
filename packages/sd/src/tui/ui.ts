@@ -52,6 +52,7 @@ export class SdUiController {
   #maxLogEntries: number;
   #boundAgent: SnapdragonAgent | undefined;
   #unsubscribeAgent: (() => void) | undefined;
+  #activeAbort: AbortController | undefined;
 
   constructor(runtime: SdRuntime, world = new UiWorld(), options: SdUiControllerOptions = {}) {
     this.runtime = runtime;
@@ -223,12 +224,39 @@ export class SdUiController {
     const message = error instanceof Error ? error.message : String(error);
     this.#activeRunId = undefined;
     this.#currentAssistantId = undefined;
+    this.#activeAbort = undefined;
     this.world.applyMany([
       patch(SD_UI_IDS.runStatus, { status: 'error', error: message }),
       patch(SD_UI_IDS.prompt, { running: false, phase: null, phaseLabel: null }),
       this.#eventEntryEvent('error', message, 'agent'),
       logEvent('error', message, 'agent'),
     ]);
+  }
+
+  /**
+   * Register the AbortController for the in-flight `agent.prompt()` so the
+   * TUI can cancel the run on Esc without exiting the process. Cleared
+   * automatically when the run ends (success or error).
+   */
+  setActiveAbortController(controller: AbortController | undefined): void {
+    this.#activeAbort = controller;
+  }
+
+  /**
+   * Cancel the active run, if any. Safe to call when no run is in flight.
+   * Returns true iff an abort was actually issued — callers (the keymap)
+   * can use this to decide whether to swallow the keystroke.
+   */
+  abortActiveRun(): boolean {
+    const ac = this.#activeAbort;
+    if (!ac || !this.#activeRunId) return false;
+    this.#activeAbort = undefined;
+    ac.abort();
+    this.world.applyMany([
+      this.#eventEntryEvent('info', 'run cancelled by user (esc)', 'agent'),
+      logEvent('info', 'run cancelled by user (esc)', 'agent'),
+    ]);
+    return true;
   }
 
   #runStart(runId: string): UiEvent[] {
@@ -250,6 +278,7 @@ export class SdUiController {
     this.#activeRunId = undefined;
     this.#currentAssistantId = undefined;
     this.#providerTurnText = '';
+    this.#activeAbort = undefined;
     const events: UiEvent[] = [
       patch(SD_UI_IDS.runStatus, { status: 'done', runId, error: null }),
       patch(SD_UI_IDS.prompt, { running: false, phase: null, phaseLabel: null }),
