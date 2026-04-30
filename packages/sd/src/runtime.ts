@@ -76,6 +76,7 @@ export async function createSdRuntime(
     config,
     memory,
     profile,
+    skills,
     chat: backgroundChatFromProvider(provider),
     disableAll: options.noBackground,
     disable: collectDisabledServices(options),

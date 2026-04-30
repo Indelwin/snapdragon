@@ -18,6 +18,7 @@ import type { Message } from '@snapdragon-ai/host';
 import type { SdConfig } from './config.js';
 import type { SdMemoryProvider } from './memory.js';
 import type { SdProfileInfo } from './profile.js';
+import type { SdSkillStore } from './skills.js';
 
 /**
  * One-shot completion call available to background services that need an LLM
@@ -36,6 +37,8 @@ export interface SdBackgroundContext {
   config: SdConfig;
   memory: SdMemoryProvider;
   profile?: SdProfileInfo;
+  /** Active skill catalog; lets services consult what already exists. */
+  skills?: SdSkillStore;
   /** Optional one-shot LLM completion; absent on runtimes without a provider. */
   chat?: SdBackgroundChat;
   /** Stable wall-clock for tests; default is `Date.now()`. */
@@ -92,6 +95,8 @@ export interface SdBackgroundServicesOptions {
   config: SdConfig;
   memory: SdMemoryProvider;
   profile?: SdProfileInfo;
+  /** Active skill catalog; lets services see existing skills. */
+  skills?: SdSkillStore;
   /** Optional LLM completion handle, plumbed into each service's context. */
   chat?: SdBackgroundChat;
   /** Disable every service regardless of per-service config. */
@@ -123,6 +128,7 @@ function buildServiceState(
     config: options.config,
     memory: options.memory,
     profile: options.profile,
+    skills: options.skills,
     chat: options.chat,
     now,
     log: (line) => log(`[bg:${service.name}] ${line}`),
