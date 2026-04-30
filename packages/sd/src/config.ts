@@ -54,6 +54,20 @@ export interface SdSkillsConfig {
   disabled?: string[];
   authoring?: boolean;
   builtins?: boolean;
+  builder?: SdSkillBuilderConfig;
+}
+
+export interface SdSkillBuilderConfig {
+  /** Enable the background skill-builder service. Default: true (dogfooded). */
+  enabled?: boolean;
+  /** Polling interval in ms. Default: 30 minutes. */
+  interval_ms?: number;
+  /** Number of most-recent sessions scanned per pass. Default: 10. */
+  lookback_sessions?: number;
+  /** Minimum n-gram count across distinct sessions to count as a candidate. Default: 3. */
+  min_pattern_count?: number;
+  /** Minimum number of distinct sessions in which a pattern must appear. Default: 2. */
+  min_distinct_sessions?: number;
 }
 
 export interface SdMemoryAutoConfig {
