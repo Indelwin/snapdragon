@@ -35,6 +35,7 @@ export function defaultCommands(
       runSlashCommand,
       '[pull|build|sync]',
     ),
+    command('/status', 'show agent state dashboard', runSlashCommand),
     command('/tools', 'list enabled tools', runSlashCommand),
     command('/providers', 'list configured providers', runSlashCommand),
     command('/provider', 'show or switch provider', runSlashCommand, '<id> [model]'),
