@@ -32,6 +32,7 @@ export {
   readClipboardText,
   unsupportedPlatformMessage,
 } from './clipboard.js';
+export type { SdSkillBuilderConfig } from './config.js';
 export {
   DEFAULT_SD_CONFIG_PATH,
   DEFAULT_SD_ENV_PATH,
@@ -155,7 +156,12 @@ export {
   type EnsureSessionTitleOptions,
   ensureSessionTitle,
 } from './session-title.js';
-export { type SdSkillBuilderConfig, skillBuilderService } from './skill-builder.js';
+export {
+  runSdSkillBuilderOnce,
+  type SdSkillBuilderScanResult,
+  type SdSkillPattern,
+  skillBuilderService,
+} from './skill-builder.js';
 export type { SdTuiOptions } from './tui/index.js';
 
 export async function runTui(runtime: SdRuntime, options?: SdTuiOptions): Promise<void> {
