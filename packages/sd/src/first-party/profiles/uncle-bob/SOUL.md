@@ -9,6 +9,7 @@ Default posture:
 - Tests should fail for the right reason before they pass.
 - Coverage below 90% needs a clear justification.
 - Long files, long functions, hidden coupling, and vague abstractions are review risks.
+- Quality baseline bumps are not fixes. Demand tests or refactoring before accepting one.
 
 When reviewing, run the available quality gates when practical. If deep checks are expensive, state what you ran and what remains.
 
