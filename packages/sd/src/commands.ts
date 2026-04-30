@@ -31,6 +31,12 @@ import {
   switchRuntimeProfile,
 } from './runtime-transitions.js';
 import { sessionCommandSummary } from './session-command-display.js';
+import {
+  acceptSkillDraft,
+  listSkillDrafts,
+  readSkillDraft,
+  rejectSkillDraft,
+} from './skill-builder.js';
 import { buildSkillInvocation, type SkillInvocation, skillForSlashCommand } from './skills.js';
 import { formatSdStatus, gatherSdStatus } from './status.js';
 
@@ -128,7 +134,28 @@ export async function handleCommand(
   if (command === '/status') {
     return writeResult(io, formatSdStatus(gatherSdStatus(runtime)), attachments);
   }
-  if (command === '/skills') return writeResult(io, skillsSummary(runtime), attachments);
+  if (command === '/skills') {
+    if (arg === 'drafts') return writeResult(io, skillDraftsSummary(runtime), attachments);
+    if (arg.startsWith('draft '))
+      return writeResult(
+        io,
+        skillDraftShow(runtime, arg.slice('draft '.length).trim()),
+        attachments,
+      );
+    if (arg.startsWith('accept '))
+      return writeResult(
+        io,
+        await skillDraftAccept(runtime, arg.slice('accept '.length).trim()),
+        attachments,
+      );
+    if (arg.startsWith('reject '))
+      return writeResult(
+        io,
+        skillDraftReject(runtime, arg.slice('reject '.length).trim()),
+        attachments,
+      );
+    return writeResult(io, skillsSummary(runtime), attachments);
+  }
   if (command === '/skill') return skillCommand(line, arg, runtime, io, attachments);
   if (command === '/tools') return writeResult(io, toolsSummary(runtime), attachments);
   if (command === '/providers') return writeResult(io, providersSummary(runtime), attachments);
@@ -454,6 +481,10 @@ function slashHelp(): string {
     '  /reload [pull|build|sync]  Hot-reload runtime (extensions, skills, profiles)',
     '  /status                Show a one-screen dashboard of agent state',
     '  /skills               List skills',
+    '  /skills drafts        List pending skill drafts proposed by skill-builder',
+    '  /skills draft <id>    Show a draft SKILL.md',
+    '  /skills accept <id>   Promote a draft into the active skill catalog',
+    '  /skills reject <id>   Delete a draft',
     '  /skill <id> [task]    Run a skill for one request',
     '  /tools                List enabled tools',
     '  /providers            List configured providers',
@@ -598,6 +629,47 @@ async function renderMemoryFile(
     ),
     '',
   ].join('\n');
+}
+
+function skillDraftsSummary(runtime: SdRuntime): string {
+  const drafts = listSkillDrafts(runtime.config, runtime.profile);
+  if (drafts.length === 0) {
+    return 'No skill drafts pending.\n\nThe skill-builder service writes drafts here when it detects recurring tool sequences.';
+  }
+  return [
+    `Pending skill drafts (${drafts.length}):`,
+    ...drafts.map((d) => `  ${d.id}  (${d.size}b, ${new Date(d.mtimeMs).toISOString()})`),
+    '',
+    'Use /skills draft <id> to view, /skills accept <id> to promote, /skills reject <id> to discard.',
+  ].join('\n');
+}
+
+function skillDraftShow(runtime: SdRuntime, id: string): string {
+  if (!id) return 'Usage: /skills draft <id>';
+  const draft = readSkillDraft(runtime.config, runtime.profile, id);
+  if (!draft) return `Draft not found: ${id}`;
+  return [`Draft: ${id}  (dir: ${draft.dir})`, '', draft.content].join('\n');
+}
+
+async function skillDraftAccept(runtime: SdRuntime, id: string): Promise<string> {
+  if (!id) return 'Usage: /skills accept <id>';
+  const result = acceptSkillDraft(runtime.config, runtime.profile, id);
+  if ('error' in result) return result.error;
+  // Rebuild the runtime so the new skill becomes loadable. /reload would
+  // also work but it's overkill; rebuildSdRuntime alone refreshes the
+  // skill catalog.
+  await rebuildSdRuntime(runtime, {
+    provider: runtime.provider.id,
+    model: runtime.provider.model,
+  });
+  return `Accepted ${id} into ${result.dir}. Skill catalog refreshed.`;
+}
+
+function skillDraftReject(runtime: SdRuntime, id: string): string {
+  if (!id) return 'Usage: /skills reject <id>';
+  const result = rejectSkillDraft(runtime.config, runtime.profile, id);
+  if ('error' in result) return result.error;
+  return `Rejected ${id}.`;
 }
 
 async function rememberCommand(
