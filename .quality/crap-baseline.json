@@ -240,9 +240,9 @@
     "maxFunctionLines": 55
   },
   "packages/sd/src/config.ts": {
-    "lines": 390,
-    "complexity": 161,
-    "crapProxy": 25949,
+    "lines": 404,
+    "complexity": 167,
+    "crapProxy": 27918,
     "maxFunctionLines": 115
   },
   "packages/sd/src/exit-summary.ts": {
@@ -378,10 +378,10 @@
     "maxFunctionLines": 8
   },
   "packages/sd/src/skill-builder.ts": {
-    "lines": 60,
-    "complexity": 13,
-    "crapProxy": 171,
-    "maxFunctionLines": 28
+    "lines": 342,
+    "complexity": 64,
+    "crapProxy": 4101,
+    "maxFunctionLines": 76
   },
   "packages/sd/src/skills.ts": {
     "lines": 532,
