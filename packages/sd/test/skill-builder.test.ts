@@ -3,9 +3,18 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import type { Message } from '@snapdragon-ai/host';
+import type { SdBackgroundChat } from '../src/background.ts';
 import { defaultSdConfig, type SdConfig } from '../src/config.ts';
 import { SdMemoryStore } from '../src/memory.ts';
-import { runSdSkillBuilderOnce, skillBuilderService } from '../src/skill-builder.ts';
+import {
+  acceptSkillDraft,
+  listSkillDrafts,
+  readSkillDraft,
+  rejectSkillDraft,
+  runSdSkillBuilderOnce,
+  skillBuilderService,
+} from '../src/skill-builder.ts';
 
 interface Fixture {
   workspace: string;
@@ -205,6 +214,171 @@ test('skill-builder respects skills.builder.enabled = false', async () => {
     const result = await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory });
     assert.equal(result.scanned_sessions, 0);
     assert.equal(result.candidates_emitted, 0);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('skill-builder drafts a SKILL.md when chat is provided', async () => {
+  const fx = await makeFixture();
+  try {
+    await writeSession(fx.sessionsRoot, 'sess-x', [
+      { role: 'user', text: 'find usage of foo and update it', created_at: 100 },
+      { role: 'assistant', toolCalls: ['grep', 'edit_file'], created_at: 101 },
+      { role: 'user', text: 'now find bar and update it too', created_at: 102 },
+      { role: 'assistant', toolCalls: ['grep', 'edit_file'], created_at: 103 },
+    ]);
+    await writeSession(fx.sessionsRoot, 'sess-y', [
+      { role: 'user', text: 'find baz references', created_at: 200 },
+      { role: 'assistant', toolCalls: ['grep', 'edit_file'], created_at: 201 },
+    ]);
+
+    const calls: Message[][] = [];
+    const chat: SdBackgroundChat = async (messages) => {
+      calls.push(messages);
+      return {
+        content: [
+          '---',
+          'name: search-and-replace',
+          'description: Find symbol references via grep and update them with edit_file.',
+          'tags: [refactor, grep, workflow]',
+          '---',
+          '',
+          'Use this when the user asks to find and update references to a symbol.',
+          '',
+          '1. grep for the symbol across the workspace.',
+          '2. For each hit, edit_file to apply the rename.',
+          '3. Verify with a follow-up grep.',
+        ].join('\n'),
+      };
+    };
+
+    const result = await runSdSkillBuilderOnce({
+      config: fx.config,
+      memory: fx.memory,
+      chat,
+    });
+
+    assert.equal(result.drafts_written, 1, 'one draft written');
+    assert.ok(result.candidates_emitted >= 1);
+    assert.equal(calls.length, 1, 'chat called exactly once');
+    // Prompt should mention the actual user inputs from the session.
+    const userMessage = calls[0]?.find((m) => m.role === 'user');
+    assert.match(String(userMessage?.content), /grep → edit_file/);
+    assert.match(String(userMessage?.content), /find usage of foo/);
+
+    const drafts = listSkillDrafts(fx.config, undefined);
+    assert.equal(drafts.length, 1);
+    assert.equal(drafts[0]?.id, 'search-and-replace');
+    const skillContent = await readFile(drafts[0]!.skillPath, 'utf8');
+    assert.match(skillContent, /name: search-and-replace/);
+    assert.match(skillContent, /Find symbol references/);
+
+    // Memory note should be tagged 'skill-draft-ready' (not 'tentative') and
+    // include the draft path so the agent can find it.
+    const mem = await readFile(fx.memoryPath, 'utf8');
+    assert.match(mem, /Skill draft ready: grep→edit_file/);
+    assert.match(mem, /tags:[^\n]*skill-draft-ready/);
+    assert.match(mem, /\.drafts\/search-and-replace/);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('skill-builder respects max_drafts_per_pass', async () => {
+  const fx = await makeFixture({ max_drafts_per_pass: 0 });
+  try {
+    await writeSession(fx.sessionsRoot, 'sess-1', [
+      { role: 'assistant', toolCalls: ['a', 'b'], created_at: 1 },
+      { role: 'assistant', toolCalls: ['a', 'b'], created_at: 2 },
+    ]);
+    await writeSession(fx.sessionsRoot, 'sess-2', [
+      { role: 'assistant', toolCalls: ['a', 'b'], created_at: 10 },
+    ]);
+    let chatCalls = 0;
+    const chat: SdBackgroundChat = async () => {
+      chatCalls += 1;
+      return { content: 'never reached' };
+    };
+    const result = await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory, chat });
+    assert.equal(chatCalls, 0, 'chat never called when max_drafts_per_pass=0');
+    assert.equal(result.drafts_written, 0);
+    // But the candidate is still surfaced as a tentative memory note.
+    assert.ok(result.candidates_emitted >= 1);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('drafts directory is hidden from skill discovery and accept moves it out', async () => {
+  const fx = await makeFixture();
+  try {
+    await writeSession(fx.sessionsRoot, 'sess-1', [
+      { role: 'assistant', toolCalls: ['read_file', 'repl_eval'], created_at: 1 },
+      { role: 'assistant', toolCalls: ['read_file', 'repl_eval'], created_at: 2 },
+    ]);
+    await writeSession(fx.sessionsRoot, 'sess-2', [
+      { role: 'assistant', toolCalls: ['read_file', 'repl_eval'], created_at: 10 },
+    ]);
+    const chat: SdBackgroundChat = async () => ({
+      content: [
+        '---',
+        'name: read-eval',
+        'description: Read a file then evaluate it.',
+        'tags: [io]',
+        '---',
+        '',
+        'Use this when reading then computing on a file.',
+        '',
+        '1. read_file the input.',
+        '2. repl_eval to compute on it.',
+      ].join('\n'),
+    });
+
+    await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory, chat });
+    const drafts = listSkillDrafts(fx.config, undefined);
+    assert.equal(drafts.length, 1);
+    assert.equal(drafts[0]?.id, 'read-eval');
+
+    // readSkillDraft round-trips
+    const read = readSkillDraft(fx.config, undefined, 'read-eval');
+    assert.ok(read);
+    assert.match(read.content, /name: read-eval/);
+
+    // accept moves the directory out of .drafts/
+    const accepted = acceptSkillDraft(fx.config, undefined, 'read-eval');
+    assert.ok('dir' in accepted, 'accept succeeds');
+    assert.match(accepted.dir, /skills\/read-eval$/);
+    // Drafts list now empty.
+    assert.equal(listSkillDrafts(fx.config, undefined).length, 0);
+
+    // reject on a non-existent id is a clean error.
+    const rejected = rejectSkillDraft(fx.config, undefined, 'no-such-draft');
+    assert.ok('error' in rejected);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('skill-builder skips drafting when chat returns "SKIP"', async () => {
+  const fx = await makeFixture();
+  try {
+    await writeSession(fx.sessionsRoot, 'sess-1', [
+      { role: 'assistant', toolCalls: ['ls', 'cat'], created_at: 1 },
+      { role: 'assistant', toolCalls: ['ls', 'cat'], created_at: 2 },
+    ]);
+    await writeSession(fx.sessionsRoot, 'sess-2', [
+      { role: 'assistant', toolCalls: ['ls', 'cat'], created_at: 10 },
+    ]);
+    const chat: SdBackgroundChat = async () => ({ content: 'SKIP' });
+    const result = await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory, chat });
+    // 'SKIP' has no frontmatter, so draftCandidate throws → recorded as
+    // an error, no draft written, but the candidate IS surfaced as a
+    // plain skill-candidate memory note.
+    assert.equal(result.drafts_written, 0);
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0] ?? '', /no frontmatter/);
+    assert.equal(listSkillDrafts(fx.config, undefined).length, 0);
   } finally {
     await fx.cleanup();
   }

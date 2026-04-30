@@ -76,6 +76,7 @@ export async function createSdRuntime(
     config,
     memory,
     profile,
+    chat: backgroundChatFromProvider(provider),
     disableAll: options.noBackground,
     disable: collectDisabledServices(options),
   });
@@ -165,6 +166,32 @@ function resolveRuntimeProfile(
 
 export { resolveSdRuntimeConfig } from './profile-runtime.js';
 export { normalizeRuntimeOptions, type SdRuntimeOptions } from './runtime-options.js';
+
+/**
+ * Adapt the runtime's StreamingChatHandler into the narrow SdBackgroundChat
+ * shape — background services don't need the full streaming/registry/profile
+ * surface, just "give me a string back". A no-op stream emit lets the call
+ * complete without subscribing to provider events; tokens are still counted
+ * server-side.
+ */
+function backgroundChatFromProvider(
+  provider: SdProviderRuntime,
+): import('./background.js').SdBackgroundChat {
+  return async (messages, options) => {
+    const response = await provider.handler(
+      {
+        role: 'assistant',
+        messages,
+        max_tokens: options?.max_tokens ?? 2000,
+      },
+      {
+        runId: `bg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        emit: () => undefined,
+      },
+    );
+    return { content: response.content };
+  };
+}
 
 /**
  * The default background-services roster wired up at runtime construction.
