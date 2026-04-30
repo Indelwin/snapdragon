@@ -107,10 +107,15 @@ export class SdUiController {
     this.world.apply(patch(SD_UI_IDS.prompt, { draft }));
   }
 
-  setPromptInput(draft: string, completion: PromptCompletionState | undefined): void {
+  setPromptInput(
+    draft: string,
+    completion: PromptCompletionState | undefined,
+    cursor?: number,
+  ): void {
     this.world.apply(
       patch(SD_UI_IDS.prompt, {
         draft,
+        cursor: cursor ?? draft.length,
         completion: promptCompletionJson(completion),
       }),
     );

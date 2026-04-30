@@ -1,7 +1,6 @@
 import type { MutableRefObject } from 'react';
 import { scrollChat, scrollChatToBottom } from './chat-scroll.js';
-import type { PromptCompletionState } from './input-completion.js';
-import type { KeyLike } from './input-keymap.js';
+import type { KeyLike, SetDraft } from './input-keymap.js';
 import type { PaletteState } from './palette-state.js';
 import type { SdUiController } from './ui.js';
 
@@ -11,7 +10,7 @@ export function handleGlobalInput(
   args: {
     controller: SdUiController;
     exit: () => void;
-    setDraft: (draft: string, completion?: PromptCompletionState) => void;
+    setDraft: SetDraft;
     setPalette: (patch: Partial<PaletteState>) => void;
     paletteRef: MutableRefObject<PaletteState>;
     historyIndexRef: MutableRefObject<number>;
@@ -42,10 +41,7 @@ export function handleGlobalInput(
   return false;
 }
 
-function clearDraft(
-  setDraft: (draft: string) => void,
-  historyIndexRef: MutableRefObject<number>,
-): void {
+function clearDraft(setDraft: SetDraft, historyIndexRef: MutableRefObject<number>): void {
   setDraft('');
   historyIndexRef.current = -1;
 }
