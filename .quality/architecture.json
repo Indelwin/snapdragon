@@ -1,0 +1,4 @@
+{
+  "forbidDistImports": true,
+  "forbidRelativePackageSrcImports": true
+}

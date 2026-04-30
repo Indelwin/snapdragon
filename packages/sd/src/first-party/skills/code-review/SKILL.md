@@ -12,6 +12,7 @@ Focus first on concrete defects:
 - Broken error handling or edge cases.
 - Security, privacy, or secret-handling risks.
 - Excessive complexity that makes correctness hard to verify.
+- Quality-baseline increases that hide complexity instead of adding coverage or refactoring.
 
 Prefer evidence from the repository over speculation. Inspect the diff, relevant callers, tests, and package scripts before making claims. Run focused checks when practical.
 
