@@ -395,10 +395,16 @@
     "crapProxy": 86,
     "maxFunctionLines": 13
   },
+  "packages/sd/src/tui/draft-edit.ts": {
+    "lines": 127,
+    "complexity": 21,
+    "crapProxy": 456,
+    "maxFunctionLines": 12
+  },
   "packages/sd/src/tui/global-keymap.ts": {
-    "lines": 57,
-    "complexity": 15,
-    "crapProxy": 226,
+    "lines": 53,
+    "complexity": 14,
+    "crapProxy": 197,
     "maxFunctionLines": 11
   },
   "packages/sd/src/tui/index.tsx": {
@@ -415,8 +421,8 @@
   },
   "packages/sd/src/tui/input-commands.ts": {
     "lines": 312,
-    "complexity": 62,
-    "crapProxy": 3848,
+    "complexity": 64,
+    "crapProxy": 4100,
     "maxFunctionLines": 83
   },
   "packages/sd/src/tui/input-completion.ts": {
@@ -426,15 +432,15 @@
     "maxFunctionLines": 94
   },
   "packages/sd/src/tui/input-controller.ts": {
-    "lines": 162,
-    "complexity": 10,
-    "crapProxy": 102,
-    "maxFunctionLines": 31
+    "lines": 175,
+    "complexity": 18,
+    "crapProxy": 326,
+    "maxFunctionLines": 32
   },
   "packages/sd/src/tui/input-keymap.ts": {
-    "lines": 209,
-    "complexity": 57,
-    "crapProxy": 3256,
+    "lines": 277,
+    "complexity": 73,
+    "crapProxy": 5338,
     "maxFunctionLines": 31
   },
   "packages/sd/src/tui/input-selection.ts": {
@@ -504,9 +510,9 @@
     "maxFunctionLines": 28
   },
   "packages/sd/src/tui/renderers/prompt.tsx": {
-    "lines": 166,
-    "complexity": 27,
-    "crapProxy": 730,
+    "lines": 192,
+    "complexity": 30,
+    "crapProxy": 901,
     "maxFunctionLines": 41
   },
   "packages/sd/src/tui/renderers/splash.tsx": {
@@ -564,9 +570,9 @@
     "maxFunctionLines": 14
   },
   "packages/sd/src/tui/ui.ts": {
-    "lines": 781,
-    "complexity": 120,
-    "crapProxy": 14405,
+    "lines": 786,
+    "complexity": 123,
+    "crapProxy": 15134,
     "maxFunctionLines": 43
   },
   "packages/session/src/context-options.ts": {

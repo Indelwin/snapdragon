@@ -394,9 +394,9 @@ test('TUI provider and model commands open selectable prompt options', async () 
       attachmentsRef: { current: [] },
       setAttachments: () => undefined,
       setPalette: () => undefined,
-      openSelection: (nextDraft, nextCompletion) => {
+      openSelection: (nextDraft, options) => {
         draft = nextDraft;
-        completion = nextCompletion;
+        completion = options?.completion;
       },
     });
 
@@ -412,9 +412,9 @@ test('TUI provider and model commands open selectable prompt options', async () 
       attachmentsRef: { current: [] },
       setAttachments: () => undefined,
       setPalette: () => undefined,
-      openSelection: (nextDraft, nextCompletion) => {
+      openSelection: (nextDraft, options) => {
         draft = nextDraft;
-        completion = nextCompletion;
+        completion = options?.completion;
       },
     });
 
@@ -442,9 +442,9 @@ test('TUI session and profile commands open selectable prompt options', async ()
       attachmentsRef: { current: [] },
       setAttachments: () => undefined,
       setPalette: () => undefined,
-      openSelection: (nextDraft, nextCompletion) => {
+      openSelection: (nextDraft, options) => {
         draft = nextDraft;
-        completion = nextCompletion;
+        completion = options?.completion;
       },
     });
 
@@ -460,9 +460,9 @@ test('TUI session and profile commands open selectable prompt options', async ()
       attachmentsRef: { current: [] },
       setAttachments: () => undefined,
       setPalette: () => undefined,
-      openSelection: (nextDraft, nextCompletion) => {
+      openSelection: (nextDraft, options) => {
         draft = nextDraft;
-        completion = nextCompletion;
+        completion = options?.completion;
       },
     });
 
@@ -491,9 +491,9 @@ test('TUI skills command opens selectable skill options', async () => {
       attachmentsRef: { current: [] },
       setAttachments: () => undefined,
       setPalette: () => undefined,
-      openSelection: (nextDraft, nextCompletion) => {
+      openSelection: (nextDraft, options) => {
         draft = nextDraft;
-        completion = nextCompletion;
+        completion = options?.completion;
       },
     });
 
@@ -587,17 +587,24 @@ test('prompt up/down navigates selection buffers before history', async () => {
     ],
   };
   const draftRef = { current: '/provider ' };
+  const cursorRef = { current: '/provider '.length };
   const completionRef = {
     current: buildPromptCompletion('/provider ', commands, [], catalog),
   };
   const historyIndexRef = { current: -1 };
   let submitted = '';
-  const setDraft = (draft: string, completion?: PromptCompletionState) => {
+  const setDraft = (
+    draft: string,
+    options?: { cursor?: number; completion?: PromptCompletionState },
+  ) => {
     draftRef.current = draft;
-    completionRef.current = completion ?? buildPromptCompletion(draft, commands, [], catalog);
+    cursorRef.current = options?.cursor ?? draft.length;
+    completionRef.current =
+      options?.completion ?? buildPromptCompletion(draft, commands, [], catalog);
   };
   const args = {
     draftRef,
+    cursorRef,
     historyRef: { current: ['/help'] },
     historyIndexRef,
     historyDraftRef: { current: '' },
@@ -620,6 +627,98 @@ test('prompt up/down navigates selection buffers before history', async () => {
 
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(submitted, '/provider openai-codex');
+});
+
+test('prompt left/right arrow keys move the cursor by one char', () => {
+  const args = makePromptInputArgs('hello', 5);
+  // Arrow left from end → cursor 4.
+  handlePromptInput('', { leftArrow: true }, args);
+  assert.equal(args.cursorRef.current, 4);
+  assert.equal(args.draftRef.current, 'hello');
+  // Arrow right back to end.
+  handlePromptInput('', { rightArrow: true }, args);
+  assert.equal(args.cursorRef.current, 5);
+});
+
+test('prompt meta+arrow jumps by word', () => {
+  const args = makePromptInputArgs('foo bar baz', 11);
+  handlePromptInput('', { leftArrow: true, meta: true }, args);
+  assert.equal(args.cursorRef.current, 8); // start of "baz"
+  handlePromptInput('', { leftArrow: true, meta: true }, args);
+  assert.equal(args.cursorRef.current, 4); // start of "bar"
+  handlePromptInput('', { rightArrow: true, meta: true }, args);
+  assert.equal(args.cursorRef.current, 7); // end of "bar"
+});
+
+test('prompt ctrl+arrow also jumps by word (terminal-fallback binding)', () => {
+  const args = makePromptInputArgs('foo bar', 7);
+  handlePromptInput('', { leftArrow: true, ctrl: true }, args);
+  assert.equal(args.cursorRef.current, 4);
+});
+
+test('prompt typing inserts at cursor, not just at end', () => {
+  const args = makePromptInputArgs('hello', 2); // cursor between "he|llo"
+  handlePromptInput('X', {}, args);
+  assert.equal(args.draftRef.current, 'heXllo');
+  assert.equal(args.cursorRef.current, 3);
+});
+
+test('prompt backspace removes char before cursor (not always last char)', () => {
+  const args = makePromptInputArgs('hello', 3); // cursor "hel|lo"
+  handlePromptInput('', { backspace: true }, args);
+  assert.equal(args.draftRef.current, 'helo');
+  assert.equal(args.cursorRef.current, 2);
+});
+
+test('prompt meta+backspace deletes the previous word', () => {
+  const args = makePromptInputArgs('foo bar baz', 11);
+  handlePromptInput('', { backspace: true, meta: true }, args);
+  assert.equal(args.draftRef.current, 'foo bar ');
+  assert.equal(args.cursorRef.current, 8);
+});
+
+test('prompt forward delete removes char at the cursor', () => {
+  const args = makePromptInputArgs('hello', 2); // cursor "he|llo"
+  handlePromptInput('', { delete: true }, args);
+  assert.equal(args.draftRef.current, 'helo');
+  assert.equal(args.cursorRef.current, 2);
+});
+
+test('prompt shift+enter inserts a newline at the cursor instead of submitting', () => {
+  const args = makePromptInputArgs('hello world', 5); // cursor "hello| world"
+  let submitted: string | undefined;
+  args.submit = async (line: string) => {
+    submitted = line;
+  };
+  handlePromptInput('', { return: true, shift: true }, args);
+  assert.equal(args.draftRef.current, 'hello\n world');
+  assert.equal(args.cursorRef.current, 6);
+  assert.equal(submitted, undefined, 'shift+enter must not submit');
+});
+
+test('prompt meta+enter (Option+Return) also inserts a newline', () => {
+  const args = makePromptInputArgs('abc', 3);
+  let submitted: string | undefined;
+  args.submit = async (line: string) => {
+    submitted = line;
+  };
+  handlePromptInput('', { return: true, meta: true }, args);
+  assert.equal(args.draftRef.current, 'abc\n');
+  assert.equal(submitted, undefined);
+});
+
+test('prompt plain enter still submits when not modified', () => {
+  const args = makePromptInputArgs('hi', 2);
+  let submitted: string | undefined;
+  args.submit = async (line: string) => {
+    submitted = line;
+  };
+  handlePromptInput('', { return: true }, args);
+  // setDraft('') runs synchronously; submit is fire-and-forget so flush microtasks.
+  return Promise.resolve().then(() => {
+    assert.equal(submitted, 'hi');
+    assert.equal(args.draftRef.current, '');
+  });
 });
 
 test('chat page keys update transcript scroll state before prompt handling', async () => {
@@ -900,4 +999,39 @@ function testCommands(): SdTuiCommand[] {
     { name: '/clear', description: 'clear chat', run: () => undefined },
     { name: '/quit', description: 'quit', run: () => undefined },
   ];
+}
+
+/**
+ * Builder for a stand-alone handlePromptInput args bag with refs that
+ * mutate in lockstep — easy to assert against without a full TUI mount.
+ * Mirrors what useSdTuiInput sets up internally.
+ */
+function makePromptInputArgs(text: string, cursor = text.length) {
+  const commands = testCommands();
+  const draftRef = { current: text };
+  const cursorRef = { current: cursor };
+  const completionRef = {
+    current: buildPromptCompletion(text, commands, [], {}),
+  };
+  const setDraft = (
+    draft: string,
+    options?: { cursor?: number; completion?: PromptCompletionState },
+  ) => {
+    draftRef.current = draft;
+    cursorRef.current = options?.cursor ?? draft.length;
+    completionRef.current = options?.completion ?? buildPromptCompletion(draft, commands, [], {});
+  };
+  return {
+    draftRef,
+    cursorRef,
+    historyRef: { current: [] as string[] },
+    historyIndexRef: { current: -1 },
+    historyDraftRef: { current: '' },
+    commandsRef: { current: commands },
+    shellCommandsRef: { current: [] as string[] },
+    completionRef,
+    completionCatalog: {},
+    setDraft,
+    submit: async (_line: string) => undefined,
+  };
 }
