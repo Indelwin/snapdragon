@@ -384,6 +384,158 @@ test('skill-builder skips drafting when chat returns "SKIP"', async () => {
   }
 });
 
+test('skill-builder collapses subsumed n-grams (drops a→b when a→b→c also passes)', async () => {
+  const fx = await makeFixture();
+  try {
+    // Both `a→b` and `a→b→c` will fire above thresholds. Without collapse
+    // we'd surface both; with the default-on collapse, only the 3-gram
+    // survives because it's strictly more specific.
+    await writeSession(fx.sessionsRoot, 'sess-1', [
+      { role: 'assistant', toolCalls: ['alpha', 'beta', 'gamma'], created_at: 1 },
+      { role: 'assistant', toolCalls: ['alpha', 'beta', 'gamma'], created_at: 2 },
+    ]);
+    await writeSession(fx.sessionsRoot, 'sess-2', [
+      { role: 'assistant', toolCalls: ['alpha', 'beta', 'gamma'], created_at: 10 },
+    ]);
+    const result = await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory });
+    const mem = await readFile(fx.memoryPath, 'utf8');
+    // The 3-gram is in MEMORY.md…
+    assert.match(mem, /Skill candidate: alpha→beta→gamma/);
+    // …but the 2-gram is suppressed (header line ends with "alpha→beta\n";
+    // \b doesn't anchor against the → character so we match end-of-line).
+    assert.doesNotMatch(mem, /Skill candidate: alpha→beta$/m);
+    assert.equal(result.candidates_emitted, 1);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('skill-builder respects collapse_subsumed=false', async () => {
+  const fx = await makeFixture({ collapse_subsumed: false });
+  try {
+    await writeSession(fx.sessionsRoot, 'sess-1', [
+      { role: 'assistant', toolCalls: ['alpha', 'beta', 'gamma'], created_at: 1 },
+      { role: 'assistant', toolCalls: ['alpha', 'beta', 'gamma'], created_at: 2 },
+    ]);
+    await writeSession(fx.sessionsRoot, 'sess-2', [
+      { role: 'assistant', toolCalls: ['alpha', 'beta', 'gamma'], created_at: 10 },
+    ]);
+    const result = await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory });
+    const mem = await readFile(fx.memoryPath, 'utf8');
+    assert.match(mem, /Skill candidate: alpha→beta→gamma/);
+    assert.match(mem, /Skill candidate: alpha→beta$/m);
+    assert.ok(result.candidates_emitted >= 2);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('skill-builder excludes n-grams led by agent-primitive tools', async () => {
+  const fx = await makeFixture();
+  try {
+    // The default exclude list filters memory_search/skills_list/etc as the
+    // FIRST tool of an n-gram — those are session-orientation primitives,
+    // not user workflows. The same tool appearing later in an n-gram is
+    // fine (it might be part of a real workflow).
+    await writeSession(fx.sessionsRoot, 'sess-1', [
+      { role: 'assistant', toolCalls: ['memory_search', 'run_shell'], created_at: 1 },
+      { role: 'assistant', toolCalls: ['memory_search', 'run_shell'], created_at: 2 },
+    ]);
+    await writeSession(fx.sessionsRoot, 'sess-2', [
+      { role: 'assistant', toolCalls: ['memory_search', 'run_shell'], created_at: 10 },
+    ]);
+    const result = await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory });
+    assert.equal(result.candidates_emitted, 0, 'agent-primitive-led n-gram is suppressed');
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('skill-builder allows custom exclude_leading_tools to override defaults', async () => {
+  // Empty list = no leading-tool filtering. memory_search-led patterns surface.
+  const fx = await makeFixture({ exclude_leading_tools: [] });
+  try {
+    await writeSession(fx.sessionsRoot, 'sess-1', [
+      { role: 'assistant', toolCalls: ['memory_search', 'run_shell'], created_at: 1 },
+      { role: 'assistant', toolCalls: ['memory_search', 'run_shell'], created_at: 2 },
+    ]);
+    await writeSession(fx.sessionsRoot, 'sess-2', [
+      { role: 'assistant', toolCalls: ['memory_search', 'run_shell'], created_at: 10 },
+    ]);
+    const result = await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory });
+    assert.ok(result.candidates_emitted >= 1);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('drafter receives existing-skills catalog and is told to SKIP duplicates', async () => {
+  const fx = await makeFixture();
+  try {
+    await writeSession(fx.sessionsRoot, 'sess-1', [
+      { role: 'user', text: 'fix the failing test', created_at: 100 },
+      { role: 'assistant', toolCalls: ['run_shell', 'edit_file'], created_at: 101 },
+    ]);
+    await writeSession(fx.sessionsRoot, 'sess-2', [
+      { role: 'user', text: 'investigate the bug', created_at: 200 },
+      { role: 'assistant', toolCalls: ['run_shell', 'edit_file'], created_at: 201 },
+    ]);
+    const calls: Message[][] = [];
+    const chat: SdBackgroundChat = async (messages) => {
+      calls.push(messages);
+      return { content: 'SKIP' };
+    };
+    const result = await runSdSkillBuilderOnce({
+      config: fx.config,
+      memory: fx.memory,
+      chat,
+      existingSkills: [
+        {
+          id: 'test-driven-fix-loop',
+          description: 'Run failing tests then edit the implementation',
+        },
+      ],
+    });
+    assert.equal(calls.length, 1);
+    const userMsg = String(calls[0]?.find((m) => m.role === 'user')?.content ?? '');
+    assert.match(userMsg, /Existing skills already in the catalog/);
+    assert.match(userMsg, /test-driven-fix-loop/);
+    assert.match(userMsg, /respond SKIP/);
+    // Drafter answered SKIP → no SKILL.md, error recorded.
+    assert.equal(result.drafts_written, 0);
+    assert.equal(result.errors.length, 1);
+    assert.match(result.errors[0] ?? '', /no frontmatter/);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('drafter omits the existing-skills section when the catalog is empty', async () => {
+  const fx = await makeFixture();
+  try {
+    await writeSession(fx.sessionsRoot, 'sess-1', [
+      { role: 'assistant', toolCalls: ['x', 'y'], created_at: 1 },
+      { role: 'assistant', toolCalls: ['x', 'y'], created_at: 2 },
+    ]);
+    await writeSession(fx.sessionsRoot, 'sess-2', [
+      { role: 'assistant', toolCalls: ['x', 'y'], created_at: 10 },
+    ]);
+    const calls: Message[][] = [];
+    const chat: SdBackgroundChat = async (messages) => {
+      calls.push(messages);
+      return {
+        content:
+          '---\nname: x-y\ndescription: Run x then y.\ntags: [test]\n---\n\nUse this when ...\n\n1. x\n2. y',
+      };
+    };
+    await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory, chat });
+    const userMsg = String(calls[0]?.find((m) => m.role === 'user')?.content ?? '');
+    assert.doesNotMatch(userMsg, /Existing skills already in the catalog/);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
 test('skillBuilderService is enabled by default and disables when explicitly off', () => {
   const service = skillBuilderService();
   const baseCtx = {

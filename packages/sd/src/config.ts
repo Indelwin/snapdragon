@@ -74,6 +74,19 @@ export interface SdSkillBuilderConfig {
   max_drafts_per_pass?: number;
   /** max_tokens for the drafter LLM call. Default: 800. */
   draft_max_tokens?: number;
+  /**
+   * Tool names that, when leading an n-gram, indicate agent-side context
+   * gathering rather than a real workflow. Such n-grams are filtered out
+   * before scoring. Default targets memory/skill catalog primitives that
+   * appear at the start of nearly every session as part of orientation.
+   */
+  exclude_leading_tools?: string[];
+  /**
+   * When true, suppress an n-gram if a strict superset n-gram (the same
+   * tools at the same starting position, plus more) also passes the
+   * thresholds — only the most-specific survivor is kept. Default: true.
+   */
+  collapse_subsumed?: boolean;
 }
 
 export interface SdMemoryAutoConfig {

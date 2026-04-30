@@ -33,10 +33,25 @@ export interface SdSkillDraft {
 }
 
 /**
+ * Brief summary of an existing skill, fed to the drafter so it can decide
+ * whether to draft fresh, skip (because a similar skill already exists),
+ * or — eventually — extend or reference one.
+ */
+export interface ExistingSkillSummary {
+  id: string;
+  description: string;
+}
+
+/**
  * Generate a SKILL.md draft for a candidate via a one-shot LLM call. Writes
  * to `<draftsRoot>/<slug>/SKILL.md` and returns the directory path on
  * success. The drafter is constrained to plain-text-only output with a
  * predictable frontmatter shape so we can validate before committing.
+ *
+ * If `existingSkills` is provided, they're injected into the prompt with
+ * an instruction to respond `SKIP` when the candidate is sufficiently
+ * similar to one that already exists — preventing the drafter from
+ * producing near-duplicates of skills it (or the user) authored earlier.
  *
  * Returns `undefined` when the candidate has no example occurrences (we
  * have nothing to feed the drafter); throws when validation fails so the
@@ -47,12 +62,13 @@ export async function draftCandidateSkill(
   chat: SdBackgroundChat,
   draftsRoot: string,
   cfg: SdSkillBuilderConfig,
+  existingSkills: readonly ExistingSkillSummary[] = [],
 ): Promise<string | undefined> {
   const examples = candidate.examples ?? [];
   if (examples.length === 0) return undefined;
   const messages: Message[] = [
     { role: 'system', content: SKILL_DRAFTER_SYSTEM_PROMPT },
-    { role: 'user', content: buildDraftPrompt(candidate, examples) },
+    { role: 'user', content: buildDraftPrompt(candidate, examples, existingSkills) },
   ];
   const response = await chat(messages, { max_tokens: cfg.draft_max_tokens ?? 800 });
   const cleaned = stripFenceWrappers(response.content);
@@ -91,7 +107,11 @@ const SKILL_DRAFTER_SYSTEM_PROMPT = [
   'with the literal string "SKIP" and nothing else.',
 ].join('\n');
 
-function buildDraftPrompt(candidate: SdSkillPattern, examples: CandidateExample[]): string {
+function buildDraftPrompt(
+  candidate: SdSkillPattern,
+  examples: CandidateExample[],
+  existingSkills: readonly ExistingSkillSummary[],
+): string {
   const lines = [
     `Recurring tool sequence: ${candidate.ngram.join(' → ')}`,
     `Observed ${candidate.totalCount} times across ${candidate.distinctSessions} distinct sessions.`,
@@ -104,9 +124,18 @@ function buildDraftPrompt(candidate: SdSkillPattern, examples: CandidateExample[
       lines.push(`   → ${call.name}(${call.args})`);
     }
   });
+  if (existingSkills.length > 0) {
+    lines.push(
+      '',
+      'Existing skills already in the catalog (do NOT draft a near-duplicate of any of these — respond SKIP instead):',
+    );
+    for (const skill of existingSkills) {
+      lines.push(`  - ${skill.id}: ${skill.description}`);
+    }
+  }
   lines.push(
     '',
-    'Draft a SKILL.md for this workflow if it captures real reusable knowledge.',
+    'Draft a SKILL.md for this workflow if it captures real reusable knowledge that is NOT already covered by an existing skill above.',
     'Otherwise output exactly "SKIP".',
   );
   return lines.join('\n');
