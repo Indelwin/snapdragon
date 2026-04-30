@@ -103,6 +103,21 @@ export async function handleCommand(
     if (arg === 'scan' || arg.startsWith('scan ')) {
       return writeResult(io, await memoryScanCommand(runtime), attachments);
     }
+    if (arg === 'tentative') return writeResult(io, await memoryTentative(runtime), attachments);
+    if (arg.startsWith('promote ')) {
+      return writeResult(
+        io,
+        await memoryPromote(runtime, arg.slice('promote '.length).trim()),
+        attachments,
+      );
+    }
+    if (arg.startsWith('forget ')) {
+      return writeResult(
+        io,
+        memoryForget(runtime, arg.slice('forget '.length).trim()),
+        attachments,
+      );
+    }
     return writeResult(io, await memorySummary(runtime, arg), attachments);
   }
   if (command === '/remember') return rememberCommand(arg, runtime, io, attachments);
@@ -425,6 +440,10 @@ function slashHelp(): string {
     '  /profiles             List profiles',
     '  /profile [name|none]  Show or switch profile',
     '  /memory [query]        Show or search durable memory',
+    '  /memory tentative      List auto-captured (tentative) entries',
+    '  /memory promote <id>   Mark a tentative entry as confirmed (removes tag)',
+    '  /memory forget <id>    Delete a memory entry',
+    '  /memory scan           Run the memory worker once over recent sessions',
     '  /remember <note>       Append a durable memory note',
     '  /extensions [reload]   List or reload discovered extensions',
     '  /reload [pull|build|sync]  Hot-reload runtime (extensions, skills, profiles)',
@@ -483,6 +502,96 @@ async function memoryScanCommand(runtime: SdRuntime): Promise<string> {
   ]
     .filter((line): line is string => typeof line === 'string')
     .join('\n');
+}
+
+async function memoryTentative(runtime: SdRuntime): Promise<string> {
+  if (runtime.config.memory?.enabled === false) return 'Memory is disabled.';
+  const all = (await runtime.memory.read()).entries;
+  const tentative = all.filter((entry) => entry.tags?.includes('tentative'));
+  if (tentative.length === 0) return 'No tentative memory entries.';
+  return [
+    `Tentative memory entries (${tentative.length}):`,
+    ...tentative.map(
+      (entry) =>
+        `  ${entry.id}  ${entry.title ?? ''}${entry.tags?.length ? ` [${entry.tags.join(', ')}]` : ''}`,
+    ),
+    '',
+    'Use /memory promote <id> to keep, /memory forget <id> to remove.',
+  ].join('\n');
+}
+
+async function memoryPromote(runtime: SdRuntime, id: string): Promise<string> {
+  if (!id) return 'Usage: /memory promote <id>';
+  if (runtime.config.memory?.enabled === false) return 'Memory is disabled.';
+  if (runtime.config.memory?.authoring === false) return 'Memory authoring is disabled.';
+  const all = (await runtime.memory.read()).entries;
+  const entry = all.find((candidate) => candidate.id === id);
+  if (!entry) return `Memory not found: ${id}`;
+  if (!entry.tags?.includes('tentative')) {
+    return `${id} is not tentative — nothing to promote.`;
+  }
+  // Rewrite the whole MEMORY.md with the tentative tag stripped from this
+  // entry. We don't bother with a pinpoint patch because the file is
+  // typically <1MB and 'replace' is the only authoring action available
+  // through the abstract MemoryProvider interface.
+  const next = all.map((candidate) =>
+    candidate.id === id
+      ? { ...candidate, tags: candidate.tags?.filter((t) => t !== 'tentative') }
+      : candidate,
+  );
+  const manage = runtime.memory.manage;
+  if (!manage) return 'Memory provider does not support edits.';
+  const file = await renderMemoryFile(next);
+  const result = await manage.call(runtime.memory, { action: 'replace', content: file });
+  return result.success
+    ? `Promoted ${id} (removed 'tentative').`
+    : (result.error ?? 'Promote failed.');
+}
+
+function memoryForget(runtime: SdRuntime, id: string): string {
+  if (!id) return 'Usage: /memory forget <id>';
+  if (runtime.config.memory?.enabled === false) return 'Memory is disabled.';
+  if (runtime.config.memory?.authoring === false) return 'Memory authoring is disabled.';
+  const manage = runtime.memory.manage;
+  if (!manage) return 'Memory provider does not support edits.';
+  // The MemoryManageRequest interface requires `content` (it extends
+  // MemoryAppendRequest), but `delete` doesn't read it; pass the empty
+  // string to satisfy the type.
+  const out = manage.call(runtime.memory, { action: 'delete', id, content: '' });
+  // SdMemoryStore.manage is sync; other providers might be async. Either way
+  // the slash-command surface is sync-friendly.
+  if (out instanceof Promise) {
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
+    return 'Forget queued.';
+  }
+  return out.success ? (out.message ?? `Deleted ${id}.`) : (out.error ?? 'Forget failed.');
+}
+
+/**
+ * Re-render MEMORY.md from a list of parsed entries, preserving order.
+ * Used by /memory promote (and any future entry-mutation commands) since
+ * the abstract MemoryProvider exposes only `replace` for full-file edits.
+ */
+async function renderMemoryFile(
+  entries: Awaited<ReturnType<SdRuntime['memory']['read']>>['entries'],
+): Promise<string> {
+  const { formatMemoryMarkdownEntry } = await import('@snapdragon-ai/content');
+  return [
+    '# Snapdragon Memory',
+    '',
+    ...entries.map((entry) =>
+      formatMemoryMarkdownEntry(
+        {
+          title: entry.title,
+          content: entry.content,
+          tags: entry.tags,
+          source: entry.source,
+        },
+        { id: entry.id, createdAt: entry.createdAt ?? new Date().toISOString() },
+      ).trimEnd(),
+    ),
+    '',
+  ].join('\n');
 }
 
 async function rememberCommand(

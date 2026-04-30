@@ -194,7 +194,14 @@ export interface MemoryAutoCapturePolicy {
 
 export interface MemoryAutoCaptureDecision {
   capture: boolean;
+  /** Stable id of the trigger rule that fired (e.g. 'remember', 'prefer-over'). */
   trigger?: string;
+  /**
+   * Normalized note content extracted from `userInput`. Set only when
+   * `capture === true`. Callers should store this rather than the verbatim
+   * input so MEMORY.md doesn't accumulate full chat messages.
+   */
+  extracted?: string;
   reason?: string;
 }
 
@@ -225,17 +232,102 @@ export interface ExtensionDescriptor extends ExtensionManifest {
   enabled?: boolean;
 }
 
+/**
+ * Trigger ids enabled by default. Each id corresponds to an entry in
+ * `MEMORY_AUTO_CAPTURE_RULES` below — a strict pattern + extractor pair.
+ *
+ * The previous implementation matched these as plain substrings against
+ * the lowercased user input, which fired on incidental phrases ('we
+ * should eventually do X', 'I want to figure out Y') and stored the
+ * entire verbatim message as a "preference". The new rules are
+ * anchored, structurally specific, and produce a normalized extracted
+ * note instead of capturing the raw input.
+ */
 export const DEFAULT_MEMORY_CAPTURE_TRIGGERS = [
   'remember',
-  'from now on',
-  'always',
-  'never',
-  'prefer',
-  'preference',
-  'i want',
-  'we should',
-  'do not',
-  "don't",
+  'from-now-on',
+  'imperative-always',
+  'imperative-never',
+  'imperative-dont',
+  'prefer-over',
+];
+
+/** Reject auto-capture entirely above this length — discussion, not a preference. */
+const MEMORY_AUTO_CAPTURE_MAX_INPUT_CHARS = 600;
+/** Reject extraction if the extracted note exceeds this; usually means the regex over-grabbed. */
+const MEMORY_AUTO_CAPTURE_MAX_EXTRACT_CHARS = 240;
+
+/**
+ * Common idioms that start with one of the trigger words but are not
+ * preferences. ("never mind", "don't worry", "remember when…") If any
+ * pattern matches, the input is rejected before rule evaluation.
+ */
+const MEMORY_AUTO_CAPTURE_IDIOMS: readonly RegExp[] = [
+  /^\s*never mind\b/i,
+  /^\s*don'?t worry\b/i,
+  /^\s*don'?t (know|think|care|mention|see|get)\b/i,
+  /^\s*do not (know|think|care|mention|see|get)\b/i,
+  /^\s*remember (when|that time|me|us|how)\b/i,
+  /^\s*always glad\b/i,
+  /^\s*always welcome\b/i,
+];
+
+interface MemoryAutoCaptureRule {
+  readonly id: string;
+  match(text: string): { extracted: string } | undefined;
+}
+
+/**
+ * Built-in trigger rules. Each `match()` is anchored — typically to start
+ * of message — so casual mid-sentence uses don't fire. Each rule yields
+ * a normalized note via the `extracted` field; callers store that, not
+ * the raw input.
+ */
+export const MEMORY_AUTO_CAPTURE_RULES: readonly MemoryAutoCaptureRule[] = [
+  {
+    id: 'remember',
+    match(text) {
+      const m = /^\s*remember(?:\s+(?:that|to))?[:,]?\s+(.+?)\s*[.!?]?\s*$/is.exec(text);
+      return m ? { extracted: m[1].trim() } : undefined;
+    },
+  },
+  {
+    id: 'from-now-on',
+    match(text) {
+      const m = /^\s*from now on[,:]?\s+(.+?)\s*[.!?]?\s*$/is.exec(text);
+      return m ? { extracted: m[1].trim() } : undefined;
+    },
+  },
+  {
+    id: 'imperative-always',
+    match(text) {
+      // Anchored to start so "we should always X" (discussion) doesn't fire.
+      const m = /^\s*(?:please\s+)?always\s+(.+?)\s*[.!?]?\s*$/is.exec(text);
+      return m ? { extracted: `Always ${m[1].trim()}` } : undefined;
+    },
+  },
+  {
+    id: 'imperative-never',
+    match(text) {
+      const m = /^\s*(?:please\s+)?never\s+(.+?)\s*[.!?]?\s*$/is.exec(text);
+      return m ? { extracted: `Never ${m[1].trim()}` } : undefined;
+    },
+  },
+  {
+    id: 'imperative-dont',
+    match(text) {
+      const m = /^\s*(?:please\s+)?(?:don'?t|do not)\s+(.+?)\s*[.!?]?\s*$/is.exec(text);
+      return m ? { extracted: `Don't ${m[1].trim()}` } : undefined;
+    },
+  },
+  {
+    id: 'prefer-over',
+    match(text) {
+      // "I prefer X over Y" — structural, not just any 'prefer' substring.
+      const m = /\bI\s+prefer\s+(.+?)\s+over\s+(.+?)\s*(?:[.!?]|$)/is.exec(text);
+      return m ? { extracted: `Prefer ${m[1].trim()} over ${m[2].trim()}` } : undefined;
+    },
+  },
 ];
 
 export interface ParsedSkillMarkdown {
@@ -391,11 +483,36 @@ export function memoryShouldAutoCapture(
   policy: MemoryAutoCapturePolicy = {},
 ): MemoryAutoCaptureDecision {
   if (policy.enabled === false) return { capture: false, reason: 'disabled' };
-  const text = input.userInput.toLowerCase();
-  const triggers = policy.triggers?.length ? policy.triggers : DEFAULT_MEMORY_CAPTURE_TRIGGERS;
-  const trigger = triggers.find((candidate) => text.includes(candidate.toLowerCase()));
-  if (!trigger) return { capture: false, reason: 'no trigger matched' };
-  return { capture: true, trigger };
+  const text = input.userInput.trim();
+  if (!text) return { capture: false, reason: 'empty input' };
+  if (text.length > MEMORY_AUTO_CAPTURE_MAX_INPUT_CHARS) {
+    // Long messages are almost always discussion or troubleshooting context,
+    // not a preference. Capturing them pollutes the durable-memory channel
+    // with whole conversation turns.
+    return { capture: false, reason: 'input too long for auto capture' };
+  }
+  if (/\n\s*\n/.test(text)) {
+    // Multiple paragraphs: again, discussion. Real preferences are short.
+    return { capture: false, reason: 'input is multi-paragraph (likely discussion)' };
+  }
+  for (const idiom of MEMORY_AUTO_CAPTURE_IDIOMS) {
+    if (idiom.test(text)) {
+      return { capture: false, reason: 'matched idiom denylist' };
+    }
+  }
+  const enabledIds = new Set(
+    policy.triggers?.length ? policy.triggers : DEFAULT_MEMORY_CAPTURE_TRIGGERS,
+  );
+  for (const rule of MEMORY_AUTO_CAPTURE_RULES) {
+    if (!enabledIds.has(rule.id)) continue;
+    const matched = rule.match(text);
+    if (!matched) continue;
+    const extracted = matched.extracted.replace(/\s+/g, ' ').trim();
+    if (!extracted) continue;
+    if (extracted.length > MEMORY_AUTO_CAPTURE_MAX_EXTRACT_CHARS) continue;
+    return { capture: true, trigger: rule.id, extracted };
+  }
+  return { capture: false, reason: 'no trigger matched' };
 }
 
 export function formatMemoryMarkdownEntry(
