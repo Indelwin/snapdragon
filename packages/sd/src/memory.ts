@@ -253,15 +253,25 @@ export function maybeAutoCaptureMemory(args: {
   );
   if (!decision.capture)
     return { captured: false, trigger: decision.trigger, reason: decision.reason };
+  if (!decision.extracted) {
+    // Capture decision said yes but produced no extracted note — treat as
+    // a non-capture rather than store empty/garbage. (Should not happen
+    // with the built-in rules, but defensive against custom extractors.)
+    return { captured: false, trigger: decision.trigger, reason: 'no extracted note' };
+  }
   const content = formatAutoMemoryContent({
-    userInput,
-    assistantOutput: auto?.include_assistant ? args.response?.content : undefined,
+    extracted: decision.extracted,
+    trigger: decision.trigger ?? 'auto',
   });
   const appended = args.memory.append({
-    title: `Auto capture: ${decision.trigger}`,
-    content,
-    tags: ['auto', ...(args.tags ?? [])],
+    title: `Auto: ${truncateForTitle(decision.extracted)}`,
+    // `tentative` marks auto-captures so the agent (and the user) can tell
+    // them apart from /remember entries on read-back. /memory promote
+    // strips the tag once a capture is confirmed valuable; /memory forget
+    // deletes it.
+    tags: ['auto', 'tentative', decision.trigger ?? 'auto', ...(args.tags ?? [])],
     source: args.source ?? 'sd.auto',
+    content,
   });
   return Promise.resolve(appended).then(async (result) => {
     if (result.success) {
@@ -396,15 +406,21 @@ function textFromContent(content: MessageContent): string {
     .join('\n');
 }
 
-function formatAutoMemoryContent(input: { userInput: string; assistantOutput?: string }): string {
-  return [
-    'User supplied a stable preference, workflow note, or correction.',
-    '',
-    `User: ${input.userInput.trim()}`,
-    input.assistantOutput ? `Assistant: ${input.assistantOutput.trim()}` : undefined,
-  ]
-    .filter((line): line is string => typeof line === 'string')
-    .join('\n');
+/**
+ * Auto-capture content is just the extracted, normalized note — nothing
+ * else. The trigger is recorded as a tag, the source is on the entry
+ * itself, and "tentative" is set so the agent can downgrade-trust on
+ * read-back. Storing the verbatim user message (as the previous version
+ * did) made MEMORY.md a dump of conversation turns instead of a list of
+ * preferences.
+ */
+function formatAutoMemoryContent(input: { extracted: string; trigger: string }): string {
+  return input.extracted;
+}
+
+function truncateForTitle(value: string, max = 60): string {
+  const single = value.replace(/\s+/g, ' ').trim();
+  return single.length <= max ? single : `${single.slice(0, max - 1).trimEnd()}…`;
 }
 
 function oneLine(value: string): string {
