@@ -1,0 +1,13 @@
+{
+  "cycles": [
+    "packages/sd/src/agent-config.ts|packages/sd/src/config.ts",
+    "packages/sd/src/commands.ts|packages/sd/src/renderer.ts|packages/sd/src/repl.ts",
+    "packages/sd/src/memory-worker.ts|packages/sd/src/provider.ts|packages/sd/src/runtime-session.ts|packages/sd/src/runtime.ts|packages/sd/src/skill-builder.ts",
+    "packages/sd/src/session-title-provider.ts|packages/sd/src/session-title.ts",
+    "packages/sd/src/skills-index-sync.ts|packages/sd/src/skills-index.ts|packages/sd/src/skills-search.ts|packages/sd/src/skills.ts",
+    "packages/sd/src/status-format.ts|packages/sd/src/status.ts",
+    "packages/sd/src/tui/global-keymap.ts|packages/sd/src/tui/input-keymap.ts",
+    "packages/sd/src/tui/input-selection.ts|packages/sd/src/tui/model-selection.ts",
+    "packages/sd/src/tui/transcript-tool-rows.ts|packages/sd/src/tui/transcript-window.ts|packages/sd/src/tui/transcript-wrap.ts"
+  ]
+}

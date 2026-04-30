@@ -10,3 +10,4 @@ examples/*/dist
 npm-debug.log*
 trajectories.sqlite*
 mutants.out*/
+.quality/coverage/
