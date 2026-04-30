@@ -79,6 +79,12 @@ export interface SdSkillBuilderOptions {
   profile?: SdProfileInfo;
   /** When provided, the builder will use it to draft SKILL.md content from candidates. */
   chat?: SdBackgroundChat;
+  /**
+   * Existing skills' (id, description) — the drafter receives these as
+   * context so it can SKIP candidates that are near-duplicates of skills
+   * already in the catalog. When omitted, no similarity check is done.
+   */
+  existingSkills?: ReadonlyArray<{ id: string; description: string }>;
   log?: (line: string) => void;
 }
 
@@ -186,7 +192,13 @@ async function processCandidates(
       candidate.totalCount >= (cfg.min_pattern_count_for_draft ?? cfg.min_pattern_count ?? 3)
     ) {
       try {
-        draftPath = await draftCandidateSkill(candidate, options.chat, stateDir, cfg);
+        draftPath = await draftCandidateSkill(
+          candidate,
+          options.chat,
+          stateDir,
+          cfg,
+          options.existingSkills ?? [],
+        );
         if (draftPath) {
           drafted.add(hash);
           draftsWritten += 1;
@@ -234,11 +246,18 @@ export function skillBuilderService(): SdBackgroundService {
       return builderConfig(ctx.config).interval_ms ?? 30 * 60 * 1000;
     },
     async runOnce(ctx: SdBackgroundContext): Promise<SdBackgroundServiceResult> {
+      // Surface the existing skill catalog to the drafter so it can SKIP
+      // candidates that are near-duplicates of skills already present.
+      const existingSkills = ctx.skills?.list().map((skill) => ({
+        id: skill.id,
+        description: skill.description ?? '',
+      }));
       const result = await runSdSkillBuilderOnce({
         config: ctx.config,
         memory: ctx.memory,
         profile: ctx.profile,
         chat: ctx.chat,
+        existingSkills,
         log: ctx.log,
       });
       return {
