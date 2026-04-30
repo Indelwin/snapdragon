@@ -1,10 +1,12 @@
 #!/usr/bin/env node
 import { readFile } from 'node:fs/promises';
+import {
+  legacyCrapBaselinePath,
+  maintainabilityBaselinePath,
+  selectBaselineContent,
+} from './lib/baseline.mjs';
 import { resolveBaseRef, showFile } from './lib/git.mjs';
 import { worsenedMaintainability } from './lib/maintainability.mjs';
-
-const baselinePath = '.quality/maintainability-baseline.json';
-const fallbackPath = '.quality/crap-baseline.json';
 
 if (process.env.SNAPDRAGON_ALLOW_QUALITY_BASELINE_INCREASE === '1') {
   console.log('Maintainability baseline increase guard skipped by explicit env override.');
@@ -12,7 +14,14 @@ if (process.env.SNAPDRAGON_ALLOW_QUALITY_BASELINE_INCREASE === '1') {
 }
 
 const baseRef = await resolveBaseRef();
-const current = await readJsonFile(baselinePath);
+if (!baseRef) {
+  fail(
+    'Unable to resolve a git base ref for maintainability baseline comparison.',
+    'Fetch the base branch or set QUALITY_BASE_REF to an explicit commit/ref.',
+  );
+}
+
+const current = await readJsonFile(maintainabilityBaselinePath);
 const previous = await readBaseBaseline(baseRef);
 const increases = Object.entries(current).filter(([file, metrics]) =>
   worsenedMaintainability(metrics, previous[file]),
@@ -33,21 +42,28 @@ async function readJsonFile(file) {
 }
 
 async function readBaseBaseline(baseRef) {
-  if (!baseRef) return {};
-  const raw = (await showFile(baseRef, baselinePath)) ?? (await showFile(baseRef, fallbackPath));
-  return raw ? normalizeBaseline(JSON.parse(raw)) : {};
+  const selected = selectBaselineContent([
+    {
+      path: maintainabilityBaselinePath,
+      raw: await showFile(baseRef, maintainabilityBaselinePath),
+    },
+    {
+      path: legacyCrapBaselinePath,
+      raw: await showFile(baseRef, legacyCrapBaselinePath),
+    },
+  ]);
+  if (!selected) {
+    fail(
+      `Unable to read a maintainability baseline from base ref ${baseRef}.`,
+      `Checked ${maintainabilityBaselinePath} and ${legacyCrapBaselinePath}.`,
+      'Fetch the base branch or set QUALITY_BASE_REF to an explicit commit/ref.',
+    );
+  }
+  return selected.baseline;
 }
 
-function normalizeBaseline(input) {
-  return Object.fromEntries(
-    Object.entries(input).map(([file, metrics]) => [
-      file,
-      {
-        lines: metrics.lines,
-        complexity: metrics.complexity,
-        separationProxy: metrics.separationProxy ?? metrics.crapProxy,
-        maxFunctionLines: metrics.maxFunctionLines,
-      },
-    ]),
-  );
+function fail(...lines) {
+  for (const line of lines) console.error(line);
+  console.error('Prefer tests or refactor before changing baseline.');
+  process.exit(1);
 }
