@@ -32,6 +32,7 @@ import {
 } from './runtime-transitions.js';
 import { sessionCommandSummary } from './session-command-display.js';
 import { buildSkillInvocation, type SkillInvocation, skillForSlashCommand } from './skills.js';
+import { formatSdStatus, gatherSdStatus } from './status.js';
 
 export interface CommandResult {
   quit: boolean;
@@ -57,6 +58,7 @@ export const BUILTIN_SLASH_COMMANDS = [
   '/remember',
   '/extensions',
   '/reload',
+  '/status',
   '/skills',
   '/skill',
   '/tools',
@@ -123,6 +125,9 @@ export async function handleCommand(
   if (command === '/remember') return rememberCommand(arg, runtime, io, attachments);
   if (command === '/extensions') return extensionsCommand(arg, runtime, io, attachments);
   if (command === '/reload') return reloadCommand(arg, runtime, io, attachments, hooks);
+  if (command === '/status') {
+    return writeResult(io, formatSdStatus(gatherSdStatus(runtime)), attachments);
+  }
   if (command === '/skills') return writeResult(io, skillsSummary(runtime), attachments);
   if (command === '/skill') return skillCommand(line, arg, runtime, io, attachments);
   if (command === '/tools') return writeResult(io, toolsSummary(runtime), attachments);
@@ -447,6 +452,7 @@ function slashHelp(): string {
     '  /remember <note>       Append a durable memory note',
     '  /extensions [reload]   List or reload discovered extensions',
     '  /reload [pull|build|sync]  Hot-reload runtime (extensions, skills, profiles)',
+    '  /status                Show a one-screen dashboard of agent state',
     '  /skills               List skills',
     '  /skill <id> [task]    Run a skill for one request',
     '  /tools                List enabled tools',
