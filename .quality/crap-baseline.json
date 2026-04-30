@@ -234,9 +234,9 @@
     "maxFunctionLines": 15
   },
   "packages/sd/src/commands.ts": {
-    "lines": 733,
-    "complexity": 156,
-    "crapProxy": 24342,
+    "lines": 739,
+    "complexity": 157,
+    "crapProxy": 24655,
     "maxFunctionLines": 55
   },
   "packages/sd/src/config.ts": {
@@ -389,6 +389,18 @@
     "crapProxy": 15386,
     "maxFunctionLines": 35
   },
+  "packages/sd/src/status-format.ts": {
+    "lines": 118,
+    "complexity": 37,
+    "crapProxy": 1370,
+    "maxFunctionLines": 16
+  },
+  "packages/sd/src/status.ts": {
+    "lines": 175,
+    "complexity": 33,
+    "crapProxy": 1094,
+    "maxFunctionLines": 36
+  },
   "packages/sd/src/tui/commands.ts": {
     "lines": 46,
     "complexity": 9,
@@ -420,7 +432,7 @@
     "maxFunctionLines": 44
   },
   "packages/sd/src/tui/input-commands.ts": {
-    "lines": 312,
+    "lines": 313,
     "complexity": 64,
     "crapProxy": 4100,
     "maxFunctionLines": 83
