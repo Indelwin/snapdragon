@@ -30,6 +30,8 @@ import type { SdConfig } from './config.js';
 import type { SdExtensionSkillRoot } from './extension-runtime.js';
 import { ensureFirstPartySkills } from './first-party.js';
 import type { SdProfileInfo } from './profile.js';
+import { markSkillSearchIndexDirty } from './skills-index-state.js';
+import { searchSkills, toSkillDescriptor } from './skills-search.js';
 
 export const DEFAULT_SD_SKILL_ROOT = resolve(homedir(), '.snapdragon/sd/skills');
 export const SKILL_FILE = 'SKILL.md';
@@ -54,7 +56,7 @@ export interface SkillInvocation {
   meta: Record<string, unknown>;
 }
 
-interface IndexedSkill extends SkillDescriptor {
+export interface IndexedSkill extends SkillDescriptor {
   frontmatter: LoadedSkill['frontmatter'];
   body: string;
   raw: string;
@@ -86,21 +88,15 @@ export class SdSkillStore implements SkillCatalog {
     this.#skills = [...byId.values()]
       .filter((skill) => this.#filter(skill))
       .sort((a, b) => a.id.localeCompare(b.id));
+    markSkillSearchIndexDirty(this);
   }
 
   list(): SkillDescriptor[] {
-    return this.#skills.map(toDescriptor);
+    return this.#skills.map(toSkillDescriptor);
   }
 
   search(query: string, limit = 10): SkillDescriptor[] {
-    const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    if (words.length === 0) return this.list().slice(0, limit);
-    return this.#skills
-      .map((skill) => ({ skill, score: scoreSkill(skill, words) }))
-      .filter((entry) => entry.score > 0)
-      .sort((a, b) => b.score - a.score || a.skill.id.localeCompare(b.skill.id))
-      .slice(0, limit)
-      .map((entry) => toDescriptor(entry.skill));
+    return searchSkills(this, this.#skills, query, limit);
   }
 
   load(target: string): LoadedSkill | undefined {
@@ -419,38 +415,6 @@ function listFiles(dir: string): string[] {
     else if (entry.isFile()) out.push(full);
   }
   return out.sort();
-}
-
-function toDescriptor(skill: IndexedSkill): SkillDescriptor {
-  return {
-    id: skill.id,
-    name: skill.name,
-    description: skill.description,
-    command: skill.command,
-    aliases: skill.aliases,
-    category: skill.category,
-    tags: skill.tags,
-    source: skill.source,
-    sourceRoot: skill.sourceRoot,
-    writable: skill.writable,
-    path: skill.path,
-    dir: skill.dir,
-  };
-}
-
-function scoreSkill(skill: IndexedSkill, words: string[]): number {
-  const haystack = [
-    skill.id,
-    skill.name,
-    skill.description,
-    skill.category,
-    skill.command,
-    ...skill.aliases,
-    ...skill.tags,
-  ]
-    .join(' ')
-    .toLowerCase();
-  return words.reduce((score, word) => score + (haystack.includes(word) ? 1 : 0), 0);
 }
 
 function safeSkillDir(root: string, id: string): string {

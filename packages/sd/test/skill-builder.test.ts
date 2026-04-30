@@ -269,8 +269,10 @@ test('skill-builder drafts a SKILL.md when chat is provided', async () => {
 
     const drafts = listSkillDrafts(fx.config, undefined);
     assert.equal(drafts.length, 1);
-    assert.equal(drafts[0]?.id, 'search-and-replace');
-    const skillContent = await readFile(drafts[0]!.skillPath, 'utf8');
+    const [draft] = drafts;
+    assert.ok(draft);
+    assert.equal(draft.id, 'search-and-replace');
+    const skillContent = await readFile(draft.skillPath, 'utf8');
     assert.match(skillContent, /name: search-and-replace/);
     assert.match(skillContent, /Find symbol references/);
 

@@ -20,6 +20,7 @@ export interface CodexProviderOptions {
   baseUrl?: string;
   reasoningEffort?: 'low' | 'medium' | 'high';
   promptCacheKey?: string;
+  /** Codex rejects max_output_tokens; kept for source compatibility and ignored. */
   defaultMaxTokens?: number;
   fetch?: FetchLike;
 }
@@ -63,12 +64,10 @@ export function codexProvider(options: CodexProviderOptions): StreamingChatHandl
 }
 
 function patchCodexBody(body: Record<string, unknown>, options: CodexProviderOptions): void {
+  delete body.max_output_tokens;
   body.text = { verbosity: 'medium' };
   body.include = ['reasoning.encrypted_content'];
   body.parallel_tool_calls = true;
-  if (options.defaultMaxTokens && body.max_output_tokens === undefined) {
-    body.max_output_tokens = options.defaultMaxTokens;
-  }
   if (options.promptCacheKey) body.prompt_cache_key = options.promptCacheKey;
   if (!body.reasoning && options.reasoningEffort) {
     body.reasoning = { effort: options.reasoningEffort, summary: 'auto' };
