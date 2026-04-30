@@ -68,6 +68,12 @@ export interface SdSkillBuilderConfig {
   min_pattern_count?: number;
   /** Minimum number of distinct sessions in which a pattern must appear. Default: 2. */
   min_distinct_sessions?: number;
+  /** Minimum total count required before LLM-drafting a SKILL.md. Default: same as min_pattern_count. */
+  min_pattern_count_for_draft?: number;
+  /** Cap LLM-drafted SKILL.md outputs per scan pass. Default: 1. */
+  max_drafts_per_pass?: number;
+  /** max_tokens for the drafter LLM call. Default: 800. */
+  draft_max_tokens?: number;
 }
 
 export interface SdMemoryAutoConfig {

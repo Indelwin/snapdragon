@@ -6,31 +6,30 @@
  * them as candidates the agent (and user) can decide whether to promote
  * to a real skill.
  *
- * Phase-1 scope (this file):
- *   - Sweep the last N session JSONLs.
- *   - Extract ordered tool_call name sequences from assistant turns.
- *   - Compute n-grams (length 2 and 3) and count occurrences across
- *     distinct sessions.
- *   - For each candidate above the threshold (count and distinct-session
- *     count), append a `tentative` + `skill-candidate` memory entry —
- *     so it flows through the existing memory-injection path the agent
- *     already reads on every turn. No LLM call, no separate UI surface.
- *   - Persist watermarks + candidate hashes in the skill root's
- *     `.drafts/.worker-state.json` so reruns are idempotent.
+ * Two outputs:
+ *   1. `skill-candidate` memory entries — flow through the existing
+ *      memory-injection pipe so the agent sees recurring workflows in
+ *      its context. (Original Phase-1 behaviour.)
+ *   2. `<skill_root>/.drafts/<slug>/SKILL.md` drafts produced via a
+ *      one-shot LLM call when `ctx.chat` is available — the AGENT can
+ *      then `/skills accept <id>` to promote, just like Hermes' skill
+ *      authoring flow but kicked off proactively. The memory note is
+ *      upgraded from `tentative`/`skill-candidate` to
+ *      `skill-draft-ready` and includes the draft path so the agent
+ *      knows the proposal exists.
  *
- * Phase-2 (deferred): take the candidates, draft a SKILL.md via an LLM
- * call, write to `<skill_root>/.drafts/<id>/SKILL.md`, and add /skills
- * accept|reject commands. The detection in this file is the input
- * signal that step needs.
+ * Detection logic lives in `skill-builder-detect.ts`; LLM drafting +
+ * draft I/O live in `skill-builder-draft.ts`. This file is the
+ * orchestrator + the SdBackgroundService factory.
  *
- * Enabled by default — the user explicitly asked for this to be
- * dogfooded the same way the memory worker is.
+ * Enabled by default — explicitly dogfooded posture.
  */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { readRecords, type SessionMessageRecord } from '@snapdragon-ai/session';
 import type {
+  SdBackgroundChat,
   SdBackgroundContext,
   SdBackgroundService,
   SdBackgroundServiceResult,
@@ -39,7 +38,22 @@ import type { SdConfig, SdSkillBuilderConfig } from './config.js';
 import type { SdMemoryProvider } from './memory.js';
 import type { SdProfileInfo } from './profile.js';
 import { runtimeSessionStore } from './runtime-session.js';
-import { resolveSdSkillRoots } from './skills.js';
+import {
+  createNgramStats,
+  ingestSessionIntoStats,
+  rankCandidates,
+  type SdSkillPattern,
+} from './skill-builder-detect.js';
+import { draftCandidateSkill, resolveDraftsDir } from './skill-builder-draft.js';
+
+export type { CandidateExample, SdSkillPattern } from './skill-builder-detect.js';
+export {
+  acceptSkillDraft,
+  listSkillDrafts,
+  readSkillDraft,
+  rejectSkillDraft,
+  type SdSkillDraft,
+} from './skill-builder-draft.js';
 
 interface BuilderState {
   version: 1;
@@ -47,12 +61,15 @@ interface BuilderState {
   sessions: Record<string, { last_processed_at: number }>;
   /** Hashes of candidates already surfaced — never re-emit the same one. */
   emitted: string[];
+  /** Hashes of candidates already turned into a draft SKILL.md. */
+  drafted?: string[];
 }
 
 export interface SdSkillBuilderScanResult {
   scanned_sessions: number;
   patterns_found: number;
   candidates_emitted: number;
+  drafts_written: number;
   errors: string[];
 }
 
@@ -60,24 +77,12 @@ export interface SdSkillBuilderOptions {
   config: SdConfig;
   memory: SdMemoryProvider;
   profile?: SdProfileInfo;
+  /** When provided, the builder will use it to draft SKILL.md content from candidates. */
+  chat?: SdBackgroundChat;
   log?: (line: string) => void;
 }
 
 const STATE_FILENAME = '.worker-state.json';
-const DRAFTS_DIRNAME = '.drafts';
-
-/**
- * Detected pattern: an n-gram of tool names with the sessions/runs it
- * appeared in. Exposed for tests.
- */
-export interface SdSkillPattern {
-  /** Stable id derived from the n-gram (e.g. 'read_file→write_file'). */
-  id: string;
-  ngram: string[];
-  totalCount: number;
-  distinctSessions: number;
-  exampleSessions: string[];
-}
 
 /** One pass of the skill-builder. Pure with respect to wall-clock. */
 export async function runSdSkillBuilderOnce(
@@ -87,6 +92,7 @@ export async function runSdSkillBuilderOnce(
     scanned_sessions: 0,
     patterns_found: 0,
     candidates_emitted: 0,
+    drafts_written: 0,
     errors: [],
   };
   const cfg = builderConfig(options.config);
@@ -97,16 +103,32 @@ export async function runSdSkillBuilderOnce(
   const statePath = join(stateDir, STATE_FILENAME);
   const state = readState(statePath);
 
+  const stats = scanSessionsForNgrams(options.config, state, result, cfg);
+  const candidates = rankCandidates(stats, cfg);
+  result.patterns_found = candidates.length;
+
+  await processCandidates(candidates, state, options, stateDir, cfg, result);
+
+  writeState(statePath, state);
+  return result;
+}
+
+/**
+ * Sweep recent session JSONLs and accumulate n-gram stats. Updates the
+ * watermark in-place so the next run skips already-scanned tails.
+ */
+function scanSessionsForNgrams(
+  config: SdConfig,
+  state: BuilderState,
+  result: SdSkillBuilderScanResult,
+  cfg: SdSkillBuilderConfig,
+) {
   const lookback = cfg.lookback_sessions ?? 10;
-  const sessions = runtimeSessionStore(options.config).list().slice(0, lookback);
-
-  // toolNgram → { count, sessions: Set<string> }
-  const ngramStats = new Map<string, { ngram: string[]; count: number; sessions: Set<string> }>();
-
+  const sessions = runtimeSessionStore(config).list().slice(0, lookback);
+  const stats = createNgramStats();
   for (const session of sessions) {
     result.scanned_sessions += 1;
     const watermark = state.sessions[session.session_id]?.last_processed_at ?? 0;
-    let highest = watermark;
     let records: SessionMessageRecord[] = [];
     try {
       records = readRecords(session.jsonl_path).filter(
@@ -118,43 +140,79 @@ export async function runSdSkillBuilderOnce(
       );
       continue;
     }
-
     const newRecords = records.filter((record) => record.created_at > watermark);
-    for (const record of newRecords) {
-      if (record.created_at > highest) highest = record.created_at;
-    }
     if (newRecords.length === 0) continue;
-
-    // Tool names in chronological order from THIS session's assistant turns.
-    // We use the FULL session (not just newRecords) so patterns aren't broken
-    // across watermark boundaries — the watermark tracks "have we processed
-    // this session's tail yet" not "which prefix to look at".
-    const toolSequence = collectToolSequence(records);
-    addNgramsToStats(toolSequence, session.session_id, ngramStats);
-
+    // Use the FULL session for n-gram stats (not just newRecords) so
+    // patterns aren't broken across watermark boundaries.
+    ingestSessionIntoStats(records, session.session_id, stats);
+    const highest = newRecords.reduce(
+      (max, r) => (r.created_at > max ? r.created_at : max),
+      watermark,
+    );
     if (highest > watermark) {
       state.sessions[session.session_id] = { last_processed_at: highest };
     }
   }
+  return stats;
+}
 
-  const candidates = filterCandidates(ngramStats, cfg);
-  result.patterns_found = candidates.length;
+/**
+ * For each candidate above thresholds: optionally draft a SKILL.md (when
+ * `ctx.chat` is available and we're under the per-pass cap), then emit a
+ * memory note pointing at the draft (or just the candidate itself).
+ */
+async function processCandidates(
+  candidates: SdSkillPattern[],
+  state: BuilderState,
+  options: SdSkillBuilderOptions,
+  stateDir: string,
+  cfg: SdSkillBuilderConfig,
+  result: SdSkillBuilderScanResult,
+): Promise<void> {
+  let draftsWritten = 0;
+  const maxDrafts = cfg.max_drafts_per_pass ?? 1;
+  const drafted = new Set(state.drafted ?? []);
 
   for (const candidate of candidates) {
     const hash = candidateHash(candidate);
-    if (state.emitted.includes(hash)) continue;
+    const alreadyEmitted = state.emitted.includes(hash);
+    const alreadyDrafted = drafted.has(hash);
+
+    let draftPath: string | undefined;
+    if (
+      !alreadyDrafted &&
+      draftsWritten < maxDrafts &&
+      options.chat &&
+      candidate.totalCount >= (cfg.min_pattern_count_for_draft ?? cfg.min_pattern_count ?? 3)
+    ) {
+      try {
+        draftPath = await draftCandidateSkill(candidate, options.chat, stateDir, cfg);
+        if (draftPath) {
+          drafted.add(hash);
+          draftsWritten += 1;
+          result.drafts_written += 1;
+          options.log?.(`[skill-builder] drafted skill: ${draftPath}`);
+        }
+      } catch (error) {
+        result.errors.push(
+          `draft failed for ${candidate.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    }
+
+    if (alreadyEmitted && !draftPath) continue;
     try {
-      await emitCandidateMemory(candidate, options.memory);
-      state.emitted.push(hash);
-      result.candidates_emitted += 1;
-      options.log?.(`[skill-builder] surfaced candidate: ${candidate.id}`);
+      await emitCandidateMemory(candidate, options.memory, draftPath);
+      if (!alreadyEmitted) {
+        state.emitted.push(hash);
+        result.candidates_emitted += 1;
+        options.log?.(`[skill-builder] surfaced candidate: ${candidate.id}`);
+      }
     } catch (error) {
       result.errors.push(error instanceof Error ? error.message : String(error));
     }
   }
-
-  writeState(statePath, state);
-  return result;
+  state.drafted = [...drafted];
 }
 
 /**
@@ -166,8 +224,6 @@ export function skillBuilderService(): SdBackgroundService {
   return {
     name: 'skill-builder',
     enabled(ctx: SdBackgroundContext) {
-      // Default-on dogfooding posture: only disabled when the user
-      // explicitly says so. Memory still has to be usable for capture.
       const cfg = builderConfig(ctx.config);
       if (cfg.enabled === false) return false;
       if (ctx.config.memory?.enabled === false) return false;
@@ -182,17 +238,16 @@ export function skillBuilderService(): SdBackgroundService {
         config: ctx.config,
         memory: ctx.memory,
         profile: ctx.profile,
+        chat: ctx.chat,
         log: ctx.log,
       });
       return {
-        summary:
-          result.candidates_emitted > 0
-            ? `surfaced ${result.candidates_emitted} candidate(s) across ${result.scanned_sessions} session(s)`
-            : `scanned ${result.scanned_sessions}, ${result.patterns_found} pattern(s) (${result.candidates_emitted} new)`,
+        summary: summarizeResult(result),
         metrics: {
           scanned_sessions: result.scanned_sessions,
           patterns_found: result.patterns_found,
           candidates_emitted: result.candidates_emitted,
+          drafts_written: result.drafts_written,
           errors: result.errors.length,
         },
       };
@@ -200,99 +255,57 @@ export function skillBuilderService(): SdBackgroundService {
   };
 }
 
-/**
- * Pull the ordered list of tool names from assistant turns in a session.
- * Multiple tools in a single assistant turn are emitted in their declared
- * order; tool_results don't contribute (they don't represent decisions).
- */
-function collectToolSequence(records: SessionMessageRecord[]): string[] {
-  const out: string[] = [];
-  for (const record of records) {
-    if (record.role !== 'assistant') continue;
-    const calls = record.tool_calls;
-    if (!calls) continue;
-    for (const call of calls) if (call?.name) out.push(call.name);
+function summarizeResult(result: SdSkillBuilderScanResult): string {
+  if (result.drafts_written > 0) {
+    return `drafted ${result.drafts_written} skill(s); surfaced ${result.candidates_emitted} candidate(s)`;
   }
-  return out;
-}
-
-function addNgramsToStats(
-  sequence: string[],
-  sessionId: string,
-  stats: Map<string, { ngram: string[]; count: number; sessions: Set<string> }>,
-): void {
-  // n=2 and n=3 — long enough to be a recognizable workflow, short enough
-  // that legitimate variations of a workflow share the same n-gram.
-  for (const n of [2, 3] as const) {
-    if (sequence.length < n) continue;
-    for (let i = 0; i <= sequence.length - n; i += 1) {
-      const ngram = sequence.slice(i, i + n);
-      if (!isInterestingNgram(ngram)) continue;
-      const id = ngram.join('→');
-      const entry = stats.get(id) ?? { ngram, count: 0, sessions: new Set<string>() };
-      entry.count += 1;
-      entry.sessions.add(sessionId);
-      stats.set(id, entry);
-    }
+  if (result.candidates_emitted > 0) {
+    return `surfaced ${result.candidates_emitted} candidate(s) across ${result.scanned_sessions} session(s)`;
   }
-}
-
-/**
- * Reject "interesting"-but-actually-noise n-grams: a pair of identical
- * tool names is just "I called X twice" (e.g. read multiple files).
- * Trigrams of three-of-a-kind are similarly uninteresting. We require at
- * least two distinct tools so the n-gram captures a transition.
- */
-function isInterestingNgram(ngram: string[]): boolean {
-  return new Set(ngram).size >= 2;
-}
-
-function filterCandidates(
-  stats: Map<string, { ngram: string[]; count: number; sessions: Set<string> }>,
-  cfg: SdSkillBuilderConfig,
-): SdSkillPattern[] {
-  const minCount = cfg.min_pattern_count ?? 3;
-  const minDistinct = cfg.min_distinct_sessions ?? 2;
-  return (
-    [...stats.entries()]
-      .filter(([, entry]) => entry.count >= minCount && entry.sessions.size >= minDistinct)
-      .map(([id, entry]) => ({
-        id,
-        ngram: entry.ngram,
-        totalCount: entry.count,
-        distinctSessions: entry.sessions.size,
-        exampleSessions: [...entry.sessions].slice(0, 3),
-      }))
-      // Most frequent first; ties broken by longer n-gram (more specific).
-      .sort((a, b) => b.totalCount - a.totalCount || b.ngram.length - a.ngram.length)
-  );
+  return `scanned ${result.scanned_sessions}, ${result.patterns_found} pattern(s) (${result.candidates_emitted} new)`;
 }
 
 async function emitCandidateMemory(
   candidate: SdSkillPattern,
   memory: SdMemoryProvider,
+  draftPath?: string,
 ): Promise<void> {
-  const content = formatCandidateContent(candidate);
+  const content = formatCandidateContent(candidate, draftPath);
+  const tags = draftPath
+    ? ['auto', 'skill-draft-ready', 'worker']
+    : ['auto', 'tentative', 'skill-candidate', 'worker'];
   const result = await Promise.resolve(
     memory.append({
-      title: `Skill candidate: ${candidate.id}`,
+      title: draftPath ? `Skill draft ready: ${candidate.id}` : `Skill candidate: ${candidate.id}`,
       content,
-      tags: ['auto', 'tentative', 'skill-candidate', 'worker'],
+      tags,
       source: 'sd.skill-builder',
     }),
   );
   if (!result.success) throw new Error(result.error ?? 'append failed');
 }
 
-function formatCandidateContent(candidate: SdSkillPattern): string {
-  return [
+function formatCandidateContent(candidate: SdSkillPattern, draftPath?: string): string {
+  const lines = [
     `Recurring tool sequence detected: ${candidate.ngram.join(' → ')}`,
     `Seen ${candidate.totalCount}× across ${candidate.distinctSessions} distinct session(s).`,
     `Example sessions: ${candidate.exampleSessions.join(', ')}.`,
-    '',
-    'If this represents a real workflow, consider authoring a skill for it',
-    'or use /memory promote to keep this note. /memory forget removes it.',
-  ].join('\n');
+  ];
+  if (draftPath) {
+    lines.push(
+      '',
+      `A SKILL.md draft has been written to ${draftPath}.`,
+      'Use /skills accept <id> to promote it into the active catalog,',
+      '/skills draft <id> to view, or /skills reject <id> to delete.',
+    );
+  } else {
+    lines.push(
+      '',
+      'If this represents a real workflow, consider authoring a skill for it',
+      'or use /memory promote to keep this note. /memory forget removes it.',
+    );
+  }
+  return lines.join('\n');
 }
 
 function candidateHash(candidate: SdSkillPattern): string {
@@ -308,18 +321,6 @@ function builderConfig(config: SdConfig): SdSkillBuilderConfig {
   return config.skills?.builder ?? {};
 }
 
-function resolveDraftsDir(config: SdConfig, profile?: SdProfileInfo): string | undefined {
-  // Use the FIRST writable skill root as the drafts location. The walk
-  // logic in skills.ts already excludes `.`-prefixed directories, so
-  // `.drafts/` is invisible to skill discovery.
-  const roots = resolveSdSkillRoots(config, profile);
-  const writable = roots.find((root) => root.writable);
-  if (!writable) return undefined;
-  const dir = join(writable.root, DRAFTS_DIRNAME);
-  mkdirSync(dir, { recursive: true });
-  return dir;
-}
-
 function readState(path: string): BuilderState {
   if (!existsSync(path)) return { version: 1, sessions: {}, emitted: [] };
   try {
@@ -328,7 +329,7 @@ function readState(path: string): BuilderState {
       return parsed;
     }
   } catch {
-    // fall through
+    /* fall through */
   }
   return { version: 1, sessions: {}, emitted: [] };
 }

@@ -14,15 +14,30 @@
  *   - a `flush()` for tests and clean shutdown.
  */
 
+import type { Message } from '@snapdragon-ai/host';
 import type { SdConfig } from './config.js';
 import type { SdMemoryProvider } from './memory.js';
 import type { SdProfileInfo } from './profile.js';
+
+/**
+ * One-shot completion call available to background services that need an LLM
+ * (e.g. skill-builder drafting a SKILL.md from a recurring tool sequence).
+ * Deliberately narrower than the full StreamingChatHandler — services just
+ * need a string back. Implementations should be cheap-by-default and
+ * low-priority; a missing implementation must be tolerated.
+ */
+export type SdBackgroundChat = (
+  messages: Message[],
+  options?: { max_tokens?: number; signal?: AbortSignal },
+) => Promise<{ content: string }>;
 
 /** Context handed to a service on every tick. Kept narrow on purpose. */
 export interface SdBackgroundContext {
   config: SdConfig;
   memory: SdMemoryProvider;
   profile?: SdProfileInfo;
+  /** Optional one-shot LLM completion; absent on runtimes without a provider. */
+  chat?: SdBackgroundChat;
   /** Stable wall-clock for tests; default is `Date.now()`. */
   now: () => number;
   /** Optional logger; default is no-op. */
@@ -77,6 +92,8 @@ export interface SdBackgroundServicesOptions {
   config: SdConfig;
   memory: SdMemoryProvider;
   profile?: SdProfileInfo;
+  /** Optional LLM completion handle, plumbed into each service's context. */
+  chat?: SdBackgroundChat;
   /** Disable every service regardless of per-service config. */
   disableAll?: boolean;
   /** Disable a specific subset by name. */
@@ -106,6 +123,7 @@ function buildServiceState(
     config: options.config,
     memory: options.memory,
     profile: options.profile,
+    chat: options.chat,
     now,
     log: (line) => log(`[bg:${service.name}] ${line}`),
   };
