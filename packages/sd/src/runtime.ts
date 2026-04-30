@@ -12,15 +12,16 @@ import { loadSdConfig, loadSdEnvironment, type SdConfig } from './config.js';
 import { activateSdExtensions, type SdExtensionRuntime } from './extension-runtime.js';
 import { createSdExtensionStore, type SdExtensionStore } from './extensions.js';
 import { ensureFirstPartyExtensionsForConfig, ensureFirstPartyProfile } from './first-party.js';
-import { createSdMemoryStore, type SdMemoryProvider } from './memory.js';
+import type { SdMemoryProvider } from './memory.js';
 import { memoryWorkerService } from './memory-worker.js';
 import { type SdProfileInfo, SdProfileStore } from './profile.js';
 import { resolveSdRuntimeConfig } from './profile-runtime.js';
 import { makeSdProvider, type SdProviderRuntime } from './provider.js';
 import { normalizeRuntimeOptions, type SdRuntimeOptions } from './runtime-options.js';
 import { createRuntimeSession, sessionRoot } from './runtime-session.js';
+import { createIndexedRuntimeStores } from './runtime-stores.js';
 import { skillBuilderService } from './skill-builder.js';
-import { createSdSkillStore, type SdSkillStore } from './skills.js';
+import type { SdSkillStore } from './skills.js';
 
 export interface SdRuntime {
   agent: SnapdragonAgent;
@@ -70,8 +71,7 @@ export async function createSdRuntime(
   });
   const provider = makeSdProvider(config, {}, env, extensionRuntime.providers);
   const session = createRuntimeSession(options, config, provider);
-  const skills = createSdSkillStore(config, profile, extensionRuntime.skillRoots);
-  const memory = createSdMemoryStore(config, profile, extensionRuntime.memoryProviders);
+  const { skills, memory } = createIndexedRuntimeStores(config, profile, extensionRuntime);
   const background = startSdBackgroundServices(defaultSdBackgroundServices(), {
     config,
     memory,

@@ -1,6 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { join, resolve } from 'node:path';
 import {
   formatMemoryMarkdownEntry,
   type MemoryAppendRequest,
@@ -19,6 +17,13 @@ import {
 import type { LlmChatResponse, MessageContent } from '@snapdragon-ai/host';
 import type { SdConfig } from './config.js';
 import { DEFAULT_SD_MEMORY_ROOT } from './config.js';
+import {
+  appendRawMemory,
+  atomicWriteMemory,
+  normalizeMemoryFile,
+  readRawMemory,
+} from './memory-file.js';
+import { searchMemoryIndex } from './memory-index.js';
 import type { SdProfileInfo } from './profile.js';
 
 export const DEFAULT_SD_MEMORY_FILE = 'MEMORY.md';
@@ -48,7 +53,7 @@ export class SdMemoryStore implements MemoryProvider {
     this.enabled = options.enabled ?? true;
     this.authoring = options.authoring ?? true;
     this.maxEntryChars = options.maxEntryChars;
-    if (this.enabled) ensureMemoryFile(this.path);
+    if (this.enabled) readRawMemory(this.path);
   }
 
   info(): MemoryProviderInfo {
@@ -63,7 +68,7 @@ export class SdMemoryStore implements MemoryProvider {
 
   read(request: MemoryReadRequest = {}): MemoryReadResult {
     if (!this.enabled) return { entries: [] };
-    const raw = readRaw(this.path);
+    const raw = readRawMemory(this.path);
     const entries = parseMemoryEntries(raw);
     const selected = request.id
       ? entries.filter((entry) => entry.id === request.id)
@@ -73,13 +78,15 @@ export class SdMemoryStore implements MemoryProvider {
 
   search(request: MemorySearchRequest): MemorySearchResult[] {
     if (!this.enabled) return [];
+    const indexed = searchMemoryIndex(this, request);
+    if (indexed) return indexed;
     const words = request.query
       .toLowerCase()
       .split(/\s+/)
       .map((word) => word.trim())
       .filter(Boolean);
     if (words.length === 0) return this.read({ limit: request.limit }).entries;
-    return parseMemoryEntries(readRaw(this.path))
+    return parseMemoryEntries(readRawMemory(this.path))
       .map((entry) => ({ ...entry, score: scoreMemory(entry, words) }))
       .filter((entry) => (entry.score ?? 0) > 0)
       .sort((a, b) => (b.score ?? 0) - (a.score ?? 0) || b.id.localeCompare(a.id))
@@ -97,7 +104,7 @@ export class SdMemoryStore implements MemoryProvider {
       createdAt,
       maxEntryChars: this.maxEntryChars,
     });
-    appendRaw(this.path, entry);
+    appendRawMemory(this.path, entry);
     return {
       success: true,
       action: 'append',
@@ -139,10 +146,10 @@ export class SdMemoryStore implements MemoryProvider {
 
   #patch(request: MemoryManageRequest): MemoryManageResult {
     const oldString = requiredString(request.old_string, 'old_string');
-    const raw = readRaw(this.path);
+    const raw = readRawMemory(this.path);
     if (!raw.includes(oldString)) throw new Error('old_string not found.');
     const next = raw.replace(oldString, request.new_string ?? '');
-    atomicWrite(this.path, next);
+    atomicWriteMemory(this.path, next);
     return {
       success: true,
       action: 'patch',
@@ -153,7 +160,7 @@ export class SdMemoryStore implements MemoryProvider {
   }
 
   #replace(request: MemoryManageRequest): MemoryManageResult {
-    atomicWrite(this.path, normalizeMemoryFile(request.content ?? ''));
+    atomicWriteMemory(this.path, normalizeMemoryFile(request.content ?? ''));
     return {
       success: true,
       action: 'replace',
@@ -165,12 +172,12 @@ export class SdMemoryStore implements MemoryProvider {
 
   #delete(request: MemoryManageRequest): MemoryManageResult {
     const id = requiredString(request.id, 'id');
-    const raw = readRaw(this.path);
+    const raw = readRawMemory(this.path);
     const entries = parseMemoryEntries(raw);
     const kept = entries.filter((entry) => entry.id !== id);
     if (kept.length === entries.length) throw new Error(`Memory not found: ${id}`);
     const next = ['# Snapdragon Memory', '', ...kept.map(formatParsedEntry)].join('\n');
-    atomicWrite(this.path, normalizeMemoryFile(next));
+    atomicWriteMemory(this.path, normalizeMemoryFile(next));
     return { success: true, action: 'delete', id, path: this.path, message: `Deleted ${id}.` };
   }
 }
@@ -308,29 +315,6 @@ async function memoryContextForPrompt(
   ].join('\n');
 }
 
-function ensureMemoryFile(path: string): void {
-  if (existsSync(path)) return;
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(
-    path,
-    ['# Snapdragon Memory', '', 'Durable notes captured by sd and explicit memory tools.', ''].join(
-      '\n',
-    ),
-    'utf8',
-  );
-}
-
-function readRaw(path: string): string {
-  ensureMemoryFile(path);
-  return readFileSync(path, 'utf8');
-}
-
-function appendRaw(path: string, entry: string): void {
-  ensureMemoryFile(path);
-  const raw = readRaw(path);
-  atomicWrite(path, normalizeMemoryFile(`${raw.trimEnd()}\n\n${entry}`));
-}
-
 function parseMemoryEntries(raw: string): MemoryEntry[] {
   const sections = raw.split(/\n(?=##\s+)/g).filter((section) => section.startsWith('## '));
   return sections.map(parseMemoryEntry).filter((entry): entry is MemoryEntry => Boolean(entry));
@@ -430,18 +414,4 @@ function oneLine(value: string): string {
 function requiredString(value: string | undefined, name: string): string {
   if (typeof value !== 'string' || value.length === 0) throw new Error(`${name} is required.`);
   return value;
-}
-
-function atomicWrite(path: string, content: string): void {
-  mkdirSync(dirname(path), { recursive: true });
-  const tempDir = join(tmpdir(), `snapdragon-memory-${Date.now()}-${Math.random().toString(36)}`);
-  mkdirSync(tempDir, { recursive: true });
-  const temp = join(tempDir, 'write.tmp');
-  writeFileSync(temp, content, 'utf8');
-  renameSync(temp, path);
-  rmSync(tempDir, { recursive: true, force: true });
-}
-
-function normalizeMemoryFile(content: string): string {
-  return content.endsWith('\n') ? content : `${content}\n`;
 }

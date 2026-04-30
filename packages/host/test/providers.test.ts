@@ -244,6 +244,7 @@ test('Codex provider streams text, reasoning, tool calls, and usage', async () =
   const provider = codexProvider({
     model: 'gpt-test',
     auth: { accessToken: 'test-token', accountId: 'acct_1' },
+    defaultMaxTokens: 2048,
     fetch: async (_url, init) => {
       seen.push(JSON.parse(String(init?.body)));
       return new Response(
@@ -270,11 +271,12 @@ test('Codex provider streams text, reasoning, tool calls, and usage', async () =
   });
 
   const response = await provider(
-    { role: 'assistant', messages: [{ role: 'user', content: 'hi' }] },
+    { role: 'assistant', messages: [{ role: 'user', content: 'hi' }], max_tokens: 1024 },
     { runId: 'run_1', emit: () => undefined },
   );
 
   assert.equal(seen.length, 1);
+  assert.equal('max_output_tokens' in (seen[0] as Record<string, unknown>), false);
   assert.equal(response.content, 'hello');
   assert.equal(response.tokens_in, 1);
   assert.deepEqual(response.tool_calls, [
