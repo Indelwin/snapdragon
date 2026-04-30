@@ -78,9 +78,9 @@
     "maxFunctionLines": 10
   },
   "packages/content/src/index.ts": {
-    "lines": 497,
-    "complexity": 181,
-    "crapProxy": 32810,
+    "lines": 614,
+    "complexity": 240,
+    "crapProxy": 57650,
     "maxFunctionLines": 26
   },
   "packages/core/src/index.ts": {
@@ -234,9 +234,9 @@
     "maxFunctionLines": 15
   },
   "packages/sd/src/commands.ts": {
-    "lines": 624,
-    "complexity": 117,
-    "crapProxy": 13695,
+    "lines": 733,
+    "complexity": 156,
+    "crapProxy": 24342,
     "maxFunctionLines": 55
   },
   "packages/sd/src/config.ts": {
@@ -270,16 +270,16 @@
     "maxFunctionLines": 10
   },
   "packages/sd/src/memory-worker.ts": {
-    "lines": 305,
-    "complexity": 81,
-    "crapProxy": 6567,
-    "maxFunctionLines": 101
+    "lines": 298,
+    "complexity": 83,
+    "crapProxy": 6895,
+    "maxFunctionLines": 98
   },
   "packages/sd/src/memory.ts": {
-    "lines": 432,
-    "complexity": 137,
-    "crapProxy": 18778,
-    "maxFunctionLines": 58
+    "lines": 448,
+    "complexity": 138,
+    "crapProxy": 19053,
+    "maxFunctionLines": 68
   },
   "packages/sd/src/profile-runtime.ts": {
     "lines": 192,

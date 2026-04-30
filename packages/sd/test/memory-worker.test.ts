@@ -91,7 +91,11 @@ test('worker captures triggered user messages from recent sessions', async () =>
     assert.deepEqual(result.errors, []);
     const memoryRaw = await readFile(fx.memoryPath, 'utf8');
     assert.match(memoryRaw, /pack dry/);
-    assert.match(memoryRaw, /Worker capture: remember/);
+    // New capture title format is `Auto: <extracted preview>` and entries
+    // are tagged with both 'auto' and 'tentative'.
+    assert.match(memoryRaw, /## .*Auto:/);
+    assert.match(memoryRaw, /tags:[^\n]*tentative/);
+    assert.match(memoryRaw, /run pack dry before release/);
   } finally {
     await fx.cleanup();
   }
@@ -112,7 +116,7 @@ test('worker is idempotent across runs via watermark and dedupe hashing', async 
     assert.equal(second.considered_messages, 0, 'watermark should skip already-seen messages');
 
     const memoryRaw = await readFile(fx.memoryPath, 'utf8');
-    const matches = memoryRaw.match(/Worker capture/g) ?? [];
+    const matches = memoryRaw.match(/^## .*Auto:/gm) ?? [];
     assert.equal(matches.length, 1, 'should not duplicate the same capture across scans');
   } finally {
     await fx.cleanup();
@@ -131,7 +135,7 @@ test('worker ignores assistant turns and untriggered user turns', async () => {
 
     assert.equal(result.captured, 0);
     const memoryRaw = await readFile(fx.memoryPath, 'utf8');
-    assert.doesNotMatch(memoryRaw, /Worker capture/);
+    assert.doesNotMatch(memoryRaw, /^## .*Auto:/m);
   } finally {
     await fx.cleanup();
   }

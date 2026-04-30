@@ -105,12 +105,9 @@ export async function runSdMemoryWorkerOnce(
           includeAssistant,
         },
       );
-      if (!decision.capture) continue;
+      if (!decision.capture || !decision.extracted) continue;
 
-      const content = formatWorkerCaptureContent({
-        userInput,
-        sessionId: session.session_id,
-      });
+      const content = decision.extracted;
       const hash = hashContent(content);
       if (existingHashes.has(hash)) {
         result.skipped_duplicates += 1;
@@ -119,9 +116,9 @@ export async function runSdMemoryWorkerOnce(
       try {
         const appended = await Promise.resolve(
           options.memory.append({
-            title: `Worker capture: ${decision.trigger ?? 'note'}`,
+            title: `Auto: ${truncateForTitle(decision.extracted)}`,
             content,
-            tags: ['auto', 'worker'],
+            tags: ['auto', 'tentative', 'worker', decision.trigger ?? 'auto'],
             source: `sd.worker:${session.session_id}`,
           }),
         );
@@ -294,11 +291,7 @@ function textFromContent(content: SessionMessageRecord['content']): string {
     .trim();
 }
 
-function formatWorkerCaptureContent(input: { userInput: string; sessionId: string }): string {
-  return [
-    'Background worker captured a stable preference, workflow note, or correction',
-    `from session ${input.sessionId}.`,
-    '',
-    `User: ${input.userInput}`,
-  ].join('\n');
+function truncateForTitle(value: string, max = 60): string {
+  const single = value.replace(/\s+/g, ' ').trim();
+  return single.length <= max ? single : `${single.slice(0, max - 1).trimEnd()}…`;
 }
