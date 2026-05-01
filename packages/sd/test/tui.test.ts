@@ -308,6 +308,48 @@ test('loadRuntimeTranscript carries reasoning text from session-resumed messages
   }
 });
 
+test('loadRuntimeTranscript bounds resumed history and large tool output', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-resume-bounds-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    for (let index = 0; index < 100; index += 1) {
+      runtime.agent.messages.push({ role: 'user', content: `old ${index}` });
+    }
+    runtime.agent.messages.push({
+      role: 'tool',
+      content: `first line\n${'x'.repeat(100_000)}`,
+      tool_call_id: 'tool_1',
+    });
+
+    const controller = new SdUiController(runtime, undefined, { maxEntries: 8 });
+    controller.loadRuntimeTranscript();
+
+    const entries = chatEntries(controller.world.componentState(SD_UI_IDS.chat));
+    assert.equal(entries.length, 8);
+    assert.equal(entries[0]?.role, 'system');
+    assert.match(entries[0]?.content ?? '', /earlier message/);
+    assert.ok((entries.at(-1)?.content.length ?? 0) < 5_000);
+    assert.match(entries.at(-1)?.content ?? '', /truncated for TUI display/);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('tool transcript summaries avoid full-line keys for huge output', () => {
+  const rows = transcriptRows([
+    {
+      id: 'tool-huge',
+      role: 'tool',
+      content: `${'x'.repeat(100_000)}\nsecond\nthird\nfourth`,
+      toolName: 'run_shell',
+      toolStatus: 'done',
+    },
+  ]);
+
+  assert.ok(rows.every((row) => row.key.length < 80));
+  assert.ok(rows.some((row) => row.text === '... full output in events'));
+});
+
 test('SdTuiApp renders the initial ECS shell and later tool activity', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-render-'));
   try {

@@ -49,11 +49,28 @@ function previewLimit(record: SessionMessageRecord): number {
 }
 
 function preview(value: string, maxChars: number): string {
-  const flattened = value.replace(/\s+/g, ' ').trim();
-  return truncateToChars(flattened, maxChars);
+  return truncateToChars(flattenWhitespace(value, maxChars + 15), maxChars);
 }
 
 function truncateToChars(value: string, maxChars: number): string {
   if (value.length <= maxChars) return value;
   return `${value.slice(0, Math.max(0, maxChars - 15)).trimEnd()} [truncated]`;
+}
+
+function flattenWhitespace(value: string, maxChars: number): string {
+  let out = '';
+  let pendingSpace = false;
+  for (const char of value) {
+    if (/\s/.test(char)) {
+      pendingSpace = out.length > 0;
+      continue;
+    }
+    if (pendingSpace) {
+      out += ' ';
+      pendingSpace = false;
+    }
+    out += char;
+    if (out.length >= maxChars) break;
+  }
+  return out.trim();
 }
