@@ -1,6 +1,10 @@
 import type { ChatEntry } from './state-readers.js';
 import { tuiColors } from './theme.js';
+import { previewLines } from './transcript-preview.js';
 import type { TranscriptRow } from './transcript-window.js';
+
+const TOOL_PREVIEW_LINES = 3;
+const TOOL_PREVIEW_CHARS = 2_000;
 
 export function toolResultRows(entry: ChatEntry): TranscriptRow[] {
   const status = entry.toolStatus ?? (entry.isError ? 'error' : 'done');
@@ -39,15 +43,13 @@ export function toolResultRows(entry: ChatEntry): TranscriptRow[] {
 function toolResultSummary(content: string): string {
   const trimmed = content.trim();
   if (!trimmed) return '(no output)';
-  const lines = trimmed.split('\n');
-  const firstLines = lines.slice(0, 3).join('\n');
-  const remaining = lines.length - 3;
-  return remaining > 0 ? `${firstLines}\n... ${remaining} more line(s)` : firstLines;
+  const { lines, truncated } = previewLines(trimmed, TOOL_PREVIEW_LINES, TOOL_PREVIEW_CHARS);
+  return truncated ? `${lines.join('\n')}\n... full output in events` : lines.join('\n');
 }
 
 function lineItems(text: string): Array<{ key: string; text: string }> {
   return text.split('\n').map((line, index) => ({
-    key: `${index}-${line}`,
+    key: String(index),
     text: line,
   }));
 }

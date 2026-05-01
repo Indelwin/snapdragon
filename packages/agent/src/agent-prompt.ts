@@ -47,7 +47,7 @@ export async function runAgentPrompt(
       await state.emit({
         type: 'tool_end',
         call,
-        content: result.content,
+        content: toolContent,
         isError: result.isError === true,
       });
     }

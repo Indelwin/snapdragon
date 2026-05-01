@@ -2,7 +2,7 @@ import { existsSync } from 'node:fs';
 import type { Message } from '@snapdragon-ai/host';
 import type { ContextWindowOptions } from './context-options.js';
 import type { ContextChunkInput } from './context-summary.js';
-import { assembleContextWindow, planContextCompaction, recordToMessage } from './context-window.js';
+import { assembleContextWindow, recordToMessage } from './context-window.js';
 import {
   appendRecord,
   readRecords,
@@ -12,6 +12,7 @@ import {
   type SessionOpenRecord,
   type SessionRecord,
 } from './records.js';
+import { type ContextCompactionResult, compactSessionContext } from './session-compaction.js';
 
 export interface AppendMessageOptions {
   createdAt?: number;
@@ -23,11 +24,7 @@ export interface JsonlSessionOptions {
   jsonlPath: string;
 }
 
-export interface ContextCompactionResult {
-  compacted: boolean;
-  chunks: SessionContextChunkRecord[];
-  reason?: string;
-}
+export type { ContextCompactionResult } from './session-compaction.js';
 
 export class JsonlSession {
   readonly sessionId: string;
@@ -101,6 +98,10 @@ export class JsonlSession {
     return this.messageRecords().map(recordToMessage);
   }
 
+  messageCount(): number {
+    return this.#nextStoreId - 1;
+  }
+
   contextChunks(): SessionContextChunkRecord[] {
     return this.records().filter(
       (record): record is SessionContextChunkRecord => record.type === 'context_chunk',
@@ -115,21 +116,12 @@ export class JsonlSession {
   }
 
   compactContext(options: ContextWindowOptions = {}): ContextCompactionResult {
-    const chunks: SessionContextChunkRecord[] = [];
-    let reason: string | undefined;
-    const maxPasses = options.maxCompactionPasses ?? 16;
-    for (let pass = 0; pass < maxPasses; pass += 1) {
-      const plan = planContextCompaction(
-        { messages: this.messageRecords(), chunks: this.contextChunks() },
-        options,
-      );
-      if (!plan.chunk) {
-        reason = plan.reason;
-        break;
-      }
-      chunks.push(this.appendContextChunk(plan.chunk));
-    }
-    return { compacted: chunks.length > 0, chunks, reason };
+    return compactSessionContext({
+      messages: this.messageRecords(),
+      chunks: this.contextChunks(),
+      options,
+      append: (chunk) => this.appendContextChunk(chunk),
+    });
   }
 
   assemble(options: { system?: Message | string } = {}): Message[] {
