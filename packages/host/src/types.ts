@@ -1,6 +1,6 @@
 import type { JsonObject } from '@snapdragon-ai/core';
 import type { MessageContent } from './content-types.js';
-import type { ProviderCapabilities } from './provider-types.js';
+import type { ProviderCapabilities, ProviderModelLimits } from './provider-types.js';
 
 export interface ToolCall {
   id: string;
@@ -83,13 +83,13 @@ export interface GeneratedImage {
   provider_metadata?: Record<string, unknown>;
 }
 
-export interface ProviderModel {
+export type ProviderModel = {
   id: string;
   name?: string;
   created?: number;
   source?: 'api' | 'static';
   capabilities?: Partial<ProviderCapabilities>;
-}
+} & Partial<{ limits: ProviderModelLimits }>;
 
 export interface ListModelsOptions {
   apiKey?: string;
