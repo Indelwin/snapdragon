@@ -284,6 +284,88 @@ test('Codex provider streams text, reasoning, tool calls, and usage', async () =
   ]);
 });
 
+test('Codex provider maps assistant history text to output_text content blocks', async () => {
+  let seen: Record<string, unknown> | undefined;
+  const provider = codexProvider({
+    model: 'gpt-test',
+    auth: { accessToken: 'test-token' },
+    fetch: async (_url, init) => {
+      seen = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        sse([
+          {
+            type: 'response.completed',
+            response: { status: 'completed', usage: { input_tokens: 1, output_tokens: 1 } },
+          },
+        ]),
+      );
+    },
+  });
+
+  await provider(
+    {
+      role: 'assistant',
+      messages: [
+        { role: 'user', content: 'first' },
+        { role: 'assistant', content: 'prior answer' },
+        { role: 'user', content: 'next' },
+      ],
+    },
+    { runId: 'run_1', emit: () => undefined },
+  );
+
+  const input = seen?.input as Array<{ role?: string; content?: Array<Record<string, unknown>> }>;
+  assert.equal(input[0].content?.[0]?.type, 'input_text');
+  assert.equal(input[1].role, 'assistant');
+  assert.equal(input[1].content?.[0]?.type, 'output_text');
+  assert.deepEqual(input[1].content?.[0]?.annotations, []);
+  assert.equal(input[2].content?.[0]?.type, 'input_text');
+});
+
+test('Codex provider repairs missing tool outputs from interrupted history', async () => {
+  let seen: Record<string, unknown> | undefined;
+  const provider = codexProvider({
+    model: 'gpt-test',
+    auth: { accessToken: 'test-token' },
+    fetch: async (_url, init) => {
+      seen = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(
+        sse([
+          {
+            type: 'response.completed',
+            response: { status: 'completed', usage: { input_tokens: 1, output_tokens: 1 } },
+          },
+        ]),
+      );
+    },
+  });
+
+  await provider(
+    {
+      role: 'assistant',
+      messages: [
+        { role: 'user', content: 'please read this' },
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [{ id: 'toolu_missing', name: 'read', args_json: '{"path":"README.md"}' }],
+        },
+        { role: 'user', content: 'carry on' },
+      ],
+    },
+    { runId: 'run_1', emit: () => undefined },
+  );
+
+  const input = seen?.input as Array<Record<string, unknown>>;
+  const callIndex = input.findIndex((item) => item.type === 'function_call');
+  assert.ok(callIndex >= 0);
+  assert.deepEqual(input[callIndex + 1], {
+    type: 'function_call_output',
+    call_id: 'toolu_missing',
+    output: '[unknown error, tool output missing]',
+  });
+});
+
 test('Codex provider forwards native image generation and captures generated images', async () => {
   const seen: unknown[] = [];
   const events: unknown[] = [];
@@ -324,8 +406,18 @@ test('Codex provider forwards native image generation and captures generated ima
 });
 
 test('model discovery supports static Codex models and OpenAI-compatible /models', async () => {
-  assert.equal(listCodexModels()[0].id, 'gpt-5.5');
-  assert.ok(listCodexModels().some((model) => model.id === 'gpt-5.3-codex-spark'));
+  const codexModels = listCodexModels();
+  assert.equal(codexModels[0].id, 'gpt-5.5');
+  assert.deepEqual(codexModels[0].limits, {
+    contextWindow: 272_000,
+    maxContextWindow: 272_000,
+    effectiveContextWindowPercent: 95,
+  });
+  assert.deepEqual(codexModels.find((model) => model.id === 'gpt-5.3-codex-spark')?.limits, {
+    contextWindow: 128_000,
+    maxContextWindow: 128_000,
+    effectiveContextWindowPercent: 95,
+  });
 
   const models = await listOpenAICompatibleModels({
     apiKey: 'test-key',

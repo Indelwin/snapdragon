@@ -14,3 +14,10 @@ export interface ProviderDescriptor {
   protocol: string;
   capabilities: ProviderCapabilities;
 }
+
+export interface ProviderModelLimits {
+  contextWindow?: number;
+  maxContextWindow?: number;
+  effectiveContextWindowPercent?: number;
+  maxOutputTokens?: number;
+}
