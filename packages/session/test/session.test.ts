@@ -26,6 +26,7 @@ test('JSONL sessions create, append, reopen, assemble, and delete', () => {
 
   const reopened = store.open('session_1');
   assert.equal(reopened.messages().length, 2);
+  assert.equal(reopened.messageCount(), 2);
   assert.equal(reopened.assemble({ system: 'system' })[0].role, 'system');
   assert.deepEqual(reopened.messages()[1].tool_calls, [
     { id: 'call_1', name: 'read', args_json: '{"path":"README.md"}' },
@@ -33,6 +34,29 @@ test('JSONL sessions create, append, reopen, assemble, and delete', () => {
   assert.equal(store.list()[0].session_id, 'session_1');
   assert.equal(store.delete('session_1'), true);
   assert.equal(store.exists('session_1'), false);
+});
+
+test('JSONL context summaries preview huge single-line tool output without copying it', () => {
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-session-')) });
+  const session = store.create('session_huge_tool');
+  session.appendMessage({
+    role: 'user',
+    content: 'x'.repeat(100_000),
+  });
+  session.appendMessage({ role: 'user', content: 'fresh' });
+
+  const result = session.compactContext({
+    freshTailCount: 1,
+    chunkTargetTokens: 100,
+    summaryTargetTokens: 100,
+    minChunkMessages: 1,
+    maxRequestTokens: 50,
+  });
+
+  assert.equal(result.compacted, true);
+  assert.ok(result.chunks[0].summary_text.length < 600);
+  assert.match(result.chunks[0].summary_text, /truncated/);
+  assert.equal(session.messageCount(), 2);
 });
 
 test('JSONL sessions skip malformed trailing lines', () => {

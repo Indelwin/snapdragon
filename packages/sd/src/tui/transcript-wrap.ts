@@ -1,3 +1,4 @@
+import { wrapText } from './text-wrap.js';
 import type { TranscriptRow } from './transcript-window.js';
 
 export function wrapTranscriptRows(
@@ -21,33 +22,6 @@ function wrapRow(row: TranscriptRow, columns: number): TranscriptRow[] {
     text: chunk,
     cursor: row.cursor && index === chunks.length - 1,
   }));
-}
-
-function wrapText(text: string, width: number): string[] {
-  if (text.length === 0) return [''];
-  const chunks: string[] = [];
-  for (const line of text.split('\n')) appendWrappedLine(chunks, line, width);
-  return chunks;
-}
-
-function appendWrappedLine(chunks: string[], line: string, width: number): void {
-  if (line.length === 0) {
-    chunks.push('');
-    return;
-  }
-  let rest = line;
-  while (rest.length > width) {
-    const breakAt = softBreak(rest, width);
-    chunks.push(rest.slice(0, breakAt).trimEnd());
-    rest = rest.slice(breakAt).trimStart();
-  }
-  chunks.push(rest);
-}
-
-function softBreak(text: string, width: number): number {
-  const slice = text.slice(0, width + 1);
-  const whitespace = Math.max(slice.lastIndexOf(' '), slice.lastIndexOf('\t'));
-  return whitespace > Math.floor(width * 0.45) ? whitespace : width;
 }
 
 function continuationPrefix(prefix: string): string | undefined {
