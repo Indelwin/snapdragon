@@ -1,13 +1,20 @@
 import type { StreamingChatHandler } from '../registry.js';
 import type { ProviderDescriptor } from '../types.js';
+import { codexEndpoint, throwCodexProviderError } from './codex-http.js';
+import { codexInputItems } from './codex-input.js';
 import { openAIResponsesBody } from './openai-responses-format.js';
 import { readResponsesStream } from './responses-stream.js';
 import { type FetchLike, fetchImpl } from './shared.js';
 
 const PROVIDER = 'openai-codex';
-const DEFAULT_BASE_URL = 'https://chatgpt.com/backend-api';
 
-export { CODEX_MODELS, listCodexModels } from '../model-discovery.js';
+export type { CodexModelId } from '../codex-models.js';
+export {
+  CODEX_MODEL_LIMITS,
+  CODEX_MODELS,
+  codexModelLimits,
+} from '../codex-models.js';
+export { listCodexModels } from '../model-discovery.js';
 
 export interface CodexAuth {
   accessToken: string;
@@ -52,12 +59,12 @@ export function codexProvider(options: CodexProviderOptions): StreamingChatHandl
       role: request.role,
       model: options.model,
     });
-    const response = await fetchImpl(options.fetch)(endpoint(options.baseUrl), {
+    const response = await fetchImpl(options.fetch)(codexEndpoint(options.baseUrl), {
       method: 'POST',
       headers: requestHeaders(auth),
       body: JSON.stringify(body),
     });
-    if (!response.ok) await throwProviderError(response);
+    if (!response.ok) await throwCodexProviderError(response);
     if (!response.body) throw new Error('openai-codex: missing response body');
     return readResponsesStream(response.body, PROVIDER, context);
   };
@@ -65,6 +72,7 @@ export function codexProvider(options: CodexProviderOptions): StreamingChatHandl
 
 function patchCodexBody(body: Record<string, unknown>, options: CodexProviderOptions): void {
   delete body.max_output_tokens;
+  body.input = codexInputItems(body.input);
   body.text = { verbosity: 'medium' };
   body.include = ['reasoning.encrypted_content'];
   body.parallel_tool_calls = true;
@@ -72,11 +80,6 @@ function patchCodexBody(body: Record<string, unknown>, options: CodexProviderOpt
   if (!body.reasoning && options.reasoningEffort) {
     body.reasoning = { effort: options.reasoningEffort, summary: 'auto' };
   }
-}
-
-function endpoint(baseUrl = DEFAULT_BASE_URL): string {
-  const trimmed = baseUrl.replace(/\/$/, '');
-  return trimmed.endsWith('/codex/responses') ? trimmed : `${trimmed}/codex/responses`;
 }
 
 function requestHeaders(auth: CodexAuth): Record<string, string> {
@@ -93,18 +96,4 @@ function requestHeaders(auth: CodexAuth): Record<string, string> {
 
 async function resolveAuth(auth: CodexProviderOptions['auth']): Promise<CodexAuth> {
   return typeof auth === 'function' ? auth() : auth;
-}
-
-async function throwProviderError(response: Response): Promise<never> {
-  const text = await response.text().catch(() => '<no body>');
-  throw new Error(`openai-codex ${response.status}: ${formatError(text)}`);
-}
-
-function formatError(payload: string): string {
-  try {
-    const parsed = JSON.parse(payload) as { detail?: string; error?: { message?: string } };
-    return parsed.error?.message ?? parsed.detail ?? payload;
-  } catch {
-    return payload;
-  }
 }
