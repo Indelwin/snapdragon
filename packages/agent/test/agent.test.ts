@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
 import { mockProvider } from '@snapdragon-ai/host';
-import { SessionStore } from '@snapdragon-ai/session';
+import { estimateMessagesTokens, SessionStore } from '@snapdragon-ai/session';
 import { createAgent, createCodingReplAgent } from '../src/index.ts';
 import { parseToolArgs } from '../src/tool-args.ts';
 
@@ -75,6 +75,29 @@ test('agent forwards provider stream events and reasoning requests', async () =>
   assert.ok(streamEvents.includes('started'));
   assert.ok(streamEvents.includes('text'));
   assert.ok(streamEvents.includes('done'));
+});
+
+test('setProvider updates provider-specific runtime options', async () => {
+  const initial = mockProvider();
+  const seen: Array<{ max_tokens?: number }> = [];
+  const agent = await createAgent({
+    provider: initial.handler,
+    cwd: process.cwd(),
+    systemPrompt: '',
+    maxTokens: 20,
+  });
+
+  agent.setProvider(
+    async (request) => {
+      seen.push({ max_tokens: request.max_tokens });
+      return { content: 'switched' };
+    },
+    { maxTokens: 5 },
+  );
+
+  await agent.prompt('use switched provider');
+
+  assert.deepEqual(seen, [{ max_tokens: 5 }]);
 });
 
 test('agent persists user, assistant, and tool messages into a session', async () => {
@@ -203,6 +226,81 @@ test('agent sends compacted session context when context windowing is enabled', 
   );
   assert.deepEqual(providerMessages.at(-1)?.content, requestInput);
   assert.ok(session.contextChunks().length > 0);
+});
+
+test('agent shrinks the fresh tail when the assembled request still exceeds budget', async () => {
+  const seen: unknown[] = [];
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-agent-')) });
+  const session = store.create('agent_context_tail');
+  for (let index = 0; index < 6; index += 1) {
+    session.appendMessage({
+      role: 'user',
+      content: `old tail ${index + 1} ${'x'.repeat(2_000)}`,
+    });
+  }
+
+  const agent = await createAgent({
+    provider: async (request) => {
+      seen.push(request.messages);
+      return { content: 'done' };
+    },
+    cwd: process.cwd(),
+    session,
+    systemPrompt: '',
+    context: {
+      enabled: true,
+      freshTailCount: 6,
+      chunkTargetTokens: 200,
+      summaryTargetTokens: 20,
+      maxRequestTokens: 600,
+    },
+  });
+  await agent.prompt('fit this request');
+
+  const messages = seen[0] as Parameters<typeof estimateMessagesTokens>[0];
+  assert.ok(estimateMessagesTokens(messages) <= 600);
+  assert.equal(
+    messages.some((message) => String(message.content).startsWith('old tail')),
+    false,
+  );
+  assert.ok(session.contextChunks().length > 0);
+});
+
+test('agent retries context-window provider errors with stronger compaction pressure', async () => {
+  const tokenCounts: number[] = [];
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-agent-')) });
+  const session = store.create('agent_context_retry');
+  for (let index = 0; index < 8; index += 1) {
+    session.appendMessage({
+      role: 'user',
+      content: `old retry ${index + 1} ${'x'.repeat(2_000)}`,
+    });
+  }
+
+  const agent = await createAgent({
+    provider: async (request) => {
+      tokenCounts.push(estimateMessagesTokens(request.messages));
+      if (tokenCounts.length === 1) {
+        throw new Error('Your input exceeds the context window of this model.');
+      }
+      return { content: 'done' };
+    },
+    cwd: process.cwd(),
+    session,
+    systemPrompt: '',
+    context: {
+      enabled: true,
+      freshTailCount: 8,
+      chunkTargetTokens: 200,
+      summaryTargetTokens: 20,
+      minChunkMessages: 1,
+      maxRequestTokens: 10_000,
+    },
+  });
+  await agent.prompt('retry with pressure');
+
+  assert.equal(tokenCounts.length, 2);
+  assert.ok(tokenCounts[1] < tokenCounts[0]);
 });
 
 test('parseToolArgs accepts empty, valid JSON, and invalid JSON', () => {
