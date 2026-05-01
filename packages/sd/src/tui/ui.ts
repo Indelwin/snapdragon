@@ -10,7 +10,14 @@ import { promptCompletionJson } from './prompt-completion-json.js';
 import { ProviderEventBuffer } from './provider-event-buffer.js';
 import { resolveSplashImagePath } from './splash-art.js';
 import { chatEntries, eventEntries, toolEntries } from './state-readers.js';
+import {
+  messageToEntry,
+  runtimeTranscriptEntries,
+  sessionMessageCount,
+} from './transcript-entry.js';
+import { messageContentSummary } from './transcript-entry-content.js';
 import type { ChatEntry, ToolEntry } from './ui-entry.js';
+import { MAX_EVENT_DETAIL_CHARS, MAX_TRANSCRIPT_TOOL_CHARS, safeUiText } from './ui-text.js';
 
 export const SD_UI_IDS = {
   chat: 'sd.chat',
@@ -235,7 +242,7 @@ export class SdUiController {
   }
 
   loadRuntimeTranscript(): void {
-    const entries = this.runtime.agent.messages.map(messageToEntry);
+    const entries = runtimeTranscriptEntries(this.runtime.agent.messages, this.#maxEntries);
     this.world.applyMany([
       patch(SD_UI_IDS.chat, { entries: trimEntries(entries, this.#maxEntries) }),
       patch(SD_UI_IDS.splash, { visible: entries.length === 0 }),
@@ -403,17 +410,18 @@ export class SdUiController {
 
   #toolEndEvents(call: ToolCall, content: string, isError: boolean): UiEvent[] {
     const level = isError ? 'error' : 'info';
+    const displayContent = safeUiText(content, MAX_TRANSCRIPT_TOOL_CHARS);
     return [
       this.#upsertTool({
         id: call.id,
         name: call.name,
         status: isError ? 'error' : 'done',
-        content,
+        content: displayContent,
       }),
       this.#appendChat({
         id: `tool_${call.id}`,
         role: 'tool',
-        content,
+        content: displayContent,
         isError,
         toolName: call.name,
         toolStatus: isError ? 'error' : 'done',
@@ -488,8 +496,14 @@ export class SdUiController {
     const entries = eventEntries(this.world.componentState(SD_UI_IDS.eventLog)).map(
       eventEntryToJson,
     );
+    const event = makeEvent(
+      level,
+      message,
+      source,
+      detail ? safeUiText(detail, MAX_EVENT_DETAIL_CHARS) : detail,
+    );
     return patch(SD_UI_IDS.eventLog, {
-      entries: [...entries, makeEvent(level, message, source, detail)].slice(-this.#maxLogEntries),
+      entries: [...entries, event].slice(-this.#maxLogEntries),
     });
   }
 
@@ -531,7 +545,7 @@ export class SdUiController {
         session: {
           id: this.runtime.session.sessionId,
           path: this.runtime.session.jsonlPath,
-          messages: this.runtime.session.messages().length,
+          messages: sessionMessageCount(this.runtime),
         },
       }),
     ];
@@ -679,7 +693,7 @@ function sessionState(runtime: SdRuntime): JsonObject {
     ? {
         id: runtime.session.sessionId,
         path: runtime.session.jsonlPath,
-        messages: runtime.session.messages().length,
+        messages: sessionMessageCount(runtime),
       }
     : null;
   return {
@@ -700,33 +714,8 @@ function logEvent(level: 'info' | 'warn' | 'error', message: string, source: str
   return { type: 'ui.log.append', entry: uiLog(level, message, { source }) };
 }
 
-function messageToEntry(message: Message): ChatEntry {
-  return {
-    id: `${message.role}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-    role: message.role,
-    content: messageContentSummary(message),
-    toolCalls: message.tool_calls?.length ?? 0,
-    thinking: thinkingText(message.thinking),
-  };
-}
-
-function thinkingText(blocks: Message['thinking']): string | undefined {
-  if (!blocks || blocks.length === 0) return undefined;
-  const text = blocks
-    .map((block) => block.text)
-    .filter((line) => typeof line === 'string' && line.length > 0)
-    .join('\n');
-  return text.length > 0 ? text : undefined;
-}
-
 function trimEntries(entries: ChatEntry[], maxEntries: number): JsonValue[] {
   return entries.slice(-maxEntries).map((entry) => ({ ...entry }));
-}
-
-function messageContentSummary(message: Message): string {
-  if (typeof message.content === 'string') return message.content;
-  const blocks = message.content.map((block) => block.type).join(', ');
-  return `[${blocks || 'content'}]`;
 }
 
 function upsertTool(tools: ToolEntry[], tool: ToolEntry): ToolEntry[] {
