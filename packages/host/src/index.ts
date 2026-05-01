@@ -1,3 +1,9 @@
+export type { CodexModelId } from './codex-models.js';
+export {
+  CODEX_MODEL_LIMITS,
+  CODEX_MODELS,
+  codexModelLimits,
+} from './codex-models.js';
 export {
   contentText,
   dataUrl,
@@ -11,13 +17,13 @@ export {
   textBlock,
 } from './content.js';
 export {
-  CODEX_MODELS,
   listAnthropicModels,
   listCodexModels,
   listOpenAICompatibleModels,
   listOpenAIResponsesModels,
   sortModels,
 } from './model-discovery.js';
+export type { ProviderModelLimits } from './provider-types.js';
 export type { AnthropicProviderOptions } from './providers/anthropic.js';
 export {
   anthropicProvider,

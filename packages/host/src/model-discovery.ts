@@ -1,22 +1,12 @@
+import { CODEX_MODELS, codexModelLimits } from './codex-models.js';
 import { fetchImpl } from './providers/shared.js';
 import type { ListModelsOptions, ProviderModel } from './types.js';
-
-export const CODEX_MODELS = [
-  'gpt-5.5',
-  'gpt-5.4',
-  'gpt-5.3-codex',
-  'gpt-5.3-codex-spark',
-  'gpt-5.2',
-  'gpt-5.2-codex',
-  'gpt-5.1',
-  'gpt-5.1-codex-max',
-  'gpt-5.1-codex-mini',
-] as const;
 
 export function listCodexModels(): ProviderModel[] {
   return CODEX_MODELS.map((id) => ({
     id,
     source: 'static',
+    limits: codexModelLimits(id),
     capabilities: {
       streaming: true,
       tools: true,
