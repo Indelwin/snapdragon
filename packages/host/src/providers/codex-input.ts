@@ -8,17 +8,30 @@ export function codexInputItems(input: unknown): unknown {
 
 function codexInputItem(item: unknown, index: number): unknown {
   const record = asRecord(item);
-  if (!record) return item;
-  if (record.type !== 'message') return record;
-  if (record.role !== 'assistant') return record;
-  let content = record.content;
-  if (Array.isArray(content)) content = content.map(codexAssistantContentBlock);
+  if (!isAssistantMessage(record)) return item;
+  return completeAssistantMessage(record, index);
+}
+
+function isAssistantMessage(
+  record: Record<string, unknown> | undefined,
+): record is Record<string, unknown> {
+  return record?.type === 'message' && record.role === 'assistant';
+}
+
+function completeAssistantMessage(
+  record: Record<string, unknown>,
+  index: number,
+): Record<string, unknown> {
   return {
     ...record,
     id: record.id || `msg_${index}`,
     status: record.status || 'completed',
-    content,
+    content: assistantContent(record.content),
   };
+}
+
+function assistantContent(content: unknown): unknown {
+  return Array.isArray(content) ? content.map(codexAssistantContentBlock) : content;
 }
 
 function codexAssistantContentBlock(block: unknown): unknown {

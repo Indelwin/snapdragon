@@ -8,6 +8,7 @@ import {
 import { anthropicBody } from '../src/providers/anthropic.ts';
 import { readAnthropicStream } from '../src/providers/anthropic-stream.ts';
 import { codexProvider } from '../src/providers/codex.ts';
+import { codexInputItems } from '../src/providers/codex-input.ts';
 import { openAIChatBody } from '../src/providers/openai-compatible.ts';
 import { openAIResponsesBody } from '../src/providers/openai-responses-format.ts';
 
@@ -282,6 +283,46 @@ test('Codex provider streams text, reasoning, tool calls, and usage', async () =
   assert.deepEqual(response.tool_calls, [
     { id: 'call_1', name: 'read', args_json: '{"path":"README.md"}' },
   ]);
+});
+
+test('Codex input repair completes assistant message records', () => {
+  const input = codexInputItems([
+    { type: 'function_call', name: 'read_file' },
+    {
+      type: 'message',
+      role: 'assistant',
+      content: [{ type: 'input_text', text: 'prior answer' }],
+    },
+  ]) as Array<Record<string, unknown>>;
+
+  assert.deepEqual(input[0], { type: 'function_call', name: 'read_file' });
+  assert.equal(input[1].id, 'msg_1');
+  assert.equal(input[1].status, 'completed');
+  assert.deepEqual(input[1].content, [
+    { type: 'output_text', text: 'prior answer', annotations: [] },
+  ]);
+});
+
+test('Codex input repair preserves existing ids, status, annotations, and non-array content', () => {
+  const input = codexInputItems([
+    {
+      type: 'message',
+      role: 'assistant',
+      id: 'msg_existing',
+      status: 'in_progress',
+      content: [{ type: 'input_text', text: 'prior answer', annotations: [{ type: 'note' }] }],
+    },
+    { type: 'message', role: 'assistant', content: 'plain text' },
+    null,
+  ]) as Array<Record<string, unknown> | null>;
+
+  assert.equal(input[0]?.id, 'msg_existing');
+  assert.equal(input[0]?.status, 'in_progress');
+  assert.deepEqual(input[0]?.content, [
+    { type: 'output_text', text: 'prior answer', annotations: [{ type: 'note' }] },
+  ]);
+  assert.equal(input[1]?.content, 'plain text');
+  assert.equal(input[2], null);
 });
 
 test('Codex provider maps assistant history text to output_text content blocks', async () => {
