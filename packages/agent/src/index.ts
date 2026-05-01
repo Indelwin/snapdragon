@@ -9,6 +9,9 @@ import type {
 import { codingToolsets, replToolset, ToolRegistry } from '@snapdragon-ai/tools';
 import { type AgentEvent, type AgentEventListener, emitProviderEvent } from './events.js';
 import { defaultCodingSystemPrompt, defaultSystemPrompt } from './prompts.js';
+import { assembleProviderRequestMessages } from './request-context.js';
+import { shouldRetryContextWindow } from './request-context-error.js';
+import type { RequestReplacement } from './request-context-messages.js';
 import { parseToolArgs } from './tool-args.js';
 import type {
   AgentContextOptions,
@@ -21,6 +24,7 @@ import type {
 } from './types.js';
 
 type ReasoningOptions = Partial<Record<'reasoning', ReasoningRequest>>;
+type RuntimeOptions = ReasoningOptions & Partial<Pick<AgentOptions, 'context' | 'maxTokens'>>;
 type AgentOptionsPlus = AgentOptions & ReasoningOptions;
 type CodingOptions = CodingAgentOptions & ReasoningOptions;
 type AgentArgsPlus = SnapdragonAgentArgs & ReasoningOptions;
@@ -89,9 +93,11 @@ export class SnapdragonAgent {
     return () => this.#listeners.delete(listener);
   }
 
-  setProvider(provider: StreamingChatHandler, options: ReasoningOptions = {}): void {
+  setProvider(provider: StreamingChatHandler, options: RuntimeOptions = {}): void {
     this.#provider = provider;
     if ('reasoning' in options) this.#reasoning = options.reasoning;
+    if ('context' in options) this.#context = options.context;
+    if ('maxTokens' in options) this.#maxTokens = options.maxTokens;
   }
 
   async prompt(input: AgentPromptInput, options: PromptOptions = {}): Promise<LlmChatResponse> {
@@ -110,24 +116,14 @@ export class SnapdragonAgent {
         throw new Error('Agent run aborted');
       }
 
-      const response = await this.#provider(
+      const tools = this.registry.listDefinitions();
+      const response = await this.#sendProviderRequest(
         {
-          role: 'assistant',
-          messages: await this.#requestMessages({
-            visible: userMessage,
-            request: requestUserMessage,
-          }),
-          tools: this.registry.listDefinitions(),
-          tool_choice: this.registry.listDefinitions().length > 0 ? 'auto' : 'none',
-          temperature: this.#temperature,
-          max_tokens: this.#maxTokens,
-          reasoning: this.#reasoning,
+          visible: userMessage,
+          request: requestUserMessage,
         },
-        {
-          runId,
-          profile: this.#profile,
-          emit: (event) => emitProviderEvent(this.#listeners, event),
-        },
+        tools,
+        runId,
       );
 
       const assistantMessage: Message = {
@@ -140,14 +136,6 @@ export class SnapdragonAgent {
       await this.#emit({ type: 'message', message: assistantMessage });
 
       if (!response.tool_calls || response.tool_calls.length === 0) {
-        // Empty assistant content with no tool calls is always a
-        // failure mode worth surfacing — even when thinking blocks
-        // are present (in fact *especially* then: with reasoning
-        // enabled, the most common shape of this bug is "model
-        // thought a lot and then bailed without producing any text").
-        // Earlier the heuristic gated the error on `!response.thinking`
-        // which silently re-introduced the original `(empty)` row for
-        // every reasoning-enabled run that hit this path.
         if (isEmptyContent(response.content)) {
           emitProviderEvent(this.#listeners, {
             kind: 'error',
@@ -186,25 +174,53 @@ export class SnapdragonAgent {
     throw new Error(`Agent exceeded maxTurns=${this.#maxTurns}`);
   }
 
-  async #requestMessages(replacement?: { visible: Message; request: Message }): Promise<Message[]> {
+  async #sendProviderRequest(
+    replacement: RequestReplacement,
+    tools: ReturnType<ToolRegistry['listDefinitions']>,
+    runId: string,
+  ): Promise<LlmChatResponse> {
+    let pressure = 0;
+    while (true) {
+      try {
+        return await this.#provider(
+          {
+            role: 'assistant',
+            messages: await this.#requestMessages(replacement, tools, pressure),
+            tools,
+            tool_choice: tools.length > 0 ? 'auto' : 'none',
+            temperature: this.#temperature,
+            max_tokens: this.#maxTokens,
+            reasoning: this.#reasoning,
+          },
+          {
+            runId,
+            profile: this.#profile,
+            emit: (event) => emitProviderEvent(this.#listeners, event),
+          },
+        );
+      } catch (error) {
+        if (!shouldRetryContextWindow(error, pressure)) throw error;
+        pressure += 1;
+      }
+    }
+  }
+
+  async #requestMessages(
+    replacement: RequestReplacement,
+    tools: ReturnType<ToolRegistry['listDefinitions']>,
+    pressure: number,
+  ): Promise<Message[]> {
     const system: Message[] =
       this.#systemPrompt.length > 0 ? [{ role: 'system', content: this.#systemPrompt }] : [];
-    await this.#compactContext();
-    const contextMessages = await this.#contextMessages();
-    const messages = replacement
-      ? replaceVisibleMessage(contextMessages, replacement)
-      : contextMessages;
-    return [...system, ...messages];
-  }
-
-  async #compactContext(): Promise<void> {
-    if (!this.#context?.enabled || !this.#session?.compactContext) return;
-    await this.#session.compactContext(this.#context);
-  }
-
-  async #contextMessages(): Promise<Message[]> {
-    if (!this.#context?.enabled || !this.#session?.assembleContext) return this.messages;
-    return this.#session.assembleContext(this.#context);
+    return assembleProviderRequestMessages({
+      context: this.#context,
+      fallbackMessages: this.messages,
+      replacement,
+      session: this.#session,
+      systemMessages: system,
+      tools,
+      pressure,
+    });
   }
 
   async #appendMessage(message: Message): Promise<void> {
@@ -257,26 +273,4 @@ function clampToolResult(content: string, maxBytes: number): string {
   if (Buffer.byteLength(content, 'utf8') <= maxBytes) return content;
   const slice = Buffer.from(content, 'utf8').subarray(0, Math.floor(maxBytes)).toString('utf8');
   return `${slice}\n[tool result truncated to ${Math.floor(maxBytes)} bytes]`;
-}
-
-function replaceVisibleMessage(
-  messages: Message[],
-  replacement: { visible: Message; request: Message },
-): Message[] {
-  const index = findEquivalentMessageIndex(messages, replacement.visible);
-  if (index < 0) return messages;
-  const out = messages.slice();
-  out[index] = replacement.request;
-  return out;
-}
-
-function findEquivalentMessageIndex(messages: Message[], target: Message): number {
-  const targetContent = JSON.stringify(target.content);
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const candidate = messages[index];
-    if (candidate.role === target.role && JSON.stringify(candidate.content) === targetContent) {
-      return index;
-    }
-  }
-  return -1;
 }
