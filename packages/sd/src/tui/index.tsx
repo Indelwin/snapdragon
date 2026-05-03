@@ -1,12 +1,14 @@
-import type { UiComponentSnapshot, UiWorldSnapshot } from '@snapdragon-ai/ui';
+import type { UiWorldSnapshot } from '@snapdragon-ai/ui';
 import { Box, render, useApp, useWindowSize } from 'ink';
 import { useEffect, useMemo, useState } from 'react';
 import { defaultIo, type SdIo } from '../repl.js';
 import type { SdRuntime } from '../runtime.js';
 import { createDefaultInkRendererRegistry } from './components.js';
 import { useSdTuiInput } from './input-controller.js';
-import { fillsSlot, fixedChromeRows } from './layout.js';
+import { fixedChromeRows } from './layout.js';
+import { SdMouseProvider, SdMouseScrollListener } from './mouse-scroll.js';
 import type { InkRendererRegistry } from './renderer-registry.js';
+import { hasRenderableSlot, Slot } from './tui-slot.js';
 import { SdUiController } from './ui.js';
 
 export interface SdTuiOptions {
@@ -61,10 +63,47 @@ export function SdTuiApp({
     return () => controller.dispose();
   }, [controller]);
   useSdTuiInput({ runtime, controller, exit });
+  const mouseSettings = resolveMouseSettings(runtime);
 
   return (
+    <SdMouseProvider enabled={mouseSettings.enabled}>
+      <SdMouseScrollListener
+        key="mouse-scroll"
+        controller={controller}
+        rowsPerTick={mouseSettings.rowsPerTick}
+        enabled={mouseSettings.enabled}
+      />
+      <SdTuiLayout
+        key="tui-layout"
+        snapshot={snapshot}
+        registry={rendererRegistry}
+        terminalRows={terminalRows}
+        mainRows={mainRows}
+        mainColumns={mainColumns}
+        showPanel={showPanel}
+      />
+    </SdMouseProvider>
+  );
+}
+
+function SdTuiLayout({
+  snapshot,
+  registry,
+  terminalRows,
+  mainRows,
+  mainColumns,
+  showPanel,
+}: {
+  snapshot: UiWorldSnapshot;
+  registry: InkRendererRegistry;
+  terminalRows: number;
+  mainRows: number;
+  mainColumns: number;
+  showPanel: boolean;
+}) {
+  return (
     <Box flexDirection="column" height={terminalRows} overflow="hidden">
-      <Slot slot="status" snapshot={snapshot} registry={rendererRegistry} />
+      <Slot slot="status" snapshot={snapshot} registry={registry} />
       <Box flexDirection="row" flexGrow={1} flexShrink={1} minHeight={1} overflow="hidden">
         <Box
           flexGrow={1}
@@ -76,7 +115,7 @@ export function SdTuiApp({
           <Slot
             slot="main"
             snapshot={snapshot}
-            registry={rendererRegistry}
+            registry={registry}
             viewportRows={mainRows}
             viewportColumns={mainColumns}
           />
@@ -86,80 +125,25 @@ export function SdTuiApp({
             <Slot
               slot="panel"
               snapshot={snapshot}
-              registry={rendererRegistry}
+              registry={registry}
               viewportRows={mainRows}
               viewportColumns={44}
             />
           </Box>
         ) : null}
       </Box>
-      <Slot slot="overlay" snapshot={snapshot} registry={rendererRegistry} />
-      <Slot slot="input" snapshot={snapshot} registry={rendererRegistry} />
-      <Slot slot="footer" snapshot={snapshot} registry={rendererRegistry} />
+      <Slot slot="overlay" snapshot={snapshot} registry={registry} />
+      <Slot slot="input" snapshot={snapshot} registry={registry} />
+      <Slot slot="footer" snapshot={snapshot} registry={registry} />
     </Box>
   );
 }
 
-function Slot({
-  slot,
-  snapshot,
-  registry,
-  viewportRows,
-  viewportColumns,
-}: {
-  slot: string;
-  snapshot: UiWorldSnapshot;
-  registry: InkRendererRegistry;
-  viewportRows?: number;
-  viewportColumns?: number;
-}) {
-  const components = Object.values(snapshot.components)
-    .filter(
-      (component) => component.descriptor.slot === slot && component.descriptor.visible !== false,
-    )
-    .sort(compareComponents);
-  return (
-    <>
-      {components.map((component) => (
-        <Box
-          key={component.descriptor.id}
-          flexDirection="column"
-          flexGrow={fillsSlot(slot, component) ? 1 : 0}
-          flexShrink={fillsSlot(slot, component) ? 1 : 0}
-          overflow="hidden"
-        >
-          {registry.render(component, { snapshot, viewportRows, viewportColumns })}
-        </Box>
-      ))}
-    </>
-  );
-}
-
-function compareComponents(a: UiComponentSnapshot, b: UiComponentSnapshot): number {
-  const byOrder = (a.descriptor.order ?? 0) - (b.descriptor.order ?? 0);
-  if (byOrder !== 0) return byOrder;
-  return a.descriptor.id.localeCompare(b.descriptor.id);
-}
-
-function hasRenderableSlot(slot: string, snapshot: UiWorldSnapshot): boolean {
-  return Object.values(snapshot.components).some(
-    (component) =>
-      component.descriptor.slot === slot &&
-      component.descriptor.visible !== false &&
-      isRenderable(component),
-  );
-}
-
-function isRenderable(component: UiComponentSnapshot): boolean {
-  if (component.descriptor.kind === 'event.log') return component.state.open === true;
-  if (component.descriptor.kind === 'tool.panel') {
-    return component.state.open !== false && hasArrayItems(component.state.tools);
-  }
-  return true;
-}
-
-function hasArrayItems(value: unknown): boolean {
-  return Array.isArray(value) && value.length > 0;
+function resolveMouseSettings(runtime: SdRuntime): { enabled: boolean; rowsPerTick: number } {
+  const cfg = runtime.config.tui?.mouse;
+  const enabled = cfg?.enabled !== false;
+  const rowsPerTick = Math.max(1, cfg?.scroll_rows ?? 3);
+  return { enabled, rowsPerTick };
 }
 
 export { createDefaultInkRendererRegistry } from './components.js';

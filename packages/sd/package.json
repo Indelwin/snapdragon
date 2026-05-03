@@ -37,6 +37,7 @@
     "@snapdragon-ai/tools": "0.1.1",
     "@snapdragon-ai/ui": "0.1.1",
     "@types/figlet": "^1.7.0",
+    "@zenobius/ink-mouse": "^1.0.3",
     "dotenv": "^17.2.3",
     "figlet": "^1.11.0",
     "ink": "^7.0.1",

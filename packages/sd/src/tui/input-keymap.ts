@@ -69,9 +69,7 @@ interface PromptInputArgs {
 export function handlePromptInput(input: string, key: KeyLike, args: PromptInputArgs): void {
   if (handlePromptControl(input, key, args)) return;
   if (handlePromptEditing(input, key, args)) return;
-  if (input && !key.ctrl && !key.meta) {
-    insertText(args, input);
-  }
+  if (input && !key.ctrl && !key.meta) insertText(args, input);
 }
 
 /**
