@@ -54,8 +54,8 @@ test('ensureCheckpoint snapshots, dedups within a turn, and re-enables after new
 
     const entries = await mgr.listCheckpoints(project);
     assert.equal(entries.length, 2, 'two real snapshots');
-    assert.match(entries[0]!.reason, /next turn$/);
-    assert.match(entries[1]!.reason, /before edit/);
+    assert.match(entries[0]?.reason ?? '', /next turn$/);
+    assert.match(entries[1]?.reason ?? '', /before edit/);
   } finally {
     await rm(root, { force: true, recursive: true });
   }
