@@ -6,6 +6,7 @@ import { test } from 'node:test';
 import { mockProvider } from '@snapdragon-ai/host';
 import { estimateMessagesTokens, SessionStore } from '@snapdragon-ai/session';
 import { createAgent, createCodingReplAgent } from '../src/index.ts';
+import { transientProviderRetryDelayMs } from '../src/provider-retry.ts';
 import { parseToolArgs } from '../src/tool-args.ts';
 
 test('coding repl agent can call the REPL tool and continue', async () => {
@@ -127,6 +128,69 @@ test('agent persists user, assistant, and tool messages into a session', async (
     session.messages().map((message) => message.role),
     ['user', 'assistant', 'tool', 'assistant'],
   );
+});
+
+test('agent persists run lifecycle metadata into a session', async () => {
+  const mock = mockProvider();
+  mock.enqueue('done');
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-agent-')) });
+  const session = store.create('agent_run_meta');
+
+  const agent = await createCodingReplAgent({
+    provider: mock.handler,
+    cwd: process.cwd(),
+    session,
+  });
+  await agent.prompt('persist run metadata', { runId: 'run_test' });
+
+  const runRecords = session
+    .records()
+    .filter((record) => record.type === 'session_meta')
+    .map((record) => record.meta.run as { id?: string; status?: string } | undefined)
+    .filter((run): run is { id?: string; status?: string } => run !== undefined);
+  assert.deepEqual(
+    runRecords.map((run) => [run.id, run.status]),
+    [
+      ['run_test', 'started'],
+      ['run_test', 'finished'],
+    ],
+  );
+});
+
+test('agent persists run error metadata when a provider fails after tool results', async () => {
+  const mock = mockProvider();
+  mock.enqueueResponse({
+    content: '',
+    tool_calls: [
+      {
+        id: 'call_1',
+        name: 'repl_eval',
+        args_json: JSON.stringify({ code: '"ok"' }),
+      },
+    ],
+  });
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-agent-')) });
+  const session = store.create('agent_run_error');
+  const agent = await createCodingReplAgent({
+    provider: async (request, context) => {
+      if (request.messages.some((message) => message.role === 'tool')) {
+        throw new Error('provider died after tool output');
+      }
+      return mock.handler(request, context);
+    },
+    cwd: process.cwd(),
+    session,
+  });
+
+  await assert.rejects(() => agent.prompt('trigger tool then fail', { runId: 'run_error' }));
+
+  const runRecords = session
+    .records()
+    .filter((record) => record.type === 'session_meta')
+    .map((record) => record.meta.run as { id?: string; status?: string; error?: string })
+    .filter((run) => run?.id === 'run_error');
+  assert.equal(runRecords.at(-1)?.status, 'error');
+  assert.match(runRecords.at(-1)?.error ?? '', /provider died after tool output/);
 });
 
 test('agent has no default tool-turn cap', async () => {
@@ -301,6 +365,13 @@ test('agent retries context-window provider errors with stronger compaction pres
 
   assert.equal(tokenCounts.length, 2);
   assert.ok(tokenCounts[1] < tokenCounts[0]);
+});
+
+test('transient provider errors are classified for retry', () => {
+  assert.equal(transientProviderRetryDelayMs(new Error('anthropic 429: rate limit'), 0), 2_000);
+  assert.equal(transientProviderRetryDelayMs(new Error('openai 503: unavailable'), 1), 5_000);
+  assert.equal(transientProviderRetryDelayMs(new Error('openai 400: bad request'), 0), undefined);
+  assert.equal(transientProviderRetryDelayMs(new Error('fetch failed'), 5), undefined);
 });
 
 test('parseToolArgs accepts empty, valid JSON, and invalid JSON', () => {

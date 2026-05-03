@@ -15,6 +15,7 @@ export interface AgentPromptState {
   readonly maxTurns: number;
   readonly maxToolResultBytes: number;
   appendMessage(message: Message): Promise<void>;
+  appendMeta?(meta: Record<string, unknown>): unknown | Promise<unknown>;
   emit(event: AgentEvent): Promise<void>;
   sendProviderRequest(
     replacement: { visible: Message; request: Message },

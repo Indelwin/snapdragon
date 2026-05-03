@@ -8,6 +8,7 @@ import type {
   ToolDefinition,
 } from '@snapdragon-ai/host';
 import { type AgentEventListener, emitProviderEvent } from './events.js';
+import { sleep, transientProviderRetryDelayMs } from './provider-retry.js';
 import { assembleProviderRequestMessages } from './request-context.js';
 import { shouldRetryContextWindow } from './request-context-error.js';
 import type { RequestReplacement } from './request-context-messages.js';
@@ -33,6 +34,7 @@ export async function sendProviderRequest(
   runId: string,
 ): Promise<LlmChatResponse> {
   let pressure = 0;
+  let transientAttempt = 0;
   while (true) {
     try {
       return await state.provider(await providerRequestBody(state, replacement, tools, pressure), {
@@ -41,8 +43,14 @@ export async function sendProviderRequest(
         emit: (event) => emitProviderEvent(state.listeners, event),
       });
     } catch (error) {
-      if (!shouldRetryContextWindow(error, pressure)) throw error;
-      pressure += 1;
+      if (shouldRetryContextWindow(error, pressure)) {
+        pressure += 1;
+        continue;
+      }
+      const delay = transientProviderRetryDelayMs(error, transientAttempt);
+      if (delay === undefined) throw error;
+      transientAttempt += 1;
+      await sleep(delay);
     }
   }
 }

@@ -1,9 +1,7 @@
 import type { LlmChatResponse, Message } from '@snapdragon-ai/host';
+import { appendAssistantResponse, appendToolResults } from './agent-prompt-turn.js';
 import type { AgentPromptState } from './agent-prompt-types.js';
-import { emitProviderEvent } from './events.js';
-import { emptyResponseMessage, isEmptyContent } from './response-content.js';
-import { parseToolArgs } from './tool-args.js';
-import { clampToolResult } from './tool-result.js';
+import { appendRunMeta, failedRun, finishedRun, startedRun } from './agent-run-meta.js';
 import type { AgentPromptInput, PromptOptions } from './types.js';
 
 export async function runAgentPrompt(
@@ -12,6 +10,9 @@ export async function runAgentPrompt(
   options: PromptOptions = {},
 ): Promise<LlmChatResponse> {
   const runId = options.runId ?? `run_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const startedAt = new Date().toISOString();
+  let turn = 0;
+  await appendRunMeta(state, startedRun(runId, startedAt));
   await state.emit({ type: 'run_start', runId });
   const userMessage: Message = { role: 'user', content: input };
   const requestUserMessage: Message =
@@ -21,63 +22,32 @@ export async function runAgentPrompt(
   await state.appendMessage(userMessage);
   await state.emit({ type: 'message', message: userMessage });
 
-  for (let turn = 0; turn < state.maxTurns; turn += 1) {
-    if (options.signal?.aborted) throw new Error('Agent run aborted');
+  try {
+    for (; turn < state.maxTurns; turn += 1) {
+      if (options.signal?.aborted) throw new Error('Agent run aborted');
 
-    const tools = state.agent.registry.listDefinitions();
-    const response = await state.sendProviderRequest(
-      { visible: userMessage, request: requestUserMessage },
-      tools,
-      runId,
-    );
+      const tools = state.agent.registry.listDefinitions();
+      const response = await state.sendProviderRequest(
+        { visible: userMessage, request: requestUserMessage },
+        tools,
+        runId,
+      );
 
-    await appendAssistantResponse(state, response, runId);
-    if (!response.tool_calls || response.tool_calls.length === 0) return response;
+      const done = await appendAssistantResponse(state, response, runId);
+      if (done) {
+        await appendRunMeta(state, finishedRun(runId, startedAt, turn, response));
+        return response;
+      }
 
-    for (const call of response.tool_calls) {
-      await state.emit({ type: 'tool_start', call });
-      const result = await state.agent.registry.invoke(call.name, parseToolArgs(call.args_json), {
-        cwd: state.agent.cwd,
-        signal: options.signal,
-      });
-      const toolContent = clampToolResult(result.content, state.maxToolResultBytes);
-      const toolMessage: Message = { role: 'tool', content: toolContent, tool_call_id: call.id };
-      await state.appendMessage(toolMessage);
-      await state.emit({ type: 'message', message: toolMessage });
-      await state.emit({
-        type: 'tool_end',
-        call,
-        content: toolContent,
-        isError: result.isError === true,
-      });
+      await appendToolResults(state, response.tool_calls ?? [], options.signal);
     }
+
+    throw new Error(`Agent exceeded maxTurns=${state.maxTurns}`);
+  } catch (error) {
+    await appendRunMeta(
+      state,
+      failedRun(runId, startedAt, turn, error, options.signal?.aborted === true),
+    );
+    throw error;
   }
-
-  throw new Error(`Agent exceeded maxTurns=${state.maxTurns}`);
-}
-
-async function appendAssistantResponse(
-  state: AgentPromptState,
-  response: LlmChatResponse,
-  runId: string,
-): Promise<void> {
-  const assistantMessage: Message = {
-    role: 'assistant',
-    content: response.content,
-    tool_calls: response.tool_calls,
-    thinking: response.thinking,
-  };
-  await state.appendMessage(assistantMessage);
-  await state.emit({ type: 'message', message: assistantMessage });
-
-  if (response.tool_calls && response.tool_calls.length > 0) return;
-  if (isEmptyContent(response.content)) {
-    emitProviderEvent(state.agent.listeners, {
-      kind: 'error',
-      run_id: runId,
-      provider: 'agent',
-      message: emptyResponseMessage(response.finish_reason, response.thinking),
-    });
-  }
-  await state.emit({ type: 'run_end', runId, response });
 }

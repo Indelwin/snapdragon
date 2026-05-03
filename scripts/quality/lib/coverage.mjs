@@ -12,10 +12,37 @@ export async function readCoverage(dir) {
 
 export function functionCoverage(fileCoverage, fn) {
   if (!fileCoverage) return 0;
-  const candidates = fileCoverage.filter((entry) => overlaps(entry, fn));
+  // Match by name first — TS source byte offsets and V8's compiled-JS
+  // offsets drift apart for files heavy in type annotations, so positional
+  // overlap can miss real coverage. Names are unique enough in practice
+  // for our quality gates; only fall back to overlap when nothing matches
+  // (e.g. anonymous arrow functions).
+  const named =
+    fn.name && fn.name !== '<anonymous>'
+      ? fileCoverage.filter((entry) => entry.functionName === fn.name)
+      : [];
+  const candidates = named.length > 0 ? named : fileCoverage.filter((entry) => overlaps(entry, fn));
   if (candidates.length === 0) return 0;
   const best = candidates.sort((a, b) => span(a) - span(b))[0];
-  return coveredLength(best.ranges, fn) / Math.max(1, fn.end - fn.start);
+  return coveredFraction(best.ranges, fn);
+}
+
+function coveredFraction(ranges, fn) {
+  // When matching by name, the V8 ranges live in compiled-JS offset space
+  // and don't line up with the TS source span. Treat the V8 entry's first
+  // range as the function body and measure covered fraction within that.
+  const first = ranges[0];
+  if (first.startOffset >= fn.start && first.endOffset <= fn.end + (fn.end - fn.start)) {
+    // Likely positional alignment — measure against the TS span.
+    return coveredLength(ranges, fn) / Math.max(1, fn.end - fn.start);
+  }
+  // Compiled-JS entry — measure relative to the V8 entry's own span.
+  let covered = 0;
+  for (let i = 1; i < ranges.length; i += 1) {
+    if (ranges[i].count === 0) covered += ranges[i].endOffset - ranges[i].startOffset;
+  }
+  const total = first.endOffset - first.startOffset;
+  return first.count > 0 ? Math.max(0, total - covered) / Math.max(1, total) : 0;
 }
 
 function mergeCoverage(coverage, payload) {

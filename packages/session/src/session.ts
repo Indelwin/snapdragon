@@ -14,6 +14,7 @@ import {
   type SessionRecord,
 } from './records.js';
 import { type ContextCompactionResult, compactSessionContext } from './session-compaction.js';
+import { contextChunks, messageRecords, nextChunkId, nextStoreId } from './session-record-views.js';
 
 export interface AppendMessageOptions {
   createdAt?: number;
@@ -32,13 +33,14 @@ export class JsonlSession {
   readonly jsonlPath: string;
   #nextStoreId = 1;
   #nextChunkId = 1;
+  #records: SessionRecord[];
 
   constructor(options: JsonlSessionOptions) {
     this.sessionId = options.sessionId;
     this.jsonlPath = options.jsonlPath;
-    const records = readRecords(this.jsonlPath);
-    this.#nextStoreId = nextStoreId(records);
-    this.#nextChunkId = nextChunkId(records);
+    this.#records = readRecords(this.jsonlPath);
+    this.#nextStoreId = nextStoreId(this.#records);
+    this.#nextChunkId = nextChunkId(this.#records);
   }
 
   appendMessage(message: Message, options: AppendMessageOptions = {}): SessionMessageRecord {
@@ -54,7 +56,7 @@ export class JsonlSession {
     if (message.tool_calls) record.tool_calls = message.tool_calls;
     if (message.thinking) record.thinking = message.thinking;
     if (options.meta) record.meta = options.meta;
-    appendRecord(this.jsonlPath, record);
+    this.#appendRecord(record);
     return record;
   }
 
@@ -73,12 +75,12 @@ export class JsonlSession {
     };
     this.#nextChunkId += 1;
     if (input.meta) record.meta = input.meta;
-    appendRecord(this.jsonlPath, record);
+    this.#appendRecord(record);
     return record;
   }
 
   appendMeta(meta: Record<string, unknown>): void {
-    appendRecord(this.jsonlPath, {
+    this.#appendRecord({
       type: 'session_meta',
       updated_at: Date.now() / 1000,
       meta,
@@ -86,15 +88,15 @@ export class JsonlSession {
   }
 
   records(): SessionRecord[] {
-    return readRecords(this.jsonlPath);
+    return this.#records.slice();
   }
 
   metadata(): SessionMetadata {
-    return sessionMetadata(this.records());
+    return sessionMetadata(this.#records);
   }
 
   messageRecords(): SessionMessageRecord[] {
-    return this.records().filter(
+    return this.#records.filter(
       (record): record is SessionMessageRecord => record.type === 'message',
     );
   }
@@ -108,22 +110,23 @@ export class JsonlSession {
   }
 
   contextChunks(): SessionContextChunkRecord[] {
-    return this.records().filter(
+    return this.#records.filter(
       (record): record is SessionContextChunkRecord => record.type === 'context_chunk',
     );
   }
 
   assembleContext(options: ContextWindowOptions = {}): Message[] {
+    const records = this.#records;
     return assembleContextWindow(
-      { messages: this.messageRecords(), chunks: this.contextChunks() },
+      { messages: messageRecords(records), chunks: contextChunks(records) },
       options,
     ).messages;
   }
 
   compactContext(options: ContextWindowOptions = {}): ContextCompactionResult {
     return compactSessionContext({
-      messages: this.messageRecords(),
-      chunks: this.contextChunks(),
+      messages: messageRecords(this.#records),
+      chunks: contextChunks(this.#records),
       options,
       append: (chunk) => this.appendContextChunk(chunk),
     });
@@ -135,6 +138,11 @@ export class JsonlSession {
         ? { role: 'system' as const, content: options.system }
         : options.system;
     return system ? [system, ...this.messages()] : this.messages();
+  }
+
+  #appendRecord(record: SessionRecord): void {
+    appendRecord(this.jsonlPath, record);
+    this.#records.push(record);
   }
 }
 
@@ -162,20 +170,4 @@ export function openSessionFile(options: JsonlSessionOptions): JsonlSession {
     throw new Error(`session does not exist at ${options.jsonlPath}`);
   }
   return new JsonlSession(options);
-}
-
-function nextStoreId(records: SessionRecord[]): number {
-  let next = 1;
-  for (const record of records) {
-    if (record.type === 'message') next = Math.max(next, record.store_id + 1);
-  }
-  return next;
-}
-
-function nextChunkId(records: SessionRecord[]): number {
-  let next = 1;
-  for (const record of records) {
-    if (record.type === 'context_chunk') next = Math.max(next, record.chunk_id + 1);
-  }
-  return next;
 }

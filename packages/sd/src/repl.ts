@@ -2,7 +2,7 @@ import { stderr, stdin, stdout } from 'node:process';
 import { createInterface } from 'node:readline/promises';
 import type { LlmChatResponse } from '@snapdragon-ai/host';
 import { contentWithAttachments, type PendingAttachment } from './attachments.js';
-import { type CommandPromptRun, type CommandResult, handleCommand } from './commands.js';
+import { type CommandResult, handleCommand } from './commands.js';
 import { maybeAutoCaptureMemory, requestInputWithMemory } from './memory.js';
 import { RunRenderer } from './renderer.js';
 import type { SdRuntime } from './runtime.js';
@@ -79,7 +79,7 @@ export async function runInteractive(runtime: SdRuntime, io: SdIo = defaultIo): 
 
 export async function runCommandPrompt(
   runtime: SdRuntime,
-  prompt: CommandPromptRun,
+  prompt: import('./skills.js').SkillInvocation,
   io: SdIo = defaultIo,
 ): Promise<LlmChatResponse> {
   runtime.session?.appendMeta(prompt.meta);

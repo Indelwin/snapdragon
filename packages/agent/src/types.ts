@@ -1,24 +1,11 @@
-import type { Message, MessageContent, Profile, StreamingChatHandler } from '@snapdragon-ai/host';
+import type { MessageContent, Profile, StreamingChatHandler } from '@snapdragon-ai/host';
 import type { ToolRegistry, ToolRegistryOptions, Toolset } from '@snapdragon-ai/tools';
+import type { AgentContextOptions } from './agent-context-options.js';
+import type { AgentSession } from './agent-session.js';
 
+export type { AgentContextOptions } from './agent-context-options.js';
+export type { AgentSession } from './agent-session.js';
 export type { AgentEvent, AgentEventListener } from './events.js';
-
-export interface AgentSession {
-  appendMessage(message: Message): unknown | Promise<unknown>;
-  messages(): Message[];
-  assembleContext?(options: AgentContextOptions): Message[] | Promise<Message[]>;
-  compactContext?(options: AgentContextOptions): unknown | Promise<unknown>;
-}
-
-export interface AgentContextOptions {
-  enabled?: boolean;
-  freshTailCount?: number;
-  maxRequestTokens?: number;
-  chunkTargetTokens?: number;
-  summaryTargetTokens?: number;
-  minChunkMessages?: number;
-  maxCompactionPasses?: number;
-}
 
 export interface AgentOptions {
   provider: StreamingChatHandler;
