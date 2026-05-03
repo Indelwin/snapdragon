@@ -37,12 +37,18 @@ function handleScrollKeys(key: KeyLike, controller: SdUiController): boolean {
 }
 
 function handleDraftAndPanelKeys(input: string, key: KeyLike, args: GlobalInputArgs): boolean {
-  if (isCtrl(input, key, 'e')) return runSync(() => args.controller.toggleEventPanel());
-  if (isCtrl(input, key, 'u'))
-    return runSync(() => clearDraft(args.setDraft, args.historyIndexRef));
-  if (isCtrl(input, key, 'p')) return runSync(() => togglePalette(args));
-  return false;
+  if (!key.ctrl) return false;
+  const action = CTRL_ACTIONS[input];
+  if (!action) return false;
+  return runSync(() => action(args));
 }
+
+const CTRL_ACTIONS: Record<string, (args: GlobalInputArgs) => void> = {
+  e: (args) => args.controller.toggleEventPanel(),
+  t: (args) => args.controller.toggleToolPanel(),
+  u: (args) => clearDraft(args.setDraft, args.historyIndexRef),
+  p: (args) => togglePalette(args),
+};
 
 function isCtrl(input: string, key: KeyLike, letter: string): boolean {
   return Boolean(key.ctrl) && input === letter;

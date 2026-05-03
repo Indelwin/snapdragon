@@ -73,6 +73,7 @@ export const BUILTIN_SLASH_COMMANDS = [
   '/paste',
   '/clear-attachments',
   '/events',
+  '/tools-panel',
   '/palette',
 ];
 
@@ -529,10 +530,9 @@ async function memoryPromote(runtime: SdRuntime, id: string): Promise<string> {
   if (!entry.tags?.includes('tentative')) {
     return `${id} is not tentative — nothing to promote.`;
   }
-  // Rewrite the whole MEMORY.md with the tentative tag stripped from this
-  // entry. We don't bother with a pinpoint patch because the file is
-  // typically <1MB and 'replace' is the only authoring action available
-  // through the abstract MemoryProvider interface.
+  // Rewrite the whole MEMORY.md with the tentative tag stripped from this entry.
+  // We use 'replace' (not a pinpoint patch) since the file is typically <1MB and
+  // 'replace' is the only authoring action available through MemoryProvider.
   const next = all.map((candidate) =>
     candidate.id === id
       ? { ...candidate, tags: candidate.tags?.filter((t) => t !== 'tentative') }
