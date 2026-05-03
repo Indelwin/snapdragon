@@ -11,18 +11,13 @@ import {
   openaiCompatibleProvider,
   openaiResponsesProvider,
   type ProviderModel,
-  type ReasoningRequest,
   type StreamingChatHandler,
 } from '@snapdragon-ai/host';
 import type { SdConfig, SdProviderConfig, SdProviderKind } from './config.js';
 import type { SdExtensionProviderFactory } from './extension-runtime.js';
-export interface SdProviderRuntime {
-  id: string;
-  kind: SdProviderKind;
-  model: string;
-  handler: StreamingChatHandler;
-  reasoning?: ReasoningRequest;
-}
+import { providerModelLimits, type SdProviderRuntime } from './provider-limits.js';
+
+export type { SdProviderRuntime } from './provider-limits.js';
 
 export interface SdProviderSummary {
   id: string;
@@ -75,6 +70,7 @@ export function makeSdProvider(
     kind,
     model: normalized.model,
     reasoning: normalized.reasoning,
+    limits: providerModelLimits(kind, normalized.model),
     handler: makeHandler(kind, normalized, providerConfig, env),
   };
 }
