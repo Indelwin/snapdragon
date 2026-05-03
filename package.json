@@ -11,6 +11,7 @@
     "packages/session",
     "packages/config",
     "packages/tools",
+    "packages/checkpoint",
     "packages/agent",
     "packages/sd",
     "packages/repl",
