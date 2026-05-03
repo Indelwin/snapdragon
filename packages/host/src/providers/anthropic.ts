@@ -1,11 +1,12 @@
 import type { StreamingChatHandler } from '../registry.js';
 import type { ProviderDescriptor } from '../types.js';
-import { anthropicSystem, convertMessagesToAnthropic } from './anthropic-format.js';
-import { anthropicReasoning } from './anthropic-reasoning.js';
+import { anthropicBody } from './anthropic-body.js';
+import type { AnthropicPromptCachingInput } from './anthropic-cache.js';
 import { readAnthropicStream } from './anthropic-stream.js';
 import { type FetchLike, fetchImpl } from './shared.js';
 
 export { listAnthropicModels } from '../model-discovery.js';
+export { anthropicBody } from './anthropic-body.js';
 
 export interface AnthropicProviderOptions {
   apiKey: string;
@@ -13,6 +14,7 @@ export interface AnthropicProviderOptions {
   baseUrl?: string;
   apiVersion?: string;
   defaultMaxTokens?: number;
+  promptCaching?: AnthropicPromptCachingInput;
   fetch?: FetchLike;
 }
 
@@ -52,41 +54,6 @@ export function anthropicProvider(options: AnthropicProviderOptions): StreamingC
     if (!response.body) throw new Error('anthropic: missing response body');
     return readAnthropicStream(response.body, context);
   };
-}
-
-export function anthropicBody(
-  options: Pick<AnthropicProviderOptions, 'model' | 'defaultMaxTokens'>,
-  request: Parameters<StreamingChatHandler>[0],
-): Record<string, unknown> {
-  const body: Record<string, unknown> = {
-    model: options.model,
-    max_tokens: request.max_tokens ?? options.defaultMaxTokens ?? 4096,
-    stream: true,
-    messages: convertMessagesToAnthropic(request.messages),
-  };
-  const system = anthropicSystem(request.messages);
-  if (system) body.system = system;
-  if (request.temperature !== undefined) body.temperature = request.temperature;
-  if (request.stop !== undefined) body.stop_sequences = request.stop;
-  if (request.reasoning?.enabled) {
-    Object.assign(body, anthropicReasoning(options.model, request.reasoning));
-  }
-  if (request.tools && request.tools.length > 0) {
-    body.tools = request.tools.map((tool) => ({
-      name: tool.name,
-      description: tool.description,
-      input_schema: tool.parameters,
-    }));
-    body.tool_choice = anthropicToolChoice(request.tool_choice);
-  }
-  return body;
-}
-
-function anthropicToolChoice(choice: Parameters<StreamingChatHandler>[0]['tool_choice']): unknown {
-  if (choice && typeof choice === 'object') return { type: 'tool', name: choice.name };
-  if (choice === 'any') return { type: 'any' };
-  if (choice === 'none') return { type: 'none' };
-  return { type: 'auto' };
 }
 
 function requestHeaders(options: AnthropicProviderOptions): Record<string, string> {
