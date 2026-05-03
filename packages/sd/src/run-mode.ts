@@ -2,6 +2,7 @@ import { stdout } from 'node:process';
 import { writeExitSummary } from './exit-summary.js';
 import { runInteractive, runOneShot } from './repl.js';
 import type { SdRuntime } from './runtime.js';
+import { runtimeWarningLines } from './runtime-warnings.js';
 
 export type SdSelectedRunMode = 'tui' | 'repl' | 'print';
 
@@ -12,6 +13,7 @@ export async function runSelectedMode(
 ): Promise<void> {
   if (mode === 'print') {
     if (!prompt) throw new Error('Print mode requires a prompt.');
+    writeRuntimeWarnings(runtime);
     await runOneShot(runtime, prompt);
     return;
   }
@@ -22,4 +24,8 @@ export async function runSelectedMode(
     await runTui(runtime);
   }
   await writeExitSummary(runtime, stdout);
+}
+
+function writeRuntimeWarnings(runtime: SdRuntime): void {
+  for (const warning of runtimeWarningLines(runtime)) stdout.write(`${warning}\n`);
 }

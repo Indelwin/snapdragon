@@ -7,13 +7,8 @@ import {
   readClipboardText,
   unsupportedPlatformMessage,
 } from './clipboard.js';
-import {
-  configuredModelsForProvider,
-  discoverSdModels,
-  listSdProviders,
-  switchSdModel,
-  switchSdProvider,
-} from './provider.js';
+import { configuredModelsForProvider, discoverSdModels, listSdProviders } from './provider.js';
+import { switchSdModel, switchSdProvider } from './provider-switch.js';
 import {
   formatReloadReport,
   parseReloadArg,
@@ -24,13 +19,15 @@ import type { SdIo } from './repl.js';
 import type { SdRuntime } from './runtime.js';
 import {
   currentProfileName,
-  deleteRuntimeSession,
-  newRuntimeSession,
   rebuildSdRuntime,
-  resumeRuntimeSession,
   switchRuntimeProfile,
 } from './runtime-transitions.js';
 import { sessionCommandSummary } from './session-command-display.js';
+import {
+  deleteSessionCommand,
+  newSessionCommand,
+  resumeSessionCommand,
+} from './session-commands.js';
 import {
   acceptSkillDraft,
   listSkillDrafts,
@@ -217,41 +214,6 @@ async function providerCommand(
   const [providerId, model] = arg.split(/\s+/, 2);
   const provider = await switchSdProvider(runtime, providerId, model);
   return writeResult(io, `Switched to ${provider.id}/${provider.model}.`, attachments);
-}
-
-async function resumeSessionCommand(
-  arg: string,
-  runtime: SdRuntime,
-  io: SdIo,
-  attachments: PendingAttachment[],
-): Promise<CommandResult> {
-  const session = await resumeRuntimeSession(runtime, arg || undefined);
-  return writeResult(io, `Resumed session ${session.sessionId}.`, attachments);
-}
-
-async function newSessionCommand(
-  arg: string,
-  runtime: SdRuntime,
-  io: SdIo,
-  attachments: PendingAttachment[],
-): Promise<CommandResult> {
-  const session = await newRuntimeSession(runtime, arg || undefined);
-  return writeResult(io, `Started session ${session.sessionId}.`, attachments);
-}
-
-function deleteSessionCommand(
-  arg: string,
-  runtime: SdRuntime,
-  io: SdIo,
-  attachments: PendingAttachment[],
-): CommandResult {
-  if (!arg) return writeResult(io, 'Usage: /delete-session <id>', attachments);
-  const deleted = deleteRuntimeSession(runtime, arg);
-  return writeResult(
-    io,
-    deleted ? `Deleted session ${arg}.` : `Session not found: ${arg}.`,
-    attachments,
-  );
 }
 
 async function profileCommand(

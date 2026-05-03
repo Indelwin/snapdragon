@@ -1,5 +1,10 @@
 import type { Message } from '@snapdragon-ai/host';
-import type { JsonlSession, SessionMessageRecord, SessionRecord } from '@snapdragon-ai/session';
+import {
+  type JsonlSession,
+  type SessionMessageRecord,
+  type SessionRecord,
+  sessionMetadata,
+} from '@snapdragon-ai/session';
 
 export interface SdSessionSummary {
   id: string;
@@ -32,12 +37,7 @@ export function sessionTitle(records: SessionRecord[]): string | undefined {
 }
 
 export function latestSessionMeta(records: SessionRecord[]): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const record of records) {
-    if (record.type === 'session_open' && record.meta) Object.assign(out, record.meta);
-    if (record.type === 'session_meta') Object.assign(out, record.meta);
-  }
-  return out;
+  return sessionMetadata(records);
 }
 
 export function fallbackTitleFromMessages(messages: Message[]): string | undefined {
