@@ -1,5 +1,11 @@
 import { contentText, normalizeContent } from '../content.js';
-import type { ContentBlock, Message } from '../types.js';
+import type { Message } from '../types.js';
+import type { NormalizedAnthropicPromptCachingOptions } from './anthropic-cache.js';
+import {
+  applyStableMessageCacheBreakpoint,
+  anthropicSystemContent as cachedSystemContent,
+} from './anthropic-cache-apply.js';
+import { anthropicContentBlock } from './anthropic-media.js';
 import { signedThinkingBlocks } from './anthropic-thinking.js';
 import { safeJson } from './json.js';
 
@@ -21,7 +27,10 @@ const MISSING_TOOL_RESULT_STUB = '[unknown error, tool result missing]';
  * synthesize stubs and merge same-role neighbours so the generation can
  * proceed. The model sees the stub and can recover.
  */
-export function convertMessagesToAnthropic(messages: Message[]): Array<Record<string, unknown>> {
+export function convertMessagesToAnthropic(
+  messages: Message[],
+  cache?: NormalizedAnthropicPromptCachingOptions,
+): Array<Record<string, unknown>> {
   const repaired = repairToolResultPairs(messages.filter((m) => m.role !== 'system'));
   const converted = repaired
     .map(convertMessageToAnthropic)
@@ -31,6 +40,7 @@ export function convertMessagesToAnthropic(messages: Message[]): Array<Record<st
   // with `user`. In practice this only fires if the very first turn is somehow
   // an assistant or stray tool message after repair (e.g. malformed session).
   while (merged.length > 0 && merged[0].role !== 'user') merged.shift();
+  applyStableMessageCacheBreakpoint(merged, cache);
   return merged;
 }
 
@@ -140,6 +150,13 @@ export function anthropicSystem(messages: Message[]): string | undefined {
   return text.length > 0 ? text : undefined;
 }
 
+export function anthropicSystemContent(
+  messages: Message[],
+  cache?: NormalizedAnthropicPromptCachingOptions,
+): string | Array<Record<string, unknown>> | undefined {
+  return cachedSystemContent(anthropicSystem(messages), cache);
+}
+
 function assistantToolUseMessage(message: Message): Record<string, unknown> {
   const content: Array<Record<string, unknown>> = [];
   for (const block of signedThinkingBlocks(message.thinking)) {
@@ -157,47 +174,5 @@ function assistantToolUseMessage(message: Message): Record<string, unknown> {
   return { role: 'assistant', content };
 }
 
-function anthropicContentBlock(block: ContentBlock): Record<string, unknown> {
-  if (block.type === 'text') return { type: 'text', text: block.text };
-  if (block.type === 'image') return anthropicImageBlock(block);
-  if (block.type === 'file') return anthropicDocumentBlock(block);
-  return { type: 'text', text: contentText(block.content) };
-}
-
-function anthropicImageBlock(
-  block: Extract<ContentBlock, { type: 'image' }>,
-): Record<string, unknown> {
-  if (block.source.type === 'url') {
-    return { type: 'image', source: { type: 'url', url: block.source.url } };
-  }
-  if (block.source.type === 'file') {
-    return { type: 'image', source: { type: 'file', file_id: block.source.file_id } };
-  }
-  return {
-    type: 'image',
-    source: {
-      type: 'base64',
-      media_type: block.source.media_type,
-      data: block.source.data,
-    },
-  };
-}
-
-function anthropicDocumentBlock(
-  block: Extract<ContentBlock, { type: 'file' }>,
-): Record<string, unknown> {
-  if (block.source.type === 'url') {
-    return { type: 'document', source: { type: 'url', url: block.source.url } };
-  }
-  if (block.source.type === 'file') {
-    return { type: 'document', source: { type: 'file', file_id: block.source.file_id } };
-  }
-  return {
-    type: 'document',
-    source: {
-      type: 'base64',
-      media_type: block.source.media_type,
-      data: block.source.data,
-    },
-  };
-}
+// Media block conversion lives in `anthropic-media.ts`.
+// Stable-message cache breakpoint helper lives in `anthropic-cache-apply.ts`.

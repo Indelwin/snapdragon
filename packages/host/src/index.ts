@@ -30,6 +30,10 @@ export {
   anthropicProviderDescriptor,
   listAnthropicModels as listAnthropicProviderModels,
 } from './providers/anthropic.js';
+export type {
+  AnthropicPromptCachingInput,
+  AnthropicPromptCachingOptions,
+} from './providers/anthropic-cache.js';
 export type { CodexAuth, CodexProviderOptions } from './providers/codex.js';
 export { codexProvider, codexProviderDescriptor } from './providers/codex.js';
 export type {
