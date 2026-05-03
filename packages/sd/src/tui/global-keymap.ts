@@ -1,44 +1,59 @@
 import type { MutableRefObject } from 'react';
 import { scrollChat, scrollChatToBottom } from './chat-scroll.js';
 import type { KeyLike, SetDraft } from './input-keymap.js';
+import { isMouseSgrSequence } from './mouse-sgr-filter.js';
 import type { PaletteState } from './palette-state.js';
 import type { SdUiController } from './ui.js';
 
-export function handleGlobalInput(
-  input: string,
-  key: KeyLike,
-  args: {
-    controller: SdUiController;
-    exit: () => void;
-    setDraft: SetDraft;
-    setPalette: (patch: Partial<PaletteState>) => void;
-    paletteRef: MutableRefObject<PaletteState>;
-    historyIndexRef: MutableRefObject<number>;
-  },
-): boolean {
-  if (key.ctrl && input === 'c') return runSync(args.exit);
-  // Esc: cancel an in-flight agent run when one is active. When no run is
-  // running, swallow the key so it can't accidentally do anything destructive
-  // (it used to be uncaught and would only matter if a future binding picked
-  // it up — better to be explicit). Palette open? Defer to the palette
-  // handler, which uses Esc to close itself.
-  if (key.escape && !args.paletteRef.current.open) {
-    return runSync(() => {
-      args.controller.abortActiveRun();
-    });
-  }
-  if (key.ctrl && input === 'e') return runSync(() => args.controller.toggleEventPanel());
-  if (key.ctrl && input === 'u')
-    return runSync(() => clearDraft(args.setDraft, args.historyIndexRef));
-  if (key.pageUp) return runSync(() => scrollChat(args.controller.world, 10));
-  if (key.pageDown) return runSync(() => scrollChat(args.controller.world, -10));
-  if (key.end) return runSync(() => scrollChatToBottom(args.controller.world));
-  if (key.ctrl && input === 'p') {
-    return runSync(() =>
-      args.setPalette({ open: !args.paletteRef.current.open, query: '', selectedIndex: 0 }),
-    );
+export interface GlobalInputArgs {
+  controller: SdUiController;
+  exit: () => void;
+  setDraft: SetDraft;
+  setPalette: (patch: Partial<PaletteState>) => void;
+  paletteRef: MutableRefObject<PaletteState>;
+  historyIndexRef: MutableRefObject<number>;
+}
+
+export function handleGlobalInput(input: string, key: KeyLike, args: GlobalInputArgs): boolean {
+  if (isMouseSgrSequence(input)) return true;
+  if (handleExitOrCancel(input, key, args)) return true;
+  if (handleScrollKeys(key, args.controller)) return true;
+  return handleDraftAndPanelKeys(input, key, args);
+}
+
+function handleExitOrCancel(input: string, key: KeyLike, args: GlobalInputArgs): boolean {
+  if (isCtrl(input, key, 'c')) return runSync(args.exit);
+  if (isEscapeWithoutPalette(key, args.paletteRef)) {
+    return runSync(() => args.controller.abortActiveRun());
   }
   return false;
+}
+
+function handleScrollKeys(key: KeyLike, controller: SdUiController): boolean {
+  if (key.pageUp) return runSync(() => scrollChat(controller.world, 10));
+  if (key.pageDown) return runSync(() => scrollChat(controller.world, -10));
+  if (key.end) return runSync(() => scrollChatToBottom(controller.world));
+  return false;
+}
+
+function handleDraftAndPanelKeys(input: string, key: KeyLike, args: GlobalInputArgs): boolean {
+  if (isCtrl(input, key, 'e')) return runSync(() => args.controller.toggleEventPanel());
+  if (isCtrl(input, key, 'u'))
+    return runSync(() => clearDraft(args.setDraft, args.historyIndexRef));
+  if (isCtrl(input, key, 'p')) return runSync(() => togglePalette(args));
+  return false;
+}
+
+function isCtrl(input: string, key: KeyLike, letter: string): boolean {
+  return Boolean(key.ctrl) && input === letter;
+}
+
+function isEscapeWithoutPalette(key: KeyLike, paletteRef: MutableRefObject<PaletteState>): boolean {
+  return Boolean(key.escape) && !paletteRef.current.open;
+}
+
+function togglePalette(args: GlobalInputArgs): void {
+  args.setPalette({ open: !args.paletteRef.current.open, query: '', selectedIndex: 0 });
 }
 
 function clearDraft(setDraft: SetDraft, historyIndexRef: MutableRefObject<number>): void {

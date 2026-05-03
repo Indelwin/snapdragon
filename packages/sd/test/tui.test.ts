@@ -705,6 +705,25 @@ test('prompt typing inserts at cursor, not just at end', () => {
   assert.equal(args.cursorRef.current, 3);
 });
 
+test('global keymap swallows xterm SGR mouse sequences before they reach the prompt', () => {
+  const consumed = handleGlobalInput(
+    '[<64;10;5M',
+    {},
+    {
+      controller: {
+        world: { componentState: () => ({}), apply: () => undefined },
+        abortActiveRun: () => undefined,
+      } as unknown as Parameters<typeof handleGlobalInput>[2]['controller'],
+      exit: () => undefined,
+      setDraft: () => undefined,
+      setPalette: () => undefined,
+      paletteRef: { current: { open: false, query: '', selectedIndex: 0 } },
+      historyIndexRef: { current: -1 },
+    },
+  );
+  assert.equal(consumed, true);
+});
+
 test('prompt backspace removes char before cursor (not always last char)', () => {
   const args = makePromptInputArgs('hello', 3); // cursor "hel|lo"
   handlePromptInput('', { backspace: true }, args);
