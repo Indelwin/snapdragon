@@ -999,6 +999,39 @@ test('prompt completion supports skill arguments', () => {
   );
 });
 
+test('/tools-panel toggles the tool panel open/closed via runSlashLine', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tools-toggle-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    const controller = new SdUiController(runtime);
+    const initial = controller.world.componentState(SD_UI_IDS.toolPanel).open;
+    await runSlashLine({
+      line: '/tools-panel',
+      runtime,
+      controller,
+      exit: () => undefined,
+      attachmentsRef: { current: [] },
+      setAttachments: () => undefined,
+      setPalette: () => undefined,
+    });
+    const after = controller.world.componentState(SD_UI_IDS.toolPanel).open;
+    assert.notEqual(after, initial);
+    await runSlashLine({
+      line: '/tools-panel',
+      runtime,
+      controller,
+      exit: () => undefined,
+      attachmentsRef: { current: [] },
+      setAttachments: () => undefined,
+      setPalette: () => undefined,
+    });
+    const back = controller.world.componentState(SD_UI_IDS.toolPanel).open;
+    assert.equal(back, initial);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
 test('inline shell command returns stdout and error status', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-shell-'));
   try {

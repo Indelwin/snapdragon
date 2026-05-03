@@ -45,6 +45,7 @@ export function defaultCommands(
     command('/clear-attachments', 'clear pending attachments', runSlashCommand),
     command('/paste', 'paste clipboard image (or echo text)', runSlashCommand, '[image|text]'),
     command('/events', 'toggle events panel', runSlashCommand),
+    command('/tools-panel', 'toggle tools panel', runSlashCommand),
     command('/palette', 'open command palette', runSlashCommand),
     command('/quit', 'exit sd', runSlashCommand),
   ];
@@ -66,9 +67,8 @@ export async function runSlashLine(args: {
   setPalette: (patch: Partial<PaletteState>) => void;
   openSelection?: (draft: string, options?: { completion?: PromptCompletionState }) => void;
 }): Promise<void> {
-  if (args.line === '/events') {
-    toggleEvents(args.controller);
-    return;
+  if (args.line === '/events' || args.line === '/tools-panel') {
+    return togglePanel(args.line, args.controller);
   }
   if (args.line === '/palette') {
     args.setPalette({ open: true, query: '', selectedIndex: 0 });
@@ -133,10 +133,7 @@ export async function runSlashLine(args: {
       args.controller.markRunError(error);
     }
   }
-  if (args.line.startsWith('/provider') || args.line.startsWith('/model')) {
-    args.controller.refreshRuntimeStatus();
-  }
-  if (isRuntimeStatusCommand(args.line)) args.controller.refreshRuntimeStatus();
+  if (isRuntimeTransitionCommand(args.line)) args.controller.refreshRuntimeStatus();
   if (result.quit) args.exit();
 }
 
@@ -255,19 +252,17 @@ async function runEnteredCommand(
   else await runSlashCommand(line);
 }
 
-function toggleEvents(controller: SdUiController): void {
-  controller.toggleEventPanel();
-  controller.appendCommandOutput('Toggled events panel.');
+function togglePanel(line: string, c: SdUiController): void {
+  const tools = line === '/tools-panel';
+  if (tools) c.toggleToolPanel();
+  else c.toggleEventPanel();
+  c.appendCommandOutput(`Toggled ${tools ? 'tools' : 'events'} panel.`);
 }
 
 function isTranscriptResetCommand(line: string): boolean {
   return (
     line.startsWith('/resume') || line.startsWith('/new-session') || line.startsWith('/profile')
   );
-}
-
-function isRuntimeStatusCommand(line: string): boolean {
-  return isTranscriptResetCommand(line) || line.startsWith('/delete-session');
 }
 
 function isRuntimeTransitionCommand(line: string): boolean {

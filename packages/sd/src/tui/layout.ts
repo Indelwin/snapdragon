@@ -1,7 +1,12 @@
 import type { UiComponentSnapshot, UiWorldSnapshot } from '@snapdragon-ai/ui';
 
+// Slot-kind pairs that should `flexGrow={1}` to fill remaining height. The
+// `panel/event.log` entry stops the right-side column overflowing when both
+// the tool panel and event log are open.
+const FILLING_SLOTS = new Set<string>(['main::chat.transcript', 'panel::event.log']);
+
 export function fillsSlot(slot: string, component: UiComponentSnapshot): boolean {
-  return slot === 'main' && component.descriptor.kind === 'chat.transcript';
+  return FILLING_SLOTS.has(`${slot}::${component.descriptor.kind}`);
 }
 
 export function fixedChromeRows(snapshot: UiWorldSnapshot): number {
@@ -9,17 +14,15 @@ export function fixedChromeRows(snapshot: UiWorldSnapshot): number {
 }
 
 function statusRows(snapshot: UiWorldSnapshot): number {
-  const runStatus = snapshot.components['sd.run-status']?.state ?? {};
-  return 1 + (runStatus.usage || runStatus.error ? 1 : 0);
+  const s = snapshot.components['sd.run-status']?.state ?? {};
+  return 1 + (s.usage || s.error ? 1 : 0);
 }
 
 function inputRows(snapshot: UiWorldSnapshot): number {
-  const prompt = snapshot.components['sd.prompt']?.state ?? {};
-  const draft = typeof prompt.draft === 'string' ? prompt.draft : '';
-  const attachments = Array.isArray(prompt.attachments) ? prompt.attachments.length : 0;
-  return (
-    1 + Math.max(1, draft.split('\n').length) + attachments + completionRows(prompt.completion)
-  );
+  const p = snapshot.components['sd.prompt']?.state ?? {};
+  const draft = typeof p.draft === 'string' ? p.draft : '';
+  const attachments = Array.isArray(p.attachments) ? p.attachments.length : 0;
+  return 1 + Math.max(1, draft.split('\n').length) + attachments + completionRows(p.completion);
 }
 
 function completionRows(completion: unknown): number {
@@ -30,16 +33,12 @@ function completionRows(completion: unknown): number {
 }
 
 function footerRows(snapshot: UiWorldSnapshot): number {
-  return hasRenderableSlot('footer', snapshot) ? 1 : 0;
+  const visible = Object.values(snapshot.components).some(
+    (c) => c.descriptor.slot === 'footer' && c.descriptor.visible !== false,
+  );
+  return visible ? 1 : 0;
 }
 
 function overlayRows(snapshot: UiWorldSnapshot): number {
-  const palette = snapshot.components['sd.palette']?.state ?? {};
-  return palette.open === true ? 8 : 0;
-}
-
-function hasRenderableSlot(slot: string, snapshot: UiWorldSnapshot): boolean {
-  return Object.values(snapshot.components).some(
-    (component) => component.descriptor.slot === slot && component.descriptor.visible !== false,
-  );
+  return snapshot.components['sd.palette']?.state.open === true ? 8 : 0;
 }
