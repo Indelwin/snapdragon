@@ -3,18 +3,21 @@ import type { SdConfig } from './config.js';
 import type { SdExtensionProviderFactory } from './extension-runtime.js';
 import type { SdProfileInfo } from './profile.js';
 import { makeSdProvider, type SdProviderRuntime } from './provider.js';
+import { contextOptions } from './runtime-context.js';
 import type { SdRuntimeOptions } from './runtime-options.js';
 import { ensureRuntimeSessionMeta } from './runtime-session-meta-record.js';
+
+interface AgentSetProviderOptions {
+  reasoning?: SdProviderRuntime['reasoning'];
+  context?: ReturnType<typeof contextOptions>;
+}
 
 interface ProviderSwitchRuntime {
   provider: SdProviderRuntime;
   config: SdConfig;
   extensionRuntime: { providers: Map<string, SdExtensionProviderFactory> };
   agent: {
-    setProvider(
-      handler: SdProviderRuntime['handler'],
-      options?: { reasoning?: SdProviderRuntime['reasoning'] },
-    ): void;
+    setProvider(handler: SdProviderRuntime['handler'], options?: AgentSetProviderOptions): void;
   };
   session?: JsonlSession;
   options: SdRuntimeOptions;
@@ -42,6 +45,7 @@ export async function switchSdProvider(
   runtime.config.providers[provider.id].model = provider.model;
   runtime.agent.setProvider(provider.handler, {
     reasoning: runtime.config.agent?.reasoning ?? provider.reasoning,
+    context: contextOptions(runtime.config, provider),
   });
   runtime.warnings = [];
   ensureRuntimeSessionMeta(runtime.session, runtime.options, provider, runtime.profile);
