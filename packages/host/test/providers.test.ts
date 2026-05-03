@@ -122,6 +122,59 @@ test('Anthropic maps images and thinking/tool-use round trips', () => {
   assert.equal(messages[2].content[2].type, 'text');
 });
 
+test('Anthropic drops unsigned thinking when replaying assistant tool history', () => {
+  const body = anthropicBody(
+    { model: 'claude-test' },
+    {
+      role: 'assistant',
+      messages: [
+        { role: 'user', content: 'please inspect' },
+        {
+          role: 'assistant',
+          content: 'calling',
+          thinking: [{ text: 'unsigned reasoning from another provider' }],
+          tool_calls: [{ id: 'toolu_1', name: 'read', args_json: '{}' }],
+        },
+        { role: 'tool', tool_call_id: 'toolu_1', content: 'done' },
+      ],
+    },
+  );
+
+  const messages = body.messages as Array<{ content: Array<Record<string, unknown>> }>;
+  assert.equal(
+    messages[1].content.some((block) => block.type === 'thinking'),
+    false,
+  );
+  assert.equal(messages[1].content[0].type, 'text');
+  assert.equal(messages[1].content[1].type, 'tool_use');
+});
+
+test('Anthropic accepts cross-provider history with unsigned reasoning and tool calls', () => {
+  const body = anthropicBody(
+    { model: 'claude-test' },
+    {
+      role: 'assistant',
+      messages: [
+        { role: 'user', content: 'continue this codex session' },
+        {
+          role: 'assistant',
+          content: '',
+          thinking: [{ text: 'codex reasoning summary without an Anthropic signature' }],
+          tool_calls: [{ id: 'call_1', name: 'run_shell', args_json: '{"command":"pwd"}' }],
+        },
+      ],
+    },
+  );
+
+  const messages = body.messages as Array<{ content: Array<Record<string, unknown>> }>;
+  assert.equal(
+    messages[1].content.some((block) => block.type === 'thinking'),
+    false,
+  );
+  assert.equal(messages[1].content[0].type, 'tool_use');
+  assert.equal(messages[2].content[0].type, 'tool_result');
+});
+
 test('Anthropic synthesizes a tool_result stub when one is missing', () => {
   const body = anthropicBody(
     { model: 'claude-test' },
