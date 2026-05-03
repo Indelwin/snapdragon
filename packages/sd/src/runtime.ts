@@ -3,24 +3,22 @@ import { normalizeToolsetsConfig } from '@snapdragon-ai/config';
 import type { JsonlSession } from '@snapdragon-ai/session';
 import { memoryToolset, skillToolset } from '@snapdragon-ai/tools';
 import type { SdCliArgs } from './args-types.js';
-import {
-  type SdBackgroundService,
-  type SdBackgroundServicesHandle,
-  startSdBackgroundServices,
-} from './background.js';
+import type { SdBackgroundServicesHandle } from './background.js';
 import { loadSdConfig, loadSdEnvironment, type SdConfig } from './config.js';
 import { activateSdExtensions, type SdExtensionRuntime } from './extension-runtime.js';
 import { createSdExtensionStore, type SdExtensionStore } from './extensions.js';
 import { ensureFirstPartyExtensionsForConfig, ensureFirstPartyProfile } from './first-party.js';
 import type { SdMemoryProvider } from './memory.js';
-import { memoryWorkerService } from './memory-worker.js';
 import { type SdProfileInfo, SdProfileStore } from './profile.js';
-import { resolveSdRuntimeConfig } from './profile-runtime.js';
 import { makeSdProvider, type SdProviderRuntime } from './provider.js';
+import { startRuntimeBackgroundServices } from './runtime-background.js';
+import { contextOptions } from './runtime-context.js';
+import { resolveInitialRuntimePlan } from './runtime-initial-plan.js';
 import { normalizeRuntimeOptions, type SdRuntimeOptions } from './runtime-options.js';
-import { createRuntimeSession, sessionRoot } from './runtime-session.js';
+import { sessionRoot } from './runtime-session.js';
+import { createRuntimeSession } from './runtime-session-create.js';
+import { ensureRuntimeSessionMeta } from './runtime-session-meta-record.js';
 import { createIndexedRuntimeStores } from './runtime-stores.js';
-import { skillBuilderService } from './skill-builder.js';
 import type { SdSkillStore } from './skills.js';
 
 export interface SdRuntime {
@@ -40,6 +38,7 @@ export interface SdRuntime {
   systemPrompt?: string;
   options: SdRuntimeOptions;
   env: NodeJS.ProcessEnv;
+  warnings: string[];
 }
 
 export function stopSdRuntime(runtime: SdRuntime): void {
@@ -56,10 +55,8 @@ export async function createSdRuntime(
   const profileStore = new SdProfileStore({ root: options.profileRoot });
   ensureRequestedFirstPartyProfile(options, profileStore);
   const profile = resolveRuntimeProfile(options, profileStore);
-  const { config, systemPrompt } = resolveSdRuntimeConfig(baseConfig, profile, {
-    provider: options.provider,
-    model: options.model,
-  });
+  const plan = resolveInitialRuntimePlan(baseConfig, profile, options);
+  const { config, systemPrompt } = plan;
   ensureFirstPartyExtensionsForConfig(config);
   const extensions = createSdExtensionStore(config, profile);
   const extensionRuntime = await activateSdExtensions({
@@ -70,44 +67,57 @@ export async function createSdRuntime(
     env,
   });
   const provider = makeSdProvider(config, {}, env, extensionRuntime.providers);
-  const session = createRuntimeSession(options, config, provider);
+  const session =
+    plan.sessionSelection.session ??
+    (plan.sessionSelection.createAfterProvider
+      ? createRuntimeSession(options, config, provider, profile)
+      : undefined);
+  ensureRuntimeSessionMeta(session, options, provider, profile);
   const { skills, memory } = createIndexedRuntimeStores(config, profile, extensionRuntime);
-  const background = startSdBackgroundServices(defaultSdBackgroundServices(), {
-    config,
-    memory,
-    profile,
-    skills,
-    chat: backgroundChatFromProvider(provider),
-    disableAll: options.noBackground,
-    disable: collectDisabledServices(options),
-  });
-  const agent = await createSdAgent(
-    options,
-    config,
-    provider,
-    session,
-    skills,
-    memory,
-    extensionRuntime,
-    systemPrompt,
-  );
-  return {
-    agent,
+  return finishRuntime({
     baseConfig,
     config,
+    env,
+    extensions,
+    extensionRuntime,
+    memory,
     provider,
     profile,
     profileStore,
     session,
-    sessionRoot: session ? sessionRoot(config) : undefined,
     skills,
-    memory,
-    background,
-    extensions,
-    extensionRuntime,
     systemPrompt,
     options,
-    env,
+    warnings: plan.warnings,
+  });
+}
+
+async function finishRuntime(
+  parts: Omit<SdRuntime, 'agent' | 'background' | 'sessionRoot'>,
+): Promise<SdRuntime> {
+  const background = startRuntimeBackgroundServices(
+    parts.options,
+    parts.config,
+    parts.provider,
+    parts.profile,
+    parts.skills,
+    parts.memory,
+  );
+  const agent = await createSdAgent(
+    parts.options,
+    parts.config,
+    parts.provider,
+    parts.session,
+    parts.skills,
+    parts.memory,
+    parts.extensionRuntime,
+    parts.systemPrompt,
+  );
+  return {
+    ...parts,
+    agent,
+    background,
+    sessionRoot: parts.session ? sessionRoot(parts.config) : undefined,
   };
 }
 
@@ -166,67 +176,5 @@ function resolveRuntimeProfile(
 }
 
 export { resolveSdRuntimeConfig } from './profile-runtime.js';
+export { defaultSdBackgroundServices } from './runtime-background.js';
 export { normalizeRuntimeOptions, type SdRuntimeOptions } from './runtime-options.js';
-
-/**
- * Adapt the runtime's StreamingChatHandler into the narrow SdBackgroundChat
- * shape — background services don't need the full streaming/registry/profile
- * surface, just "give me a string back". A no-op stream emit lets the call
- * complete without subscribing to provider events; tokens are still counted
- * server-side.
- */
-function backgroundChatFromProvider(
-  provider: SdProviderRuntime,
-): import('./background.js').SdBackgroundChat {
-  return async (messages, options) => {
-    const response = await provider.handler(
-      {
-        role: 'assistant',
-        messages,
-        max_tokens: options?.max_tokens ?? 2000,
-      },
-      {
-        runId: `bg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        emit: () => undefined,
-      },
-    );
-    return { content: response.content };
-  };
-}
-
-/**
- * The default background-services roster wired up at runtime construction.
- * Adding a new service is just appending to this list — its enabled/interval
- * comes from config, lifecycle is owned by the gateway. Kept exported so
- * tests / embedders can compose their own roster.
- */
-export function defaultSdBackgroundServices(): SdBackgroundService[] {
-  return [memoryWorkerService(), skillBuilderService()];
-}
-
-function collectDisabledServices(options: SdRuntimeOptions): string[] {
-  const disabled: string[] = [];
-  // Legacy flag stays supported: it disables only the memory worker, the
-  // rest of the gateway (and any future services) keep running.
-  if (options.noMemoryWorker) disabled.push('memory-worker');
-  return disabled;
-}
-
-/**
- * Translate the snake_case `agent.context` config block into the camelCase
- * options the agent consumes. Returns `undefined` when no block is set so we
- * don't override the agent's own defaults unnecessarily.
- */
-function contextOptions(config: SdConfig) {
-  const context = config.agent?.context;
-  if (!context) return undefined;
-  return {
-    enabled: context.enabled,
-    freshTailCount: context.fresh_tail_count,
-    maxRequestTokens: context.max_request_tokens,
-    chunkTargetTokens: context.chunk_target_tokens,
-    summaryTargetTokens: context.summary_target_tokens,
-    minChunkMessages: context.min_chunk_messages,
-    maxCompactionPasses: context.max_compaction_passes,
-  };
-}

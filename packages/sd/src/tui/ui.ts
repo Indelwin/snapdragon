@@ -8,6 +8,7 @@ import { listRuntimeSessions } from '../runtime-session.js';
 import type { PromptCompletionState } from './input-completion.js';
 import { promptCompletionJson } from './prompt-completion-json.js';
 import { ProviderEventBuffer } from './provider-event-buffer.js';
+import { runtimeWarningChatEntries } from './runtime-warnings.js';
 import { resolveSplashImagePath } from './splash-art.js';
 import { chatEntries, eventEntries, toolEntries } from './state-readers.js';
 import {
@@ -572,7 +573,9 @@ export function initialSdUiEvents(runtime: SdRuntime): UiEvent[] {
       cwd: runtime.agent.cwd,
       stats: runtimeStats(runtime),
     }),
-    register(SD_UI_IDS.chat, 'chat.transcript', 'main', 0, { entries: [] }),
+    register(SD_UI_IDS.chat, 'chat.transcript', 'main', 0, {
+      entries: runtimeWarningChatEntries(runtime),
+    }),
     register(SD_UI_IDS.toolPanel, 'tool.panel', 'panel', 0, { tools: [], open: true }),
     register(SD_UI_IDS.eventLog, 'event.log', 'panel', 1, { entries: [], open: false }),
     register(SD_UI_IDS.palette, 'command.palette', 'overlay', 0, {
@@ -587,20 +590,21 @@ export function initialSdUiEvents(runtime: SdRuntime): UiEvent[] {
       attachments: [],
       history: [],
     }),
-    register(SD_UI_IDS.keybinds, 'keybind.bar', 'footer', 0, {
-      binds: [
-        { keys: 'enter', label: 'send' },
-        { keys: 'shift-enter', label: 'newline' },
-        { keys: 'up/down', label: 'select/history' },
-        { keys: 'pgup/dn', label: 'scroll' },
-        { keys: 'ctrl-p', label: 'palette' },
-        { keys: 'ctrl-e', label: 'events' },
-        { keys: 'ctrl-c', label: 'quit' },
-      ],
-    }),
+    register(SD_UI_IDS.keybinds, 'keybind.bar', 'footer', 0, { binds: FOOTER_KEYBINDS }),
+    ...runtime.warnings.map((warning) => logEvent('warn', warning, 'session')),
     { type: 'ui.focus.set', id: SD_UI_IDS.prompt },
   ];
 }
+
+const FOOTER_KEYBINDS = [
+  { keys: 'enter', label: 'send' },
+  { keys: 'shift-enter', label: 'newline' },
+  { keys: 'up/down', label: 'select/history' },
+  { keys: 'pgup/dn', label: 'scroll' },
+  { keys: 'ctrl-p', label: 'palette' },
+  { keys: 'ctrl-e', label: 'events' },
+  { keys: 'ctrl-c', label: 'quit' },
+];
 
 function register(
   id: string,

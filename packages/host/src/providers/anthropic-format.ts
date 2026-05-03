@@ -1,5 +1,7 @@
 import { contentText, normalizeContent } from '../content.js';
 import type { ContentBlock, Message } from '../types.js';
+import { signedThinkingBlocks } from './anthropic-thinking.js';
+import { safeJson } from './json.js';
 
 const MISSING_TOOL_RESULT_STUB = '[unknown error, tool result missing]';
 
@@ -140,7 +142,7 @@ export function anthropicSystem(messages: Message[]): string | undefined {
 
 function assistantToolUseMessage(message: Message): Record<string, unknown> {
   const content: Array<Record<string, unknown>> = [];
-  for (const block of message.thinking ?? []) {
+  for (const block of signedThinkingBlocks(message.thinking)) {
     content.push({ type: 'thinking', thinking: block.text, signature: block.signature });
   }
   content.push(...normalizeContent(message.content).map(anthropicContentBlock));
@@ -198,12 +200,4 @@ function anthropicDocumentBlock(
       data: block.source.data,
     },
   };
-}
-
-function safeJson<T>(payload: string): T | undefined {
-  try {
-    return JSON.parse(payload) as T;
-  } catch {
-    return undefined;
-  }
 }

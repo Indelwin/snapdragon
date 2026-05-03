@@ -23,6 +23,13 @@ test('JSONL sessions create, append, reopen, assemble, and delete', () => {
     thinking: [{ text: 'think', signature: 'sig_1' }],
   });
   session.appendMeta({ title: 'Fixture' });
+  session.appendMeta({
+    provider: 'openai-codex',
+    model: 'gpt-5.5',
+    provider_kind: 'openai-codex',
+    cwd: '/tmp/workspace',
+    profile: null,
+  });
 
   const reopened = store.open('session_1');
   assert.equal(reopened.messages().length, 2);
@@ -31,6 +38,14 @@ test('JSONL sessions create, append, reopen, assemble, and delete', () => {
   assert.deepEqual(reopened.messages()[1].tool_calls, [
     { id: 'call_1', name: 'read', args_json: '{"path":"README.md"}' },
   ]);
+  assert.deepEqual(reopened.metadata(), {
+    provider: 'openai-codex',
+    title: 'Fixture',
+    model: 'gpt-5.5',
+    provider_kind: 'openai-codex',
+    cwd: '/tmp/workspace',
+    profile: null,
+  });
   assert.equal(store.list()[0].session_id, 'session_1');
   assert.equal(store.delete('session_1'), true);
   assert.equal(store.exists('session_1'), false);

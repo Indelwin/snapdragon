@@ -1,5 +1,5 @@
 import type { SdRuntime } from '../runtime.js';
-import { listSessions } from '../runtime-transitions.js';
+import { listSessions } from '../runtime-session-transitions.js';
 import { summaryForSession } from '../session-info.js';
 import type { PromptCompletionState } from './input-completion.js';
 

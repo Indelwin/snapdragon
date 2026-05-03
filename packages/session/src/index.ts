@@ -11,6 +11,7 @@ export {
   type ContextPlanResult,
   planContextCompaction,
 } from './context-window.js';
+export { type SessionMetadata, sessionMetadata } from './metadata.js';
 export {
   appendRecord,
   readRecords,

@@ -3,6 +3,7 @@ import type { Message } from '@snapdragon-ai/host';
 import type { ContextWindowOptions } from './context-options.js';
 import type { ContextChunkInput } from './context-summary.js';
 import { assembleContextWindow, recordToMessage } from './context-window.js';
+import { type SessionMetadata, sessionMetadata } from './metadata.js';
 import {
   appendRecord,
   readRecords,
@@ -86,6 +87,10 @@ export class JsonlSession {
 
   records(): SessionRecord[] {
     return readRecords(this.jsonlPath);
+  }
+
+  metadata(): SessionMetadata {
+    return sessionMetadata(this.records());
   }
 
   messageRecords(): SessionMessageRecord[] {
