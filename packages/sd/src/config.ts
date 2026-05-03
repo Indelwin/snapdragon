@@ -145,24 +145,11 @@ export interface SdSessionConfig {
   title?: SdSessionTitleConfig;
 }
 
-export interface SdAgentContextConfig {
-  enabled?: boolean;
-  fresh_tail_count?: number;
-  max_request_tokens?: number;
-  chunk_target_tokens?: number;
-  summary_target_tokens?: number;
-  min_chunk_messages?: number;
-  max_compaction_passes?: number;
-}
+export type { SdAgentConfig, SdAgentContextConfig } from './agent-config-types.js';
+export type { SdTuiConfig, SdTuiMouseConfig } from './tui-config.js';
 
-export interface SdAgentConfig {
-  max_turns?: number;
-  max_tool_result_bytes?: number;
-  context?: SdAgentContextConfig;
-  temperature?: number;
-  max_tokens?: number;
-  reasoning?: ReasoningRequest;
-}
+import type { SdAgentConfig } from './agent-config-types.js';
+import type { SdTuiConfig } from './tui-config.js';
 
 export interface SdConfig {
   version: 1;
@@ -175,6 +162,7 @@ export interface SdConfig {
   isolation?: SdIsolationConfig;
   toolsets?: SdToolsetsConfig;
   agent?: SdAgentConfig;
+  tui?: SdTuiConfig;
 }
 
 export async function loadSdConfig(

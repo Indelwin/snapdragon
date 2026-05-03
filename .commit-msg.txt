@@ -1,0 +1,26 @@
+Add mouse scroll support to the TUI chat viewport
+
+Wire @zenobius/ink-mouse so the main chat scrolls on mouse wheel events.
+
+- New @snapdragon-ai/sd dep on @zenobius/ink-mouse@^1.0.3.
+- packages/sd/src/tui/mouse-scroll.tsx — SdMouseProvider conditionally wraps
+  the Ink tree with the mouse provider only when stdin is a real TTY with
+  setRawMode (skips CI / piped input / node --test). SdMouseScrollListener
+  subscribes to wheel events and dispatches to scrollChat() on the chat ECS
+  component.
+- packages/sd/src/tui/mouse-sgr-filter.ts — bounded predicate for xterm
+  SGR mouse escape sequences; consumed in the global keymap so wheel/click
+  bytes never end up inserted into the prompt draft.
+- packages/sd/src/tui/tui-slot.tsx + tui-slot-filter.ts — pull the slot
+  rendering and visibility filtering out of index.tsx so the entry point
+  stays a thin orchestrator under the maintainability budget.
+- packages/sd/src/tui-config.ts + agent-config-types.ts — extracted to keep
+  config.ts under its budget while adding the new tui.mouse config block
+  (enabled, rows_per_tick).
+- packages/sd/src/tui/index.tsx — wire SdMouseProvider + SdMouseScrollListener
+  around the existing layout.
+
+Tests:
+- packages/sd/test/mouse-sgr-filter.test.ts — predicate boundaries.
+- packages/sd/test/tui.test.ts — the prompt keymap drops SGR bytes instead
+  of inserting them as text.
