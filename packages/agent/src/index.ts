@@ -8,7 +8,7 @@ import type {
 import { codingToolsets, replToolset, ToolRegistry } from '@snapdragon-ai/tools';
 import { runAgentPrompt } from './agent-prompt.js';
 import type { AgentPromptState } from './agent-prompt-types.js';
-import { appendAgentMessage, emitAgentEvent } from './agent-state.js';
+import { appendAgentMessage, appendAgentMeta, emitAgentEvent } from './agent-state.js';
 import type { AgentEventListener } from './events.js';
 import { defaultCodingSystemPrompt, defaultSystemPrompt } from './prompts.js';
 import { sendProviderRequest } from './provider-request.js';
@@ -113,6 +113,7 @@ export class SnapdragonAgent {
       maxTurns: this.#maxTurns,
       maxToolResultBytes: this.#maxToolResultBytes,
       appendMessage: this.#appendMessage,
+      appendMeta: (meta) => appendAgentMeta({ session: this.#session, meta }),
       emit: this.#emit,
       sendProviderRequest: this.#sendProviderRequest,
     };
@@ -146,9 +147,7 @@ export class SnapdragonAgent {
     emitAgentEvent({ listeners: this.#listeners, event });
 }
 
-export async function createAgent(options: AgentOptionsPlus): Promise<SnapdragonAgent> {
-  return SnapdragonAgent.create(options);
-}
+export const createAgent = SnapdragonAgent.create;
 
 export async function createCodingReplAgent(options: CodingOptions): Promise<SnapdragonAgent> {
   const cwd = options.cwd ?? process.cwd();

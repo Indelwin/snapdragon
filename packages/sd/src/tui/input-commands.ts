@@ -1,16 +1,14 @@
-import { Writable } from 'node:stream';
 import type { MutableRefObject } from 'react';
 import { contentWithAttachments, type PendingAttachment } from '../attachments.js';
-import { BUILTIN_SLASH_COMMANDS, type CommandResult, handleCommand } from '../commands.js';
+import { BUILTIN_SLASH_COMMANDS } from '../commands.js';
 import { maybeAutoCaptureMemory, requestInputWithMemory } from '../memory.js';
-import { defaultIo, runCommandPrompt, type SdIo } from '../repl.js';
 import type { SdRuntime } from '../runtime.js';
 import { matchCommandLine, type SdTuiCommand } from './commands.js';
 import { runInlineShellCommand } from './inline-shell.js';
-import type { PromptCompletionState } from './input-completion.js';
 import { type PaletteState, rememberHistory } from './input-keymap.js';
-import { type PromptSelection, selectionForLine } from './input-selection.js';
 import type { SdUiController } from './ui.js';
+
+export { type RunSlashLineArgs, runSlashLine } from './slash-line.js';
 
 export function defaultCommands(
   runSlashCommand: (line: string) => Promise<void>,
@@ -55,86 +53,6 @@ export function defaultCommands(
     commands.push(command(skill.command, `skill: ${skill.description}`, runSlashCommand, '[task]'));
   }
   return commands;
-}
-
-export async function runSlashLine(args: {
-  line: string;
-  runtime: SdRuntime;
-  controller: SdUiController;
-  exit: () => void;
-  attachmentsRef: MutableRefObject<PendingAttachment[]>;
-  setAttachments: (attachments: PendingAttachment[]) => void;
-  setPalette: (patch: Partial<PaletteState>) => void;
-  openSelection?: (draft: string, options?: { completion?: PromptCompletionState }) => void;
-}): Promise<void> {
-  if (args.line === '/events' || args.line === '/tools-panel') {
-    return togglePanel(args.line, args.controller);
-  }
-  if (args.line === '/palette') {
-    args.setPalette({ open: true, query: '', selectedIndex: 0 });
-    return;
-  }
-  if (args.line === '/quit' || args.line === '/exit') {
-    args.exit();
-    return;
-  }
-  if (args.controller.isRunning && isRuntimeTransitionCommand(args.line)) {
-    args.controller.appendCommandOutput('A run is already active.', 'error');
-    return;
-  }
-  let selection: PromptSelection | undefined;
-  try {
-    selection = await selectionForLine(args.line, args.runtime);
-  } catch (error) {
-    args.controller.appendCommandOutput(errorMessage(error), 'error');
-    return;
-  }
-  if (selection && args.openSelection) {
-    args.openSelection(selection.draft, { completion: selection.completion });
-    if (selection.warning) args.controller.appendCommandOutput(selection.warning, 'error');
-    return;
-  }
-
-  const capture = memoryIo();
-  let result: CommandResult;
-  // Drive the running-spinner for slow slash commands. handleCommand calls
-  // this for each progress beat (e.g. /reload's pull/build/rebuild steps).
-  // First call switches the prompt into running:true,phase:'task'; subsequent
-  // calls just update the label. endTask() always runs in finally so a
-  // failure mid-step doesn't leave a stuck spinner.
-  let taskActive = false;
-  try {
-    result = await handleCommand(args.line, args.runtime, args.attachmentsRef.current, capture.io, {
-      progress: (label) => {
-        if (taskActive) args.controller.updateTask(label);
-        else {
-          args.controller.beginTask(label);
-          taskActive = true;
-        }
-      },
-    });
-  } catch (error) {
-    args.controller.appendCommandOutput(errorMessage(error), 'error');
-    return;
-  } finally {
-    if (taskActive) args.controller.endTask();
-  }
-  args.controller.bindRuntimeAgent();
-  args.setAttachments(result.attachments);
-  if (args.line === '/clear') args.controller.clearChat();
-  if (isTranscriptResetCommand(args.line)) args.controller.loadRuntimeTranscript();
-  args.controller.appendCommandOutput(capture.output());
-  args.controller.appendCommandOutput(capture.error(), 'error');
-  if (result.prompt) {
-    try {
-      args.controller.bindRuntimeAgent();
-      await runCommandPrompt(args.runtime, result.prompt, capture.io);
-    } catch (error) {
-      args.controller.markRunError(error);
-    }
-  }
-  if (isRuntimeTransitionCommand(args.line)) args.controller.refreshRuntimeStatus();
-  if (result.quit) args.exit();
 }
 
 export async function submitLine(args: {
@@ -250,58 +168,4 @@ async function runEnteredCommand(
   const match = matchCommandLine(commands, line);
   if (match) await match.command.run(match.arg);
   else await runSlashCommand(line);
-}
-
-function togglePanel(line: string, c: SdUiController): void {
-  const tools = line === '/tools-panel';
-  if (tools) c.toggleToolPanel();
-  else c.toggleEventPanel();
-  c.appendCommandOutput(`Toggled ${tools ? 'tools' : 'events'} panel.`);
-}
-
-function isTranscriptResetCommand(line: string): boolean {
-  return (
-    line.startsWith('/resume') || line.startsWith('/new-session') || line.startsWith('/profile')
-  );
-}
-
-function isRuntimeTransitionCommand(line: string): boolean {
-  return (
-    line.startsWith('/provider') ||
-    line.startsWith('/model') ||
-    line.startsWith('/resume') ||
-    line.startsWith('/new-session') ||
-    line.startsWith('/delete-session') ||
-    line.startsWith('/profile') ||
-    line === '/extensions reload' ||
-    line.startsWith('/reload')
-  );
-}
-
-function memoryIo(): { io: SdIo; output(): string; error(): string } {
-  let output = '';
-  let error = '';
-  return {
-    io: {
-      input: defaultIo.input,
-      output: new Writable({
-        write(chunk, _encoding, callback) {
-          output += chunk.toString();
-          callback();
-        },
-      }),
-      error: new Writable({
-        write(chunk, _encoding, callback) {
-          error += chunk.toString();
-          callback();
-        },
-      }),
-    },
-    output: () => output,
-    error: () => error,
-  };
-}
-
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
