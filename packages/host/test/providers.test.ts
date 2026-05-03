@@ -609,3 +609,121 @@ function streamFromString(text: string): ReadableStream<Uint8Array> {
     },
   });
 }
+
+test('Anthropic prompt caching normalizes input and disables cleanly', async () => {
+  const { normalizeAnthropicPromptCaching } = await import('../src/providers/anthropic-cache.ts');
+  assert.equal(normalizeAnthropicPromptCaching(false).enabled, false);
+  assert.equal(normalizeAnthropicPromptCaching({ enabled: false }).enabled, false);
+  // undefined falls back to defaults — caching on, automatic off so injected
+  // one-shot context doesn't pollute the next turn's cache key.
+  assert.equal(normalizeAnthropicPromptCaching(undefined).enabled, true);
+  assert.equal(normalizeAnthropicPromptCaching(undefined).automatic, false);
+  const on = normalizeAnthropicPromptCaching(true);
+  assert.equal(on.enabled, true);
+  assert.equal(on.cacheTools, true);
+  assert.equal(on.cacheSystem, true);
+  assert.equal(on.cacheMessages, true);
+  assert.equal(on.automatic, false);
+  const partial = normalizeAnthropicPromptCaching({ enabled: true, ttl: '1h', cacheTools: false });
+  assert.equal(partial.ttl, '1h');
+  assert.equal(partial.cacheTools, false);
+});
+
+test('Anthropic prompt caching marks system, tools, and stable message tail', () => {
+  const body = anthropicBody(
+    {
+      model: 'claude-test',
+      promptCaching: { enabled: true, ttl: '5m' },
+    },
+    {
+      role: 'assistant',
+      messages: [
+        { role: 'system', content: 'You are helpful.' },
+        { role: 'user', content: 'durable turn' },
+        { role: 'assistant', content: 'durable answer' },
+        { role: 'user', content: 'volatile suffix with one-shot context' },
+      ],
+      tools: [
+        { name: 't1', description: 'first', parameters: { type: 'object' } },
+        { name: 't2', description: 'last', parameters: { type: 'object' } },
+      ],
+      tool_choice: 'auto',
+    },
+  );
+
+  const system = body.system as Array<{ type: string; cache_control?: Record<string, string> }>;
+  assert.ok(Array.isArray(system));
+  assert.equal(system[0].type, 'text');
+  assert.deepEqual(system[0].cache_control, { type: 'ephemeral', ttl: '5m' });
+
+  const tools = body.tools as Array<{ name: string; cache_control?: Record<string, string> }>;
+  assert.equal(tools[0].cache_control, undefined);
+  assert.deepEqual(tools[1].cache_control, { type: 'ephemeral', ttl: '5m' });
+
+  // Stable-tail rule: the message *before* the volatile final user message
+  // gets the cache breakpoint on its last content block.
+  const messages = body.messages as Array<{ content: Array<Record<string, unknown>> }>;
+  const stable = messages[messages.length - 2].content;
+  assert.deepEqual(stable[stable.length - 1].cache_control, { type: 'ephemeral', ttl: '5m' });
+  const volatileMsg = messages[messages.length - 1].content;
+  assert.equal(volatileMsg[volatileMsg.length - 1].cache_control, undefined);
+});
+
+test('Anthropic prompt caching disabled keeps system as plain string and no breakpoints', () => {
+  const body = anthropicBody(
+    { model: 'claude-test', promptCaching: false },
+    {
+      role: 'assistant',
+      messages: [
+        { role: 'system', content: 'You are helpful.' },
+        { role: 'user', content: 'hi' },
+        { role: 'user', content: 'again' },
+      ],
+      tools: [{ name: 't1', description: 'first', parameters: { type: 'object' } }],
+      tool_choice: 'auto',
+    },
+  );
+  assert.equal(typeof body.system, 'string');
+  const tools = body.tools as Array<Record<string, unknown>>;
+  assert.equal(tools[0].cache_control, undefined);
+  const messages = body.messages as Array<{ content: Array<Record<string, unknown>> }>;
+  for (const msg of messages) {
+    for (const block of msg.content) assert.equal(block.cache_control, undefined);
+  }
+});
+
+test('Anthropic stream reader extracts cache_read_input_tokens from message_start', async () => {
+  const sse = [
+    'event: message_start',
+    `data: ${JSON.stringify({
+      type: 'message_start',
+      message: {
+        usage: {
+          input_tokens: 10,
+          output_tokens: 0,
+          cache_read_input_tokens: 4,
+        },
+      },
+    })}`,
+    '',
+    'event: message_delta',
+    `data: ${JSON.stringify({ type: 'message_delta', delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 3 } })}`,
+    '',
+    'event: message_stop',
+    `data: ${JSON.stringify({ type: 'message_stop' })}`,
+    '',
+  ].join('\n');
+
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode(sse));
+      controller.close();
+    },
+  });
+  const response = await readAnthropicStream(stream, {
+    runId: 'r',
+    profile: undefined,
+    emit: () => undefined,
+  });
+  assert.equal(response.cache_read_tokens, 4);
+});
