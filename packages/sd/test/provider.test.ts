@@ -53,6 +53,20 @@ test('makeSdProvider supports OpenAI Codex without API key env vars', () => {
   assert.equal(provider.model, 'gpt-5.5');
 });
 
+test('makeSdProvider exposes per-model limits for openai-codex', () => {
+  const config = defaultSdConfig();
+  const provider = makeSdProvider(config, { provider: 'openai-codex' }, {});
+  assert.ok(provider.limits, 'codex provider should expose limits');
+  assert.equal(provider.limits?.contextWindow, 272_000);
+  assert.equal(provider.limits?.effectiveContextWindowPercent, 95);
+});
+
+test('makeSdProvider leaves limits undefined for providers without per-model data', () => {
+  const config = defaultSdConfig();
+  const mock = makeSdProvider(config, { provider: 'mock' }, {});
+  assert.equal(mock.limits, undefined);
+});
+
 test('provider summaries expose configured models and active provider', () => {
   const config = defaultSdConfig();
   const providers = listSdProviders(config, 'openai-codex');
