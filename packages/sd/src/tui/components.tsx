@@ -21,8 +21,12 @@ export function createDefaultInkRendererRegistry(): InkRendererRegistry {
       viewportColumns={context.viewportColumns ?? 80}
     />
   ));
-  registry.register('tool.panel', (component) => <ToolPanel component={component} />);
-  registry.register('event.log', (component) => <EventLog component={component} />);
+  registry.register('tool.panel', (component, context) => (
+    <ToolPanel component={component} viewportRows={context.viewportRows} />
+  ));
+  registry.register('event.log', (component, context) => (
+    <EventLog component={component} viewportRows={context.viewportRows} />
+  ));
   registry.register('command.palette', (component) => <CommandPalette component={component} />);
   registry.register('prompt.input', (component) => <PromptInput component={component} />);
   registry.register('keybind.bar', (component) => <KeybindBar component={component} />);

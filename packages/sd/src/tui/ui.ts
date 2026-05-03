@@ -199,9 +199,10 @@ export class SdUiController {
     );
   }
 
-  toggleEventPanel(): void {
-    const state = this.world.componentState(SD_UI_IDS.eventLog);
-    this.world.apply(patch(SD_UI_IDS.eventLog, { open: state.open === false }));
+  toggleEventPanel = () => this.#togglePanel(SD_UI_IDS.eventLog);
+  toggleToolPanel = () => this.#togglePanel(SD_UI_IDS.toolPanel);
+  #togglePanel(id: string): void {
+    this.world.apply(patch(id, { open: this.world.componentState(id).open === false }));
   }
 
   /**
@@ -213,11 +214,9 @@ export class SdUiController {
   beginTask(label: string): void {
     this.world.apply(patch(SD_UI_IDS.prompt, { running: true, phase: 'task', phaseLabel: label }));
   }
-
   updateTask(label: string): void {
     this.world.apply(patch(SD_UI_IDS.prompt, { phase: 'task', phaseLabel: label }));
   }
-
   endTask(): void {
     this.world.apply(patch(SD_UI_IDS.prompt, { running: false, phase: null, phaseLabel: null }));
   }
@@ -602,7 +601,7 @@ const FOOTER_KEYBINDS = [
   { keys: 'up/down', label: 'select/history' },
   { keys: 'pgup/dn', label: 'scroll' },
   { keys: 'ctrl-p', label: 'palette' },
-  { keys: 'ctrl-e', label: 'events' },
+  { keys: 'ctrl-e/t', label: 'events/tools' },
   { keys: 'ctrl-c', label: 'quit' },
 ];
 
