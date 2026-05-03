@@ -135,11 +135,13 @@ export {
   stopSdRuntime,
 } from './runtime.js';
 export {
-  currentProfileName,
   deleteRuntimeSession,
   newRuntimeSession,
-  rebuildSdRuntime,
   resumeRuntimeSession,
+} from './runtime-session-transitions.js';
+export {
+  currentProfileName,
+  rebuildSdRuntime,
   type SdRuntimeRebuildOptions,
   switchRuntimeProfile,
 } from './runtime-transitions.js';

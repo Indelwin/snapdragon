@@ -1,5 +1,5 @@
 import type { Message } from '@snapdragon-ai/host';
-import type { JsonlSession, SessionInfo } from '@snapdragon-ai/session';
+import type { JsonlSession } from '@snapdragon-ai/session';
 import { activateSdExtensions } from './extension-runtime.js';
 import { createSdExtensionStore } from './extensions.js';
 import { ensureFirstPartyExtensionsForConfig } from './first-party.js';
@@ -7,12 +7,8 @@ import type { SdProfileInfo } from './profile.js';
 import { resolveSdRuntimeConfig, type SdRuntimeCliOverrides } from './profile-runtime.js';
 import { makeSdProvider } from './provider.js';
 import { createSdAgent, type SdRuntime } from './runtime.js';
-import {
-  listRuntimeSessions,
-  runtimeSessionMeta,
-  runtimeSessionStore,
-  sessionRoot,
-} from './runtime-session.js';
+import { runtimeSessionStore, sessionRoot } from './runtime-session.js';
+import { ensureRuntimeSessionMeta, runtimeSessionMeta } from './runtime-session-meta-record.js';
 import { createIndexedRuntimeStores } from './runtime-stores.js';
 
 export interface SdRuntimeRebuildOptions {
@@ -20,6 +16,7 @@ export interface SdRuntimeRebuildOptions {
   session?: JsonlSession | null;
   provider?: string;
   model?: string;
+  warnings?: string[];
 }
 
 export async function rebuildSdRuntime(
@@ -63,46 +60,8 @@ export async function rebuildSdRuntime(
   runtime.extensions = extensions;
   runtime.extensionRuntime = extensionRuntime;
   runtime.systemPrompt = systemPrompt;
-}
-
-export async function resumeRuntimeSession(
-  runtime: SdRuntime,
-  sessionId?: string,
-): Promise<JsonlSession> {
-  assertSessionsEnabled(runtime);
-  const store = runtimeSessionStore(runtime.config);
-  const id = sessionId ?? store.list()[0]?.session_id;
-  if (!id) throw new Error('No sessions found to resume.');
-  const session = store.open(id);
-  await rebuildSdRuntime(runtime, {
-    session,
-    provider: runtime.provider.id,
-    model: runtime.provider.model,
-  });
-  return session;
-}
-
-export async function newRuntimeSession(
-  runtime: SdRuntime,
-  sessionId?: string,
-): Promise<JsonlSession> {
-  assertSessionsEnabled(runtime);
-  const store = runtimeSessionStore(runtime.config);
-  const session = store.create(sessionId, runtimeSessionMeta(runtime.options, runtime.provider));
-  await rebuildSdRuntime(runtime, {
-    session,
-    provider: runtime.provider.id,
-    model: runtime.provider.model,
-  });
-  return session;
-}
-
-export function deleteRuntimeSession(runtime: SdRuntime, sessionId: string): boolean {
-  assertSessionsEnabled(runtime);
-  if (runtime.session?.sessionId === sessionId) {
-    throw new Error(`Cannot delete active session '${sessionId}'.`);
-  }
-  return runtimeSessionStore(runtime.config).delete(sessionId);
+  runtime.warnings = options.warnings ?? [];
+  ensureRuntimeSessionMeta(session, runtime.options, provider, profile);
 }
 
 export async function switchRuntimeProfile(
@@ -130,7 +89,7 @@ export async function switchRuntimeProfile(
       ? undefined
       : runtimeSessionStore(config).create(
           undefined,
-          runtimeSessionMeta(runtime.options, provider),
+          runtimeSessionMeta(runtime.options, provider, profile),
         );
   await rebuildSdRuntime(runtime, { profile, session });
   recordSystemCommand(
@@ -144,20 +103,10 @@ export function currentProfileName(runtime: SdRuntime): string {
   return runtime.profile?.name ?? 'none';
 }
 
-export function listSessions(runtime: SdRuntime): SessionInfo[] {
-  return listRuntimeSessions(runtime.config);
-}
-
 export function recordSystemCommand(runtime: SdRuntime, content: string): void {
   const message: Message = { role: 'system', content };
   runtime.agent.messages.push(message);
   runtime.session?.appendMessage(message, { meta: { source: 'sd.command' } });
-}
-
-function assertSessionsEnabled(runtime: SdRuntime): void {
-  if (runtime.options.noSession || runtime.config.sessions?.enabled === false) {
-    throw new Error('Sessions are disabled for this run.');
-  }
 }
 
 function runtimeOverrides(

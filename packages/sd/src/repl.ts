@@ -6,15 +6,14 @@ import { type CommandPromptRun, type CommandResult, handleCommand } from './comm
 import { maybeAutoCaptureMemory, requestInputWithMemory } from './memory.js';
 import { RunRenderer } from './renderer.js';
 import type { SdRuntime } from './runtime.js';
+import { runtimeWarningLines } from './runtime-warnings.js';
 
 export interface SdIo {
   input: NodeJS.ReadableStream;
   output: NodeJS.WritableStream;
   error: NodeJS.WritableStream;
 }
-
 export const defaultIo: SdIo = { input: stdin, output: stdout, error: stderr };
-
 export async function runOneShot(
   runtime: SdRuntime,
   prompt: string,
@@ -106,6 +105,7 @@ function header(runtime: SdRuntime): string {
   const profile = runtime.profile ? `profile ${runtime.profile.name}` : 'no profile';
   return [
     `sd ${runtime.provider.id}/${runtime.provider.model} (${session}, ${profile})`,
+    ...runtimeWarningLines(runtime),
     'Type /help for commands.',
     '',
   ].join('\n');

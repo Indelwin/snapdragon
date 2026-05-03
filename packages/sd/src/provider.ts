@@ -16,8 +16,6 @@ import {
 } from '@snapdragon-ai/host';
 import type { SdConfig, SdProviderConfig, SdProviderKind } from './config.js';
 import type { SdExtensionProviderFactory } from './extension-runtime.js';
-import type { SdRuntime } from './runtime.js';
-
 export interface SdProviderRuntime {
   id: string;
   kind: SdProviderKind;
@@ -72,7 +70,6 @@ export function makeSdProvider(
       handler: extension.handler,
     };
   }
-
   return {
     id: normalized.id,
     kind,
@@ -130,38 +127,6 @@ export async function discoverSdModels(
   if (kind === 'anthropic') return listAnthropicModels(options);
   if (kind === 'openai') return listOpenAIResponsesModels(options);
   return listOpenAICompatibleModels(options);
-}
-
-export async function switchSdProvider(
-  runtime: SdRuntime,
-  providerId: string,
-  model?: string,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<SdProviderRuntime> {
-  if (runtime.provider.id === providerId && (!model || runtime.provider.model === model)) {
-    return runtime.provider;
-  }
-  const provider = makeSdProvider(
-    runtime.config,
-    { provider: providerId, model },
-    env,
-    runtime.extensionRuntime.providers,
-  );
-  runtime.provider = provider;
-  runtime.config.default_provider = provider.id;
-  runtime.config.providers[provider.id].model = provider.model;
-  runtime.agent.setProvider(provider.handler, {
-    reasoning: runtime.config.agent?.reasoning ?? provider.reasoning,
-  });
-  return provider;
-}
-
-export async function switchSdModel(
-  runtime: SdRuntime,
-  model: string,
-  env: NodeJS.ProcessEnv = process.env,
-): Promise<SdProviderRuntime> {
-  return switchSdProvider(runtime, runtime.provider.id, model, env);
 }
 
 function providerConfigFor(config: SdConfig, id: string): SdProviderConfig {
