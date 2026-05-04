@@ -5,10 +5,10 @@ import { ensureFirstPartyExtensionsForConfig } from './first-party.js';
 import type { SdProfileInfo } from './profile.js';
 import { resolveSdRuntimeConfig, type SdRuntimeCliOverrides } from './profile-runtime.js';
 import { makeSdProvider } from './provider.js';
-import { createSdAgent, type SdRuntime } from './runtime.js';
-import { runtimeSessionStore, sessionRoot } from './runtime-session.js';
-import { ensureRuntimeSessionMeta, runtimeSessionMeta } from './runtime-session-meta-record.js';
-import { createIndexedRuntimeStores } from './runtime-stores.js';
+import type { SdRuntime } from './runtime.js';
+import { applyRuntimeRebuild } from './runtime-rebuild-services.js';
+import { runtimeSessionStore } from './runtime-session.js';
+import { runtimeSessionMeta } from './runtime-session-meta-record.js';
 import { recordSystemCommand } from './runtime-system-command.js';
 
 export interface SdRuntimeRebuildOptions {
@@ -25,45 +25,12 @@ export async function rebuildSdRuntime(
 ): Promise<void> {
   const profile = profileOrCurrent(options, runtime.profile);
   const session = sessionOrCurrent(options, runtime.session);
-  const overrides = runtimeOverrides(runtime, options);
-  const { config, systemPrompt } = resolveSdRuntimeConfig(runtime.baseConfig, profile, overrides);
-  ensureFirstPartyExtensionsForConfig(config);
-  const extensions = createSdExtensionStore(config, profile);
-  const extensionRuntime = await activateSdExtensions({
-    store: extensions,
-    config,
+  await applyRuntimeRebuild(runtime, {
     profile,
-    runtimeOptions: runtime.options,
-    env: runtime.env,
-  });
-  const provider = makeSdProvider(config, {}, runtime.env, extensionRuntime.providers);
-  const { skills, memory, todo } = createIndexedRuntimeStores(config, profile, extensionRuntime);
-  const agent = await createSdAgent(
-    runtime.options,
-    config,
-    provider,
     session,
-    skills,
-    memory,
-    todo,
-    extensionRuntime,
-    systemPrompt,
-  );
-
-  runtime.config = config;
-  runtime.provider = provider;
-  runtime.agent = agent;
-  runtime.profile = profile;
-  runtime.session = session;
-  runtime.sessionRoot = session ? sessionRoot(config) : undefined;
-  runtime.skills = skills;
-  runtime.memory = memory;
-  runtime.todo = todo;
-  runtime.extensions = extensions;
-  runtime.extensionRuntime = extensionRuntime;
-  runtime.systemPrompt = systemPrompt;
-  runtime.warnings = options.warnings ?? [];
-  ensureRuntimeSessionMeta(session, runtime.options, provider, profile);
+    overrides: runtimeOverrides(runtime, options),
+    warnings: options.warnings ?? [],
+  });
 }
 
 export async function switchRuntimeProfile(

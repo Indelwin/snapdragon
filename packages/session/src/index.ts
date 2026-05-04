@@ -36,6 +36,15 @@ export {
   openSessionFile,
 } from './session.js';
 export {
+  SdSessionIndex,
+  SESSION_INDEX_SCHEMA_VERSION,
+  type SessionIndexSyncResult,
+  type SessionRowSummary,
+  type SessionSearchHit,
+  type SessionSearchMode,
+  type SessionSearchOptions,
+} from './session-index/index.js';
+export {
   DEFAULT_SESSION_ROOT,
   type SessionInfo,
   SessionStore,

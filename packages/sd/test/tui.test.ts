@@ -25,6 +25,7 @@ import {
   wrapTranscriptRows,
 } from '../src/tui/transcript-window.ts';
 import { SD_UI_IDS, SdUiController } from '../src/tui/ui.ts';
+import { MAX_TRANSCRIPT_ENTRY_CHARS } from '../src/tui/ui-text.ts';
 
 test('SdUiController maps agent streams and tool events into UI ECS state', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-'));
@@ -95,6 +96,43 @@ test('SdUiController coalesces provider stream deltas before publishing UI snaps
     const entries = chatEntries(controller.world.componentState(SD_UI_IDS.chat));
     const assistant = entries.find((entry) => entry.role === 'assistant');
     assert.equal(assistant?.content, 'hello');
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('SdUiController bounds long streaming text in live UI state', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-stream-bound-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    const controller = new SdUiController(runtime);
+
+    controller.acceptAgentEvent({ type: 'run_start', runId: 'run_1' });
+    const revisionAfterStart = controller.world.revision;
+    for (let index = 0; index < 25; index += 1) {
+      controller.acceptAgentEvent({
+        type: 'provider_event',
+        event: {
+          kind: 'text',
+          run_id: 'run_1',
+          provider: 'mock',
+          delta: `${index}: ${'x'.repeat(1000)}\n`,
+        },
+      });
+    }
+    assert.equal(controller.world.revision, revisionAfterStart);
+
+    controller.acceptAgentEvent({
+      type: 'run_end',
+      runId: 'run_1',
+      response: { content: '' },
+    });
+
+    const entries = chatEntries(controller.world.componentState(SD_UI_IDS.chat));
+    const assistant = entries.find((entry) => entry.role === 'assistant');
+    assert.ok((assistant?.content.length ?? 0) <= MAX_TRANSCRIPT_ENTRY_CHARS);
+    assert.match(assistant?.content ?? '', /stream truncated for TUI display/);
+    assert.equal(controller.world.revision, revisionAfterStart + 2);
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }

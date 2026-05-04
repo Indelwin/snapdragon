@@ -1,3 +1,4 @@
+import type { SdSessionIndex } from '@snapdragon-ai/session';
 import type { SdBackgroundChat, SdBackgroundService } from './background.js';
 import { startSdBackgroundServices } from './background.js';
 import type { SdConfig } from './config.js';
@@ -6,6 +7,7 @@ import { memoryWorkerService } from './memory-worker.js';
 import type { SdProfileInfo } from './profile.js';
 import type { SdProviderRuntime } from './provider.js';
 import type { SdRuntimeOptions } from './runtime-options.js';
+import { defaultSessionIndexRootFor, sessionIndexService } from './session-index.js';
 import { skillBuilderService } from './skill-builder.js';
 import type { SdSkillStore } from './skills.js';
 
@@ -43,8 +45,15 @@ export function startRuntimeBackgroundServices(
   profile: SdProfileInfo | undefined,
   skills: SdSkillStore,
   memory: SdMemoryProvider,
+  sessionIndex?: SdSessionIndex,
 ) {
-  return startSdBackgroundServices(defaultSdBackgroundServices(), {
+  const services = defaultSdBackgroundServices();
+  if (sessionIndex) {
+    services.push(
+      sessionIndexService({ index: sessionIndex, rootFor: defaultSessionIndexRootFor() }),
+    );
+  }
+  return startSdBackgroundServices(services, {
     config,
     memory,
     profile,

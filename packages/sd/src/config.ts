@@ -7,6 +7,11 @@ import { parse as parseDotenv } from 'dotenv';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { mergeAgentConfig } from './agent-config.js';
 import { configPathForLoad } from './config-path.js';
+import {
+  defaultSessionIndexConfig,
+  mergeSessionIndexConfig,
+  type SdSessionIndexConfig,
+} from './config-session-index.js';
 
 export const DEFAULT_SD_CONFIG_PATH = resolve(homedir(), '.snapdragon/sd/config.yaml');
 export const LEGACY_SD_CONFIG_PATH = resolve(homedir(), '.snapdragon/config.yaml');
@@ -144,6 +149,7 @@ export interface SdSessionConfig {
   enabled?: boolean;
   root?: string;
   title?: SdSessionTitleConfig;
+  index?: SdSessionIndexConfig;
 }
 
 export interface SdTodoConfig {
@@ -207,10 +213,7 @@ export function defaultSdConfig(): SdConfig {
         base_url: 'https://api.openai.com/v1',
         model: 'gpt-4o-mini',
       },
-      mock: {
-        kind: 'mock',
-        model: 'mock',
-      },
+      mock: { kind: 'mock', model: 'mock' },
       'openai-codex': {
         kind: 'openai-codex',
         model: 'gpt-5.5',
@@ -220,6 +223,7 @@ export function defaultSdConfig(): SdConfig {
     sessions: {
       enabled: true,
       root: DEFAULT_SD_SESSION_ROOT,
+      index: defaultSessionIndexConfig(),
       title: {
         enabled: true,
         provider: DEFAULT_SD_SESSION_TITLE_PROVIDER,
@@ -271,7 +275,7 @@ export function defaultSdConfig(): SdConfig {
       auth: 'inherit',
     },
     toolsets: {
-      enabled: ['file', 'shell', 'repl', 'skill', 'memory', 'todo'],
+      enabled: ['file', 'shell', 'repl', 'skill', 'memory', 'todo', 'search'],
       disabled: [],
       denied_tools: [],
     },
@@ -379,6 +383,7 @@ function mergeSessionConfig(
     ...defaults,
     ...(input ?? {}),
     title: { ...(defaults?.title ?? {}), ...(input?.title ?? {}) },
+    index: mergeSessionIndexConfig(defaults?.index, input?.index),
   };
 }
 
@@ -397,9 +402,7 @@ export async function writeEnvTemplate(path = DEFAULT_SD_ENV_PATH): Promise<bool
   await mkdir(dirname(path), { recursive: true });
   await writeFile(
     path,
-    ['# Snapdragon environment variables.', '# ANTHROPIC_API_KEY=', '# OPENAI_API_KEY=', ''].join(
-      '\n',
-    ),
+    '# Snapdragon environment variables.\n# ANTHROPIC_API_KEY=\n# OPENAI_API_KEY=\n',
     'utf8',
   );
   return true;
