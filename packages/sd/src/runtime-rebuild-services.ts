@@ -3,14 +3,12 @@ import type { SdConfig } from './config.js';
 import { activateSdExtensions } from './extension-runtime.js';
 import { createSdExtensionStore } from './extensions.js';
 import { ensureFirstPartyExtensionsForConfig } from './first-party.js';
-import type { SdMemoryProvider } from './memory.js';
 import type { SdProfileInfo } from './profile.js';
 import { resolveSdRuntimeConfig, type SdRuntimeCliOverrides } from './profile-runtime.js';
-import type { SdProviderRuntime } from './provider.js';
 import { makeSdProvider } from './provider.js';
 import type { SdRuntime } from './runtime.js';
 import { createSdAgent } from './runtime.js';
-import { startRuntimeBackgroundServices } from './runtime-background.js';
+import { replaceRuntimeBackground } from './runtime-background.js';
 import { sessionRoot } from './runtime-session.js';
 import { ensureRuntimeSessionMeta } from './runtime-session-meta-record.js';
 import { createIndexedRuntimeStores } from './runtime-stores.js';
@@ -19,16 +17,6 @@ import {
   resolveSdSessionIndexPath,
   sessionIndexEnabled,
 } from './session-index.js';
-import type { SdSkillStore } from './skills.js';
-
-interface RuntimeBackgroundParts {
-  config: SdConfig;
-  provider: SdProviderRuntime;
-  profile?: SdProfileInfo;
-  skills: SdSkillStore;
-  memory: SdMemoryProvider;
-  sessionIndex?: SdSessionIndex;
-}
 
 interface RuntimeRebuildRequest {
   profile?: SdProfileInfo;
@@ -74,14 +62,21 @@ export async function applyRuntimeRebuild(
     systemPrompt,
     sessionIndex,
   );
-  const background = replaceRuntimeBackground(runtime, {
-    config,
-    provider,
-    profile: request.profile,
-    skills,
-    memory,
-    sessionIndex,
-  });
+  const background = replaceRuntimeBackground(
+    {
+      background: runtime.background,
+      sessionIndex: runtime.sessionIndex,
+      options: runtime.options,
+    },
+    {
+      config,
+      provider,
+      profile: request.profile,
+      skills,
+      memory,
+      sessionIndex,
+    },
+  );
   Object.assign(runtime, {
     config,
     provider,
@@ -111,18 +106,5 @@ export function sessionIndexForRebuild(
   return runtime.sessionIndex?.path === path ? runtime.sessionIndex : openSdSessionIndex(config);
 }
 
-export function replaceRuntimeBackground(runtime: SdRuntime, parts: RuntimeBackgroundParts) {
-  runtime.background.stop();
-  if (runtime.sessionIndex && runtime.sessionIndex !== parts.sessionIndex) {
-    runtime.sessionIndex.close();
-  }
-  return startRuntimeBackgroundServices(
-    runtime.options,
-    parts.config,
-    parts.provider,
-    parts.profile,
-    parts.skills,
-    parts.memory,
-    parts.sessionIndex,
-  );
-}
+// `replaceRuntimeBackground` lives in `./runtime-background.ts` to keep the
+// rebind/restart split colocated with `startRuntimeBackgroundServices`.

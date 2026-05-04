@@ -42,15 +42,15 @@
     "maxFunctionLines": 99
   },
   "packages/agent/src/index.ts": {
-    "lines": 168,
+    "lines": 167,
     "complexity": 25,
     "separationProxy": 30,
     "maxFunctionLines": 11
   },
   "packages/agent/src/types.ts": {
-    "lines": 62,
-    "complexity": 29,
-    "separationProxy": 37,
+    "lines": 49,
+    "complexity": 20,
+    "separationProxy": 28,
     "maxFunctionLines": 0
   },
   "packages/config/src/index.ts": {
@@ -144,10 +144,10 @@
     "maxFunctionLines": 34
   },
   "packages/sd/src/background.ts": {
-    "lines": 279,
-    "complexity": 70,
-    "separationProxy": 78,
-    "maxFunctionLines": 31
+    "lines": 339,
+    "complexity": 79,
+    "separationProxy": 88,
+    "maxFunctionLines": 36
   },
   "packages/sd/src/cli.ts": {
     "lines": 132,
@@ -162,16 +162,16 @@
     "maxFunctionLines": 15
   },
   "packages/sd/src/commands.ts": {
-    "lines": 773,
+    "lines": 772,
     "complexity": 164,
-    "separationProxy": 170,
+    "separationProxy": 169,
     "maxFunctionLines": 55
   },
   "packages/sd/src/config.ts": {
     "lines": 423,
-    "complexity": 172,
-    "separationProxy": 201,
-    "maxFunctionLines": 115
+    "complexity": 169,
+    "separationProxy": 200,
+    "maxFunctionLines": 113
   },
   "packages/sd/src/extension-runtime.ts": {
     "lines": 186,
@@ -192,10 +192,10 @@
     "maxFunctionLines": 10
   },
   "packages/sd/src/memory-worker.ts": {
-    "lines": 298,
-    "complexity": 83,
-    "separationProxy": 89,
-    "maxFunctionLines": 98
+    "lines": 128,
+    "complexity": 25,
+    "separationProxy": 30,
+    "maxFunctionLines": 39
   },
   "packages/sd/src/memory.ts": {
     "lines": 418,
@@ -216,9 +216,9 @@
     "maxFunctionLines": 10
   },
   "packages/sd/src/provider.ts": {
-    "lines": 231,
-    "complexity": 60,
-    "separationProxy": 66,
+    "lines": 227,
+    "complexity": 59,
+    "separationProxy": 65,
     "maxFunctionLines": 40
   },
   "packages/sd/src/reload.ts": {
@@ -240,16 +240,16 @@
     "maxFunctionLines": 17
   },
   "packages/sd/src/runtime-transitions.ts": {
-    "lines": 135,
-    "complexity": 28,
-    "separationProxy": 33,
+    "lines": 98,
+    "complexity": 26,
+    "separationProxy": 30,
     "maxFunctionLines": 34
   },
   "packages/sd/src/runtime.ts": {
-    "lines": 181,
-    "complexity": 31,
-    "separationProxy": 38,
-    "maxFunctionLines": 46
+    "lines": 177,
+    "complexity": 25,
+    "separationProxy": 32,
+    "maxFunctionLines": 45
   },
   "packages/sd/src/session-summary.ts": {
     "lines": 89,
@@ -270,10 +270,10 @@
     "maxFunctionLines": 8
   },
   "packages/sd/src/skill-builder-detect.ts": {
-    "lines": 241,
-    "complexity": 52,
-    "separationProxy": 59,
-    "maxFunctionLines": 27
+    "lines": 203,
+    "complexity": 36,
+    "separationProxy": 42,
+    "maxFunctionLines": 21
   },
   "packages/sd/src/skill-builder-draft.ts": {
     "lines": 267,
@@ -282,10 +282,10 @@
     "maxFunctionLines": 33
   },
   "packages/sd/src/skill-builder.ts": {
-    "lines": 362,
-    "complexity": 76,
-    "separationProxy": 82,
-    "maxFunctionLines": 59
+    "lines": 345,
+    "complexity": 72,
+    "separationProxy": 78,
+    "maxFunctionLines": 56
   },
   "packages/sd/src/skills.ts": {
     "lines": 496,
@@ -312,10 +312,10 @@
     "maxFunctionLines": 12
   },
   "packages/sd/src/tui/index.tsx": {
-    "lines": 168,
-    "complexity": 34,
-    "separationProxy": 40,
-    "maxFunctionLines": 67
+    "lines": 152,
+    "complexity": 23,
+    "separationProxy": 29,
+    "maxFunctionLines": 52
   },
   "packages/sd/src/tui/inline-shell.ts": {
     "lines": 61,
@@ -324,10 +324,10 @@
     "maxFunctionLines": 44
   },
   "packages/sd/src/tui/input-commands.ts": {
-    "lines": 313,
-    "complexity": 64,
-    "separationProxy": 68,
-    "maxFunctionLines": 83
+    "lines": 172,
+    "complexity": 29,
+    "separationProxy": 33,
+    "maxFunctionLines": 58
   },
   "packages/sd/src/tui/input-completion.ts": {
     "lines": 261,
@@ -342,7 +342,7 @@
     "maxFunctionLines": 32
   },
   "packages/sd/src/tui/input-keymap.ts": {
-    "lines": 277,
+    "lines": 275,
     "complexity": 73,
     "separationProxy": 82,
     "maxFunctionLines": 31
@@ -354,10 +354,10 @@
     "maxFunctionLines": 32
   },
   "packages/sd/src/tui/layout.ts": {
-    "lines": 46,
-    "complexity": 24,
-    "separationProxy": 26,
-    "maxFunctionLines": 8
+    "lines": 45,
+    "complexity": 21,
+    "separationProxy": 23,
+    "maxFunctionLines": 6
   },
   "packages/sd/src/tui/model-selection.ts": {
     "lines": 113,
@@ -388,12 +388,6 @@
     "complexity": 24,
     "separationProxy": 25,
     "maxFunctionLines": 18
-  },
-  "packages/sd/src/tui/renderers/panels.tsx": {
-    "lines": 97,
-    "complexity": 15,
-    "separationProxy": 17,
-    "maxFunctionLines": 28
   },
   "packages/sd/src/tui/renderers/prompt.tsx": {
     "lines": 192,
@@ -426,9 +420,9 @@
     "maxFunctionLines": 22
   },
   "packages/sd/src/tui/ui.ts": {
-    "lines": 779,
-    "complexity": 115,
-    "separationProxy": 120,
+    "lines": 767,
+    "complexity": 100,
+    "separationProxy": 105,
     "maxFunctionLines": 36
   },
   "packages/session/src/context-packing.ts": {
@@ -444,9 +438,9 @@
     "maxFunctionLines": 11
   },
   "packages/session/src/session.ts": {
-    "lines": 182,
-    "complexity": 20,
-    "separationProxy": 26,
+    "lines": 174,
+    "complexity": 16,
+    "separationProxy": 22,
     "maxFunctionLines": 18
   },
   "packages/tools/src/registry-config.ts": {
@@ -492,9 +486,9 @@
     "maxFunctionLines": 40
   },
   "packages/ui/src/index.ts": {
-    "lines": 297,
-    "complexity": 70,
-    "separationProxy": 83,
-    "maxFunctionLines": 134
+    "lines": 268,
+    "complexity": 63,
+    "separationProxy": 71,
+    "maxFunctionLines": 13
   }
 }
