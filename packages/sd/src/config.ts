@@ -80,6 +80,7 @@ export interface SdSkillBuilderConfig {
   max_drafts_per_pass?: number;
   /** max_tokens for the drafter LLM call. Default: 800. */
   draft_max_tokens?: number;
+  similarity_top_k?: number;
   /**
    * Tool names that, when leading an n-gram, indicate agent-side context
    * gathering rather than a real workflow. Such n-grams are filtered out

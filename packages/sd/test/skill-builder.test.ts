@@ -574,6 +574,44 @@ test('drafter receives existing-skills catalog and is told to SKIP duplicates', 
   }
 });
 
+test('findSimilarSkills is invoked per-candidate and forwarded to the drafter', async () => {
+  const fx = await makeFixture();
+  try {
+    await writeSession(fx.sessionsRoot, 'sess-1', [
+      { role: 'user', text: 'fix the failing test', created_at: 100 },
+      { role: 'assistant', toolCalls: ['run_shell', 'edit_file'], created_at: 101 },
+    ]);
+    await writeSession(fx.sessionsRoot, 'sess-2', [
+      { role: 'user', text: 'fix the failing test', created_at: 200 },
+      { role: 'assistant', toolCalls: ['run_shell', 'edit_file'], created_at: 201 },
+    ]);
+    const lookups: string[] = [];
+    const calls: Message[][] = [];
+    const chat: SdBackgroundChat = async (messages) => {
+      calls.push(messages);
+      return { content: 'SKIP' };
+    };
+    const result = await runSdSkillBuilderOnce({
+      config: fx.config,
+      memory: fx.memory,
+      chat,
+      findSimilarSkills: (candidate) => {
+        lookups.push(candidate.id);
+        return [{ id: 'tdd-loop', description: 'Run a failing test then edit until green' }];
+      },
+      // Static existingSkills must be ignored when findSimilarSkills is set.
+      existingSkills: [{ id: 'should-not-appear', description: 'ignored' }],
+    });
+    assert.ok(lookups.length >= 1, 'findSimilarSkills should be called');
+    const userMsg = String(calls[0]?.find((m) => m.role === 'user')?.content ?? '');
+    assert.match(userMsg, /tdd-loop/);
+    assert.doesNotMatch(userMsg, /should-not-appear/);
+    assert.equal(result.drafts_written, 0);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
 test('drafter omits the existing-skills section when the catalog is empty', async () => {
   const fx = await makeFixture();
   try {
