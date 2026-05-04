@@ -7,7 +7,8 @@ export type SdCliMode =
   | 'setup'
   | 'list-sessions'
   | 'delete-session'
-  | 'list-profiles';
+  | 'list-profiles'
+  | 'daemon';
 
 export interface SdCliArgs {
   mode: SdCliMode;
@@ -23,5 +24,9 @@ export interface SdCliArgs {
   profileName?: string;
   noProfile: boolean;
   profileRoot?: string;
+  backgroundMode?: 'daemon' | 'inline' | 'off';
+  noBackground?: boolean;
+  noMemoryWorker?: boolean;
+  daemonAction?: 'run' | 'start' | 'stop' | 'status' | 'run-once';
   prompt?: string;
 }

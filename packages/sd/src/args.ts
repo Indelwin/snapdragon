@@ -1,14 +1,15 @@
+import { applyDaemonToken } from './args-daemon.js';
+import { applyBooleanFlag } from './args-flags.js';
 import {
   addPromptPart,
   applyPrompt,
-  applyValueFlag,
   defaultArgs,
-  isValueFlag,
   modeForFlag,
   splitFlag,
   takeValue,
 } from './args-helpers.js';
 import type { SdCliArgs } from './args-types.js';
+import { applyValueFlag, isValueFlag } from './args-value-flags.js';
 import { parseRunMode } from './modes.js';
 
 export function parseArgs(argv: string[], cwd = process.cwd()): SdCliArgs {
@@ -43,20 +44,8 @@ export function parseArgs(argv: string[], cwd = process.cwd()): SdCliArgs {
       continue;
     }
 
-    if (parsed.flag === '--new-session') {
-      out.newSession = true;
-      continue;
-    }
-    if (parsed.flag === '--no-session') {
-      out.noSession = true;
-      continue;
-    }
-    if (parsed.flag === '--resume') {
-      out.resume = true;
-      continue;
-    }
-    if (parsed.flag === '--no-profile') {
-      out.noProfile = true;
+    if (applyBooleanFlag(out, parsed.flag)) continue;
+    if (applyDaemonToken(raw, out, promptParts)) {
       continue;
     }
     addPromptPart(raw, out, promptParts);

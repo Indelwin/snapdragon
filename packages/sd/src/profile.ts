@@ -5,11 +5,11 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import type {
   SdAgentConfig,
   SdExtensionsConfig,
-  SdIsolationConfig,
   SdMemoryConfig,
   SdSkillsConfig,
   SdToolsetsConfig,
 } from './config.js';
+import type { SdIsolationConfig } from './config-runtime-types.js';
 
 export const DEFAULT_SD_PROFILE_ROOT = resolve(homedir(), '.snapdragon/sd/profiles');
 export const ACTIVE_PROFILE_FILE = '_active';

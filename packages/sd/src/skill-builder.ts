@@ -1,29 +1,4 @@
-/**
- * Auto skill builder.
- *
- * Goal (manifesto: "If an agent does it more than twice, automate it"):
- * detect repeated tool-call workflows across recent sessions and surface
- * them as candidates the agent (and user) can decide whether to promote
- * to a real skill.
- *
- * Two outputs:
- *   1. `skill-candidate` memory entries — flow through the existing
- *      memory-injection pipe so the agent sees recurring workflows in
- *      its context. (Original Phase-1 behaviour.)
- *   2. `<skill_root>/.drafts/<slug>/SKILL.md` drafts produced via a
- *      one-shot LLM call when `ctx.chat` is available — the AGENT can
- *      then `/skills accept <id>` to promote, just like Hermes' skill
- *      authoring flow but kicked off proactively. The memory note is
- *      upgraded from `tentative`/`skill-candidate` to
- *      `skill-draft-ready` and includes the draft path so the agent
- *      knows the proposal exists.
- *
- * Detection logic lives in `skill-builder-detect.ts`; LLM drafting +
- * draft I/O live in `skill-builder-draft.ts`. This file is the
- * orchestrator + the SdBackgroundService factory.
- *
- * Enabled by default — explicitly dogfooded posture.
- */
+/** Auto skill builder: detect repeated tool-call workflows and surface draftable skills. */
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -199,6 +174,10 @@ export function skillBuilderService(): SdBackgroundService {
     },
     intervalMs(ctx: SdBackgroundContext) {
       return builderConfig(ctx.config).interval_ms ?? 30 * 60 * 1000;
+    },
+    startupDelayMs(ctx: SdBackgroundContext) {
+      const cfg = builderConfig(ctx.config);
+      return cfg.startup_delay_ms ?? cfg.interval_ms ?? 30 * 60 * 1000;
     },
     async runOnce(ctx: SdBackgroundContext): Promise<SdBackgroundServiceResult> {
       // Surface only top-K skills similar to each candidate (routed through

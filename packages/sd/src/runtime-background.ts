@@ -5,7 +5,11 @@ import type {
   SdBackgroundServicesHandle,
 } from './background.js';
 import { startSdBackgroundServices } from './background.js';
+import { emptyBackgroundHandle } from './background-empty.js';
 import type { SdConfig } from './config.js';
+import type { SdBackgroundMode } from './config-runtime-types.js';
+import { ensureSdDaemonProcess } from './daemon-spawn.js';
+import { daemonBackedBackgroundHandle } from './daemon-status.js';
 import type { SdMemoryProvider } from './memory.js';
 import { memoryWorkerService } from './memory-worker.js';
 import type { SdProfileInfo } from './profile.js';
@@ -60,6 +64,32 @@ export function startRuntimeBackgroundServices(
   memory: SdMemoryProvider,
   sessionIndex?: SdSessionIndex,
 ) {
+  const mode = runtimeBackgroundMode(options, config);
+  if (mode === 'off') return emptyBackgroundHandle();
+  if (mode === 'daemon') {
+    if (config.background?.daemon?.auto_start) ensureSdDaemonProcess(options, config);
+    return daemonBackedBackgroundHandle(config);
+  }
+  return startInlineRuntimeBackgroundServices(
+    options,
+    config,
+    provider,
+    profile,
+    skills,
+    memory,
+    sessionIndex,
+  );
+}
+
+export function startInlineRuntimeBackgroundServices(
+  options: SdRuntimeOptions,
+  config: SdConfig,
+  provider: SdProviderRuntime,
+  profile: SdProfileInfo | undefined,
+  skills: SdSkillStore,
+  memory: SdMemoryProvider,
+  sessionIndex?: SdSessionIndex,
+) {
   const services = defaultSdBackgroundServices();
   if (sessionIndex) {
     services.push(
@@ -75,6 +105,14 @@ export function startRuntimeBackgroundServices(
     disableAll: options.noBackground,
     disable: collectDisabledServices(options),
   });
+}
+
+export function runtimeBackgroundMode(
+  options: SdRuntimeOptions,
+  config: SdConfig,
+): SdBackgroundMode {
+  if (options.noBackground) return 'off';
+  return options.backgroundMode ?? config.background?.mode ?? 'daemon';
 }
 
 /**

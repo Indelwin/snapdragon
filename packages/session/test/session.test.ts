@@ -3,7 +3,7 @@ import { appendFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { readMessagePreviews, SessionStore } from '../src/index.ts';
+import { readMessagePreviews, readRecordStats, SessionStore } from '../src/index.ts';
 
 test('JSONL sessions create, append, reopen, assemble, and delete', () => {
   const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-session-')) });
@@ -81,6 +81,28 @@ test('JSONL sessions skip malformed trailing lines', () => {
   appendFileSync(session.jsonlPath, '{"type": "message"\n', 'utf8');
 
   assert.equal(store.open('session_2').messages().length, 1);
+});
+
+test('JSONL session stats avoid full record parsing on open', () => {
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-session-')) });
+  const session = store.create('session_stats');
+  session.appendMessage({ role: 'user', content: 'hello' });
+  appendFileSync(
+    session.jsonlPath,
+    `${JSON.stringify({
+      type: 'message',
+      store_id: 99,
+      role: 'assistant',
+      content: 'x'.repeat(500_000),
+      created_at: 2,
+    })}\n`,
+    'utf8',
+  );
+
+  const stats = readRecordStats(session.jsonlPath);
+  const reopened = store.open('session_stats');
+  assert.equal(stats.nextStoreId, 100);
+  assert.equal(reopened.messageCount(), 2);
 });
 
 test('message preview reader skips large tool payloads without dropping adjacent messages', async () => {

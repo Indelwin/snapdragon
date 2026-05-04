@@ -192,11 +192,8 @@ function collectToolCallTrace(records: SkillBuilderMessageRecord[]): SkillBuilde
   return out;
 }
 
-/**
- * Reject "interesting"-but-actually-noise n-grams: a pair of identical
- * tool names is just "I called X twice" (e.g. read multiple files).
- * We require at least two distinct tools so the n-gram captures a transition.
- */
+/** Reject repeated same-tool n-grams; they do not capture a workflow transition. */
 function isInterestingNgram(ngram: string[]): boolean {
-  return new Set(ngram).size >= 2;
+  const [first, second, third] = ngram;
+  return ngram.length === 2 ? first !== second : first !== second || first !== third;
 }

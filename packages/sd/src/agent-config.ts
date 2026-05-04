@@ -1,4 +1,4 @@
-import type { SdAgentConfig } from './config.js';
+import type { SdAgentConfig } from './agent-config-types.js';
 
 export function mergeAgentConfig(
   defaults: SdAgentConfig | undefined,
