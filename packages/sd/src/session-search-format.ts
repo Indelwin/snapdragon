@@ -1,4 +1,5 @@
 import type { SessionSearchHit } from '@snapdragon-ai/session';
+import { formatHitTimestamp } from './session-hit-time.js';
 
 /** Render FTS hits for human display in the TUI/CLI. */
 export function formatSessionSearchHits(hits: SessionSearchHit[]): string {
@@ -12,11 +13,6 @@ export function formatSessionSearchHit(hit: SessionSearchHit): string {
   const session = hit.sessionId.slice(0, 24);
   const preview = previewText(hit.content, 200);
   return `[${role}] ${when}  ${session}\n  ${preview}`;
-}
-
-function formatHitTimestamp(createdAt: number | undefined | null): string {
-  if (!createdAt) return '';
-  return new Date(createdAt).toISOString().replace('T', ' ').slice(0, 19);
 }
 
 function previewText(text: string, max: number): string {
