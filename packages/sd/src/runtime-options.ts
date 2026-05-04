@@ -16,6 +16,8 @@ export interface SdRuntimeOptions {
   noMemoryWorker?: boolean;
   /** Skip starting any background services at all. */
   noBackground?: boolean;
+  /** Override background execution for this process. */
+  backgroundMode?: 'daemon' | 'inline' | 'off';
 }
 
 export function normalizeRuntimeOptions(args: SdRuntimeOptions | SdCliArgs): SdRuntimeOptions {
@@ -33,5 +35,6 @@ export function normalizeRuntimeOptions(args: SdRuntimeOptions | SdCliArgs): SdR
     profileRoot: args.profileRoot,
     noMemoryWorker: 'noMemoryWorker' in args ? args.noMemoryWorker : undefined,
     noBackground: 'noBackground' in args ? args.noBackground : undefined,
+    backgroundMode: 'backgroundMode' in args ? args.backgroundMode : undefined,
   };
 }

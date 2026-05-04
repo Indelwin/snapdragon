@@ -36,7 +36,7 @@ async function scanOneSession(
   const records = await readSkillBuilderRecords(path, result);
   const newRecords = records.filter((record) => record.created_at > watermark);
   if (newRecords.length === 0) return;
-  ingestSessionIntoStats(records, sessionId, stats);
+  ingestSessionIntoStats(newRecords, sessionId, stats);
   updateWatermark(state, sessionId, watermark, newRecords);
 }
 

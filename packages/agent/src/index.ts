@@ -66,7 +66,6 @@ export class SnapdragonAgent {
     this.#maxTokens = args.maxTokens;
     this.#reasoning = args.reasoning;
     this.#session = args.session;
-    if (args.session) this.messages.push(...args.session.messages());
   }
 
   static async create(options: AgentOptionsPlus): Promise<SnapdragonAgent> {

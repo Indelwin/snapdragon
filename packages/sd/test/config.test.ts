@@ -26,6 +26,8 @@ test('default config uses Anthropic Opus 4.7 without storing secrets', () => {
   });
   assert.equal(config.sessions?.index?.enabled, true);
   assert.equal(config.sessions?.index?.path, undefined);
+  assert.equal(config.background?.mode, 'daemon');
+  assert.equal(config.background?.daemon?.auto_start, false);
   assert.ok(config.toolsets?.enabled?.includes('search'));
   assert.equal(config.agent?.max_tokens, 32_000);
   assert.deepEqual(config.agent?.context, {
