@@ -1,5 +1,5 @@
 import { createCodingReplAgent, type SnapdragonAgent } from '@snapdragon-ai/agent';
-import type { JsonlSession } from '@snapdragon-ai/session';
+import type { JsonlSession, SdSessionIndex } from '@snapdragon-ai/session';
 import type { SdCliArgs } from './args-types.js';
 import type { SdBackgroundServicesHandle } from './background.js';
 import { loadSdConfig, loadSdEnvironment, type SdConfig } from './config.js';
@@ -18,6 +18,7 @@ import { sessionRoot } from './runtime-session.js';
 import { ensureRuntimeSessionMeta } from './runtime-session-meta-record.js';
 import { createIndexedRuntimeStores } from './runtime-stores.js';
 import { registerRuntimeToolsets } from './runtime-toolsets.js';
+import { openSdSessionIndex } from './session-index.js';
 import type { SdSkillStore } from './skills.js';
 import type { SdTodoStore } from './todo.js';
 
@@ -33,6 +34,7 @@ export interface SdRuntime {
   skills: SdSkillStore;
   memory: SdMemoryProvider;
   todo: SdTodoStore;
+  sessionIndex?: SdSessionIndex;
   background: SdBackgroundServicesHandle;
   extensions: SdExtensionStore;
   extensionRuntime: SdExtensionRuntime;
@@ -44,6 +46,7 @@ export interface SdRuntime {
 
 export function stopSdRuntime(runtime: SdRuntime): void {
   runtime.background.stop();
+  runtime.sessionIndex?.close();
 }
 
 export async function createSdRuntime(
@@ -71,6 +74,7 @@ export async function createSdRuntime(
   const session = initialRuntimeSession(plan.sessionSelection, options, config, provider, profile);
   ensureRuntimeSessionMeta(session, options, provider, profile);
   const { skills, memory, todo } = createIndexedRuntimeStores(config, profile, extensionRuntime);
+  const sessionIndex = openSdSessionIndex(config);
   return finishRuntime({
     baseConfig,
     config,
@@ -84,6 +88,7 @@ export async function createSdRuntime(
     session,
     skills,
     todo,
+    sessionIndex,
     systemPrompt,
     options,
     warnings: plan.warnings,
@@ -100,6 +105,7 @@ async function finishRuntime(
     parts.profile,
     parts.skills,
     parts.memory,
+    parts.sessionIndex,
   );
   const agent = await createSdAgent(
     parts.options,
@@ -111,6 +117,7 @@ async function finishRuntime(
     parts.todo,
     parts.extensionRuntime,
     parts.systemPrompt,
+    parts.sessionIndex,
   );
   return {
     ...parts,
@@ -136,6 +143,7 @@ export async function createSdAgent(
   todo: SdTodoStore,
   extensionRuntime: SdExtensionRuntime,
   systemPrompt?: string,
+  sessionIndex?: SdSessionIndex,
 ): Promise<SnapdragonAgent> {
   const agent = await createCodingReplAgent({
     provider: provider.handler,
@@ -149,7 +157,8 @@ export async function createSdAgent(
     maxTokens: config.agent?.max_tokens,
     reasoning: config.agent?.reasoning ?? provider.reasoning,
   });
-  await registerRuntimeToolsets({ agent, config, skills, memory, todo, extensionRuntime });
+  const runtimeToolsets = { agent, config, skills, memory, todo, sessionIndex, extensionRuntime };
+  await registerRuntimeToolsets(runtimeToolsets);
   return agent;
 }
 
