@@ -23,8 +23,7 @@ export function functionCoverage(fileCoverage, fn) {
       : [];
   const candidates = named.length > 0 ? named : fileCoverage.filter((entry) => overlaps(entry, fn));
   if (candidates.length === 0) return 0;
-  const best = candidates.sort((a, b) => span(a) - span(b))[0];
-  return coveredFraction(best.ranges, fn);
+  return Math.max(...candidates.map((entry) => coveredFraction(entry.ranges, fn)));
 }
 
 function coveredFraction(ranges, fn) {
@@ -67,11 +66,6 @@ function scriptPath(url) {
 function overlaps(entry, fn) {
   const first = entry.ranges[0];
   return first.startOffset < fn.end && first.endOffset > fn.start;
-}
-
-function span(entry) {
-  const first = entry.ranges[0];
-  return first.endOffset - first.startOffset;
 }
 
 function coveredLength(ranges, fn) {

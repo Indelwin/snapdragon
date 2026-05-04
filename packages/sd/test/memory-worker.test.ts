@@ -7,6 +7,7 @@ import { SessionStore } from '@snapdragon-ai/session';
 import { defaultSdConfig, type SdConfig } from '../src/config.ts';
 import { SdMemoryStore } from '../src/memory.ts';
 import { runSdMemoryWorkerOnce, startSdMemoryWorker } from '../src/memory-worker.ts';
+import { readMemoryWorkerState, writeMemoryWorkerState } from '../src/memory-worker-state.ts';
 
 interface Fixture {
   workspace: string;
@@ -138,6 +139,69 @@ test('worker ignores assistant turns and untriggered user turns', async () => {
     assert.doesNotMatch(memoryRaw, /^## .*Auto:/m);
   } finally {
     await fx.cleanup();
+  }
+});
+
+test('worker scans user turns without parsing large tool-result payloads', async () => {
+  const fx = await makeFixture();
+  try {
+    const path = join(fx.sessionsRoot, 'sess-large-tool.jsonl');
+    const records = [
+      JSON.stringify({
+        type: 'session_open',
+        session_id: 'sess-large-tool',
+        created_at: 600,
+        schema_version: 1,
+      }),
+      JSON.stringify({
+        type: 'message',
+        store_id: 1,
+        role: 'user',
+        content: 'remember to avoid full JSON parsing in workers',
+        created_at: 601,
+      }),
+      JSON.stringify({
+        type: 'message',
+        store_id: 2,
+        role: 'tool',
+        content: 'x'.repeat(900_000),
+        tool_call_id: 'call_1',
+        created_at: 602,
+      }),
+    ];
+    await writeFile(path, `${records.join('\n')}\n`, 'utf8');
+
+    const result = await runSdMemoryWorkerOnce({ config: fx.config, memory: fx.memory });
+
+    assert.equal(result.captured, 1);
+    assert.deepEqual(result.errors, []);
+    const memoryRaw = await readFile(fx.memoryPath, 'utf8');
+    assert.match(memoryRaw, /avoid full JSON parsing/);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('worker state reader handles missing, malformed, and valid files', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'sd-memory-worker-state-'));
+  try {
+    const statePath = join(workspace, 'nested', 'worker-state.json');
+    assert.deepEqual(readMemoryWorkerState(statePath), { version: 1, sessions: {} });
+
+    await mkdir(join(workspace, 'nested'), { recursive: true });
+    await writeFile(statePath, 'not json', 'utf8');
+    assert.deepEqual(readMemoryWorkerState(statePath), { version: 1, sessions: {} });
+
+    writeMemoryWorkerState(statePath, {
+      version: 1,
+      sessions: { sess: { last_processed_at: 123 } },
+    });
+    assert.deepEqual(readMemoryWorkerState(statePath), {
+      version: 1,
+      sessions: { sess: { last_processed_at: 123 } },
+    });
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
   }
 });
 

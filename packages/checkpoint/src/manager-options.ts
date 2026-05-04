@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import type { CheckpointManagerOptions } from './types-options.js';
 
-const DEFAULT_TIMEOUT_MS = 5000;
+const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_SNAPSHOTS = 50;
 
 export interface ResolvedCheckpointOptions {

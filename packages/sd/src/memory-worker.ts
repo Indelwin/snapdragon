@@ -1,46 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { memoryShouldAutoCapture } from '@snapdragon-ai/content';
-import { readRecords, type SessionMessageRecord } from '@snapdragon-ai/session';
 import type {
   SdBackgroundContext,
   SdBackgroundService,
   SdBackgroundServiceResult,
 } from './background.js';
-import type { SdConfig } from './config.js';
-import type { SdMemoryProvider } from './memory.js';
-import { resolveSdMemoryPath } from './memory.js';
-import type { SdProfileInfo } from './profile.js';
-import { runtimeSessionStore } from './runtime-session.js';
+import { memoryWorkerDisabled } from './memory-worker-context.js';
+import { runMemoryWorkerScan } from './memory-worker-scan.js';
+import type { SdMemoryWorkerOptions, SdMemoryWorkerScanResult } from './memory-worker-types.js';
 
-/**
- * Tracks the highest-watermark message timestamp processed for each session,
- * so the worker never re-emits a memory entry for the same turn.
- */
-interface WorkerState {
-  version: 1;
-  sessions: Record<string, { last_processed_at: number }>;
-}
-
-export interface SdMemoryWorkerOptions {
-  config: SdConfig;
-  memory: SdMemoryProvider;
-  profile?: SdProfileInfo;
-  /** Override "now" for tests. */
-  now?: () => number;
-  /** Optional logger; defaults to no-op. */
-  log?: (line: string) => void;
-}
-
-export interface SdMemoryWorkerScanResult {
-  scanned_sessions: number;
-  considered_messages: number;
-  captured: number;
-  skipped_duplicates: number;
-  errors: string[];
-}
-
-const STATE_FILENAME = '.worker-state.json';
+export type { SdMemoryWorkerOptions, SdMemoryWorkerScanResult } from './memory-worker-types.js';
 
 /**
  * Run a single pass of the background worker. Pure with respect to wall-clock
@@ -49,100 +16,20 @@ const STATE_FILENAME = '.worker-state.json';
 export async function runSdMemoryWorkerOnce(
   options: SdMemoryWorkerOptions,
 ): Promise<SdMemoryWorkerScanResult> {
-  const result: SdMemoryWorkerScanResult = {
+  const result = emptyMemoryWorkerResult();
+  if (memoryWorkerDisabled(options.config)) return result;
+  await runMemoryWorkerScan(options, result);
+  return result;
+}
+
+function emptyMemoryWorkerResult(): SdMemoryWorkerScanResult {
+  return {
     scanned_sessions: 0,
     considered_messages: 0,
     captured: 0,
     skipped_duplicates: 0,
     errors: [],
   };
-  const memoryConfig = options.config.memory;
-  if (memoryConfig?.enabled === false) return result;
-  if (memoryConfig?.authoring === false) return result;
-
-  const workerCfg = memoryConfig?.worker ?? {};
-  const lookback = workerCfg.lookback_sessions ?? 10;
-  const includeAssistant = workerCfg.include_assistant ?? false;
-
-  const memoryPath = resolveSdMemoryPath(options.config, options.profile);
-  const stateDir = dirname(memoryPath);
-  const statePath = join(stateDir, STATE_FILENAME);
-  const state = readState(statePath);
-
-  const sessions = runtimeSessionStore(options.config).list().slice(0, lookback);
-  const existingHashes = collectExistingHashes(memoryPath);
-
-  for (const session of sessions) {
-    result.scanned_sessions += 1;
-    const watermark = state.sessions[session.session_id]?.last_processed_at ?? 0;
-    let highest = watermark;
-    let records: SessionMessageRecord[] = [];
-    try {
-      records = readRecords(session.jsonl_path).filter(
-        (record): record is SessionMessageRecord =>
-          record.type === 'message' && record.created_at > watermark,
-      );
-    } catch (error) {
-      result.errors.push(
-        `Failed to read ${session.jsonl_path}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      continue;
-    }
-
-    for (const record of records) {
-      result.considered_messages += 1;
-      if (record.created_at > highest) highest = record.created_at;
-      if (record.role !== 'user') continue;
-      const userInput = textFromContent(record.content);
-      if (!userInput) continue;
-
-      const decision = memoryShouldAutoCapture(
-        { userInput },
-        {
-          enabled: memoryConfig?.auto?.enabled,
-          triggers: memoryConfig?.auto?.triggers,
-          maxEntryChars: memoryConfig?.auto?.max_entry_chars,
-          includeAssistant,
-        },
-      );
-      if (!decision.capture || !decision.extracted) continue;
-
-      const content = decision.extracted;
-      const hash = hashContent(content);
-      if (existingHashes.has(hash)) {
-        result.skipped_duplicates += 1;
-        continue;
-      }
-      try {
-        const appended = await Promise.resolve(
-          options.memory.append({
-            title: `Auto: ${truncateForTitle(decision.extracted)}`,
-            content,
-            tags: ['auto', 'tentative', 'worker', decision.trigger ?? 'auto'],
-            source: `sd.worker:${session.session_id}`,
-          }),
-        );
-        if (appended.success) {
-          existingHashes.add(hash);
-          result.captured += 1;
-          options.log?.(
-            `[memory-worker] captured from ${session.session_id} trigger="${decision.trigger}"`,
-          );
-        } else {
-          result.errors.push(appended.error ?? 'append failed');
-        }
-      } catch (error) {
-        result.errors.push(error instanceof Error ? error.message : String(error));
-      }
-    }
-
-    if (highest > watermark) {
-      state.sessions[session.session_id] = { last_processed_at: highest };
-    }
-  }
-
-  writeState(statePath, state);
-  return result;
 }
 
 export interface SdMemoryWorkerHandle {
@@ -237,61 +124,4 @@ export function memoryWorkerService(): SdBackgroundService {
       };
     },
   };
-}
-
-function readState(path: string): WorkerState {
-  if (!existsSync(path)) return { version: 1, sessions: {} };
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf8')) as WorkerState;
-    if (parsed?.version === 1 && parsed.sessions && typeof parsed.sessions === 'object') {
-      return parsed;
-    }
-  } catch {
-    // fall through
-  }
-  return { version: 1, sessions: {} };
-}
-
-function writeState(path: string, state: WorkerState): void {
-  mkdirSync(dirname(path), { recursive: true });
-  const tmp = `${path}.tmp`;
-  writeFileSync(tmp, JSON.stringify(state, undefined, 2), 'utf8');
-  renameSync(tmp, path);
-}
-
-function collectExistingHashes(memoryPath: string): Set<string> {
-  const hashes = new Set<string>();
-  if (!existsSync(memoryPath)) return hashes;
-  const raw = readFileSync(memoryPath, 'utf8');
-  for (const section of raw.split(/\n(?=##\s+)/g)) {
-    if (!section.startsWith('## ')) continue;
-    const body = section.split(/\n\n/).slice(1).join('\n\n').trim();
-    if (body) hashes.add(hashContent(body));
-  }
-  return hashes;
-}
-
-function hashContent(value: string): string {
-  // Tiny FNV-1a 32-bit hash; we don't need crypto strength, just stable dedupe.
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(8, '0');
-}
-
-function textFromContent(content: SessionMessageRecord['content']): string {
-  if (typeof content === 'string') return content.trim();
-  if (!Array.isArray(content)) return '';
-  return content
-    .filter((block): block is { type: 'text'; text: string } => block?.type === 'text')
-    .map((block) => block.text)
-    .join('\n')
-    .trim();
-}
-
-function truncateForTitle(value: string, max = 60): string {
-  const single = value.replace(/\s+/g, ' ').trim();
-  return single.length <= max ? single : `${single.slice(0, max - 1).trimEnd()}…`;
 }
