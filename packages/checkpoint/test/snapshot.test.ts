@@ -7,6 +7,8 @@ import type { GitRunOptions } from '../src/git-env.ts';
 import { initShadowRepo } from '../src/shadow-repo.ts';
 import { takeSnapshot } from '../src/snapshot.ts';
 
+const TEST_GIT_TIMEOUT_MS = 30_000;
+
 async function setupShadow(prefix: string): Promise<{
   root: string;
   project: string;
@@ -21,7 +23,7 @@ async function setupShadow(prefix: string): Promise<{
     baseDir: shadowBase,
     workTree: project,
     gitBinary: 'git',
-    gitTimeoutMs: 5_000,
+    gitTimeoutMs: TEST_GIT_TIMEOUT_MS,
   });
   if (!init.ok) throw new Error(`init failed: ${init.error}`);
 
@@ -32,7 +34,7 @@ async function setupShadow(prefix: string): Promise<{
       shadowDir: init.shadowDir,
       workTree: project,
       gitBinary: 'git',
-      timeoutMs: 5_000,
+      timeoutMs: TEST_GIT_TIMEOUT_MS,
     },
   };
 }

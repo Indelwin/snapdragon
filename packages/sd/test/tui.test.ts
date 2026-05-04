@@ -352,30 +352,43 @@ test('tool transcript summaries avoid full-line keys for huge output', () => {
 
 test('SdTuiApp renders the initial ECS shell and later tool activity', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-render-'));
+  let app: ReturnType<typeof render> | undefined;
   try {
     const runtime = await createMockRuntime(workspace);
     const controller = new SdUiController(runtime);
-    const app = render(
+    app = render(
       React.createElement(SdTuiApp, {
         runtime,
         controller,
       }),
     );
 
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.match(app.lastFrame() ?? '', /SNAPDRAGON/);
-    assert.match(app.lastFrame() ?? '', /ctrl-p palette/);
+    const shell = await waitForFrame(app, /SNAPDRAGON/);
+    assert.match(shell, /SNAPDRAGON/);
+    assert.match(shell, /ctrl-p palette/);
+    controller.acceptAgentEvent({ type: 'run_start', runId: 'run_1' });
     controller.acceptAgentEvent({
       type: 'tool_start',
       call: { id: 'tool_1', name: 'read_file', args_json: '{}' },
     });
-    await new Promise((resolve) => setImmediate(resolve));
-    assert.match(app.lastFrame() ?? '', /read_file/);
-    app.unmount();
+    await waitForFrame(app, /read_file/);
   } finally {
+    app?.unmount();
     await rm(workspace, { force: true, recursive: true });
   }
 });
+
+async function waitForFrame(app: ReturnType<typeof render>, pattern: RegExp): Promise<string> {
+  const deadline = Date.now() + 1500;
+  while (Date.now() < deadline) {
+    const frame = app.lastFrame() ?? '';
+    if (pattern.test(frame)) return frame;
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  }
+  const frame = app.lastFrame() ?? '';
+  assert.match(frame, pattern);
+  return frame;
+}
 
 test('public sd package exports a lazy TUI runner', async () => {
   const sd = await import('../src/index.ts');

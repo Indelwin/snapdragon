@@ -5,7 +5,7 @@ export interface CheckpointManagerOptions {
   maxSnapshots?: number;
   /** Base directory for shadow repos. Required so callers control on-disk layout. */
   baseDir: string;
-  /** Per-git-call timeout (ms). Default 5000. */
+  /** Per-git-call timeout (ms). Default 30000. */
   gitTimeoutMs?: number;
   /** Path to `git` binary; defaults to `git` resolved on PATH. */
   gitBinary?: string;

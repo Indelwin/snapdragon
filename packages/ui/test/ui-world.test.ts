@@ -62,3 +62,17 @@ test('UiWorld tracks focus, logs, and deterministic replay', () => {
   assert.equal(one.log[0]?.message, 'ready');
   assert.deepEqual(one.snapshot().components, two.snapshot().components);
 });
+
+test('UiWorld bounds retained logs for long-running renderers', () => {
+  const world = new UiWorld();
+  for (let i = 0; i < UiWorld.maxLogEntries + 20; i += 1) {
+    world.apply({
+      type: 'ui.log.append',
+      entry: uiLog('info', `event ${i}`, { id: `log_${i}` }),
+    });
+  }
+
+  assert.equal(world.log.length, UiWorld.maxLogEntries);
+  assert.equal(world.log[0]?.message, 'event 20');
+  assert.equal(world.log.at(-1)?.message, `event ${UiWorld.maxLogEntries + 19}`);
+});

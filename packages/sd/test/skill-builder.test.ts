@@ -111,6 +111,50 @@ async function writeSession(
   await writeFile(path, `${lines.join('\n')}\n`, 'utf8');
 }
 
+async function writeSessionWithLargeToolResult(
+  sessionsRoot: string,
+  sessionId: string,
+  createdAt: number,
+): Promise<void> {
+  const path = join(sessionsRoot, `${sessionId}.jsonl`);
+  const assistant = {
+    type: 'message',
+    store_id: 2,
+    role: 'assistant',
+    content: '',
+    created_at: createdAt + 1,
+    tool_calls: [
+      { id: `${sessionId}-read`, name: 'read_file', args_json: '{"path":"README.md"}' },
+      { id: `${sessionId}-edit`, name: 'edit_file', args_json: '{"path":"README.md"}' },
+    ],
+  };
+  const lines = [
+    JSON.stringify({
+      type: 'session_open',
+      session_id: sessionId,
+      created_at: createdAt,
+      schema_version: 1,
+    }),
+    JSON.stringify({
+      type: 'message',
+      store_id: 1,
+      role: 'user',
+      content: 'tighten the file',
+      created_at: createdAt,
+    }),
+    JSON.stringify(assistant),
+    JSON.stringify({
+      type: 'message',
+      store_id: 3,
+      role: 'tool',
+      content: 'x'.repeat(900_000),
+      tool_call_id: `${sessionId}-read`,
+      created_at: createdAt + 2,
+    }),
+  ];
+  await writeFile(path, `${lines.join('\n')}\n`, 'utf8');
+}
+
 test('skill-builder detects an n-gram repeated across distinct sessions', async () => {
   const fx = await makeFixture();
   try {
@@ -150,6 +194,24 @@ test('skill-builder detects an n-gram repeated across distinct sessions', async 
     assert.match(mem, /tags:[^\n]*skill-candidate/);
     assert.match(mem, /tags:[^\n]*tentative/);
     assert.match(mem, /Recurring tool sequence detected/);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('skill-builder ignores large tool result records while detecting assistant tool patterns', async () => {
+  const fx = await makeFixture();
+  try {
+    await writeSessionWithLargeToolResult(fx.sessionsRoot, 'sess-large-a', 100);
+    await writeSessionWithLargeToolResult(fx.sessionsRoot, 'sess-large-b', 200);
+
+    const result = await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory });
+
+    assert.equal(result.errors.length, 0);
+    assert.ok(result.candidates_emitted >= 1);
+    const memoryRaw = await readFile(fx.memoryPath, 'utf8');
+    assert.match(memoryRaw, /read_file/);
+    assert.match(memoryRaw, /edit_file/);
   } finally {
     await fx.cleanup();
   }
