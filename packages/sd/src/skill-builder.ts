@@ -37,8 +37,13 @@ import type { SdConfig, SdSkillBuilderConfig } from './config.js';
 import type { SdMemoryProvider } from './memory.js';
 import type { SdProfileInfo } from './profile.js';
 import { rankCandidates } from './skill-builder-detect.js';
-import { draftCandidateSkill, resolveDraftsDir } from './skill-builder-draft.js';
+import {
+  draftCandidateSkill,
+  type ExistingSkillSummary,
+  resolveDraftsDir,
+} from './skill-builder-draft.js';
 import { scanSessionsForNgrams } from './skill-builder-session-scan.js';
+import { buildSkillSimilarityQuery } from './skill-builder-similarity.js';
 import type {
   BuilderState,
   SdSkillBuilderScanResult,
@@ -47,11 +52,13 @@ import type {
 
 export {
   acceptSkillDraft,
+  type ExistingSkillSummary,
   listSkillDrafts,
   readSkillDraft,
   rejectSkillDraft,
   type SdSkillDraft,
 } from './skill-builder-draft.js';
+export { buildSkillSimilarityQuery } from './skill-builder-similarity.js';
 export type {
   BuilderState,
   CandidateExample,
@@ -66,11 +73,19 @@ export interface SdSkillBuilderOptions {
   /** When provided, the builder will use it to draft SKILL.md content from candidates. */
   chat?: SdBackgroundChat;
   /**
-   * Existing skills' (id, description) — the drafter receives these as
-   * context so it can SKIP candidates that are near-duplicates of skills
-   * already in the catalog. When omitted, no similarity check is done.
+   * Static "existing skills" list — fed verbatim to the drafter for every
+   * candidate. Useful in tests where you want a fixed similarity slate.
+   * In production, prefer `findSimilarSkills` so the drafter only sees
+   * skills that plausibly overlap with each specific candidate.
    */
-  existingSkills?: ReadonlyArray<{ id: string; description: string }>;
+  existingSkills?: ReadonlyArray<ExistingSkillSummary>;
+  /**
+   * Per-candidate top-K similarity lookup. The orchestrator calls this
+   * just before drafting and forwards the result to the drafter so it
+   * can SKIP near-duplicates. When both this and `existingSkills` are
+   * set, `findSimilarSkills` wins.
+   */
+  findSimilarSkills?: (candidate: SdSkillPattern) => readonly ExistingSkillSummary[];
   log?: (line: string) => void;
 }
 
@@ -135,13 +150,10 @@ async function processCandidates(
       candidate.totalCount >= (cfg.min_pattern_count_for_draft ?? cfg.min_pattern_count ?? 3)
     ) {
       try {
-        draftPath = await draftCandidateSkill(
-          candidate,
-          options.chat,
-          stateDir,
-          cfg,
-          options.existingSkills ?? [],
-        );
+        const similar = options.findSimilarSkills
+          ? options.findSimilarSkills(candidate)
+          : (options.existingSkills ?? []);
+        draftPath = await draftCandidateSkill(candidate, options.chat, stateDir, cfg, similar);
         if (draftPath) {
           drafted.add(hash);
           draftsWritten += 1;
@@ -189,18 +201,17 @@ export function skillBuilderService(): SdBackgroundService {
       return builderConfig(ctx.config).interval_ms ?? 30 * 60 * 1000;
     },
     async runOnce(ctx: SdBackgroundContext): Promise<SdBackgroundServiceResult> {
-      // Surface the existing skill catalog to the drafter so it can SKIP
-      // candidates that are near-duplicates of skills already present.
-      const existingSkills = ctx.skills?.list().map((skill) => ({
-        id: skill.id,
-        description: skill.description ?? '',
-      }));
+      // Surface only top-K skills similar to each candidate (routed through
+      // the FTS skill index when one is attached; falls back to the
+      // substring scorer otherwise). Replaces the older "dump the whole
+      // catalog at the drafter" behaviour, which was linear in catalog size.
+      const findSimilarSkills = makeFindSimilarSkills(ctx, builderConfig(ctx.config));
       const result = await runSdSkillBuilderOnce({
         config: ctx.config,
         memory: ctx.memory,
         profile: ctx.profile,
         chat: ctx.chat,
-        existingSkills,
+        findSimilarSkills,
         log: ctx.log,
       });
       return {
@@ -214,6 +225,35 @@ export function skillBuilderService(): SdBackgroundService {
         },
       };
     },
+  };
+}
+
+/**
+ * Build a `findSimilarSkills` closure for the service runtime. Returns
+ * `undefined` when no skill store is wired (some tests / minimal
+ * runtimes), in which case the drafter sees no similarity context.
+ */
+function makeFindSimilarSkills(
+  ctx: SdBackgroundContext,
+  cfg: SdSkillBuilderConfig,
+): ((candidate: SdSkillPattern) => readonly ExistingSkillSummary[]) | undefined {
+  const skills = ctx.skills;
+  if (!skills) return undefined;
+  const topK = cfg.similarity_top_k ?? 30;
+  return (candidate) => {
+    const query = buildSkillSimilarityQuery(candidate);
+    if (query.length === 0) return [];
+    try {
+      return skills.search(query, topK).map((skill) => ({
+        id: skill.id,
+        description: skill.description ?? '',
+      }));
+    } catch (error) {
+      ctx.log?.(
+        `[skill-builder] similarity lookup failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return [];
+    }
   };
 }
 
