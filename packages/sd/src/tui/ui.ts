@@ -1,13 +1,12 @@
-import { execFileSync } from 'node:child_process';
 import type { AgentEvent, SnapdragonAgent } from '@snapdragon-ai/agent';
 import type { Message, StreamEvent, ToolCall } from '@snapdragon-ai/host';
 import { type JsonObject, type JsonValue, type UiEvent, UiWorld, uiLog } from '@snapdragon-ai/ui';
 import type { PendingAttachment } from '../attachments.js';
 import type { SdRuntime } from '../runtime.js';
-import { listRuntimeSessions } from '../runtime-session.js';
 import type { PromptCompletionState } from './input-completion.js';
 import { promptCompletionJson } from './prompt-completion-json.js';
 import { ProviderEventBuffer } from './provider-event-buffer.js';
+import { runtimeStats } from './runtime-stats.js';
 import { runtimeWarningChatEntries } from './runtime-warnings.js';
 import { resolveSplashImagePath } from './splash-art.js';
 import { chatEntries, eventEntries, toolEntries } from './state-readers.js';
@@ -18,7 +17,13 @@ import {
 } from './transcript-entry.js';
 import { messageContentSummary } from './transcript-entry-content.js';
 import type { ChatEntry, ToolEntry } from './ui-entry.js';
-import { MAX_EVENT_DETAIL_CHARS, MAX_TRANSCRIPT_TOOL_CHARS, safeUiText } from './ui-text.js';
+import {
+  MAX_EVENT_DETAIL_CHARS,
+  MAX_TRANSCRIPT_ENTRY_CHARS,
+  MAX_TRANSCRIPT_THINKING_CHARS,
+  MAX_TRANSCRIPT_TOOL_CHARS,
+  safeUiText,
+} from './ui-text.js';
 
 export const SD_UI_IDS = {
   chat: 'sd.chat',
@@ -55,6 +60,7 @@ export class SdUiController {
   #currentAssistantId: string | undefined;
   #assistantSequence = 0;
   #providerTurnText = '';
+  #providerThinkingText = '';
   #providerEvents: ProviderEventBuffer;
   #maxEntries: number;
   #maxLogEntries: number;
@@ -294,6 +300,7 @@ export class SdUiController {
     this.#currentAssistantId = undefined;
     this.#assistantSequence = 0;
     this.#providerTurnText = '';
+    this.#providerThinkingText = '';
     return [
       patch(SD_UI_IDS.runStatus, { status: 'running', runId, error: null }),
       patch(SD_UI_IDS.prompt, { running: true, phase: 'connecting', phaseLabel: null }),
@@ -308,6 +315,7 @@ export class SdUiController {
     this.#activeRunId = undefined;
     this.#currentAssistantId = undefined;
     this.#providerTurnText = '';
+    this.#providerThinkingText = '';
     this.#activeAbort = undefined;
     const events: UiEvent[] = [
       patch(SD_UI_IDS.runStatus, { status: 'done', runId, error: null }),
@@ -345,6 +353,7 @@ export class SdUiController {
 
   #providerStartedEvents(event: Extract<StreamEvent, { kind: 'started' }>): UiEvent[] {
     this.#providerTurnText = '';
+    this.#providerThinkingText = '';
     return [
       patch(SD_UI_IDS.runStatus, { provider: event.provider, model: event.model ?? null }),
       this.#phasePatch('connecting'),
@@ -434,14 +443,15 @@ export class SdUiController {
   #appendAssistantText(delta: string): UiEvent {
     this.#providerTurnText += delta;
     const entry = this.#ensureAssistantEntry();
-    entry.content = this.#providerTurnText;
+    entry.content = safeUiText(this.#providerTurnText, MAX_TRANSCRIPT_ENTRY_CHARS);
     entry.streaming = true;
     return this.#replaceChatEntry(entry);
   }
 
   #appendAssistantThinking(delta: string): UiEvent {
+    this.#providerThinkingText += delta;
     const entry = this.#ensureAssistantEntry();
-    entry.thinking = `${entry.thinking ?? ''}${delta}`;
+    entry.thinking = safeUiText(this.#providerThinkingText, MAX_TRANSCRIPT_THINKING_CHARS);
     return this.#replaceChatEntry(entry);
   }
 
@@ -617,78 +627,6 @@ function register(
     descriptor: { id, kind, slot, order },
     state,
   };
-}
-
-/**
- * Snapshot of runtime "what's loaded" counts for the splash stats
- * panel. Everything here is synchronous (no network, no async file
- * walks beyond what `readFileSync` already does), so we re-run it on
- * every `refreshRuntimeStatus` to stay current after skill reloads,
- * profile switches, etc.
- */
-function runtimeStats(runtime: SdRuntime): JsonObject {
-  const reasoning = runtime.config.agent?.reasoning;
-  return {
-    tools: runtime.agent.registry.listDefinitions().length,
-    skills: runtime.skills.list().length,
-    profiles: runtime.profileStore.list().length,
-    services: runtime.background.list().length,
-    extensions: runtime.extensions.list().length,
-    sessions: countSessionsSafely(runtime),
-    memories: countMemoriesSafely(runtime),
-    git: gitStatus(runtime.agent.cwd),
-    reasoning: reasoning?.enabled === false ? 'off' : (reasoning?.effort ?? 'medium'),
-    contextTokens: runtime.config.agent?.context?.max_request_tokens ?? null,
-    outputTokens: runtime.config.agent?.max_tokens ?? null,
-  };
-}
-
-function countSessionsSafely(runtime: SdRuntime): number {
-  try {
-    return listRuntimeSessions(runtime.config).length;
-  } catch {
-    return 0;
-  }
-}
-
-function countMemoriesSafely(runtime: SdRuntime): number {
-  try {
-    const result = runtime.memory.read();
-    // Default `SdMemoryStore.read` is synchronous; some custom
-    // providers return a Promise. We don't await here because the
-    // splash render happens once and a hanging memory provider
-    // shouldn't delay it.
-    if (result instanceof Promise) return 0;
-    return result.entries.length;
-  } catch {
-    return 0;
-  }
-}
-
-function gitStatus(cwd: string): JsonObject | null {
-  // Cheap, best-effort: bail silently if the cwd isn't a git checkout
-  // or if git is missing. We never want a slow/missing git to delay
-  // the splash render.
-  try {
-    const branch = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
-      cwd,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 250,
-    })
-      .toString()
-      .trim();
-    const sha = execFileSync('git', ['rev-parse', '--short', 'HEAD'], {
-      cwd,
-      stdio: ['ignore', 'pipe', 'ignore'],
-      timeout: 250,
-    })
-      .toString()
-      .trim();
-    if (!branch || !sha) return null;
-    return { branch, sha };
-  } catch {
-    return null;
-  }
 }
 
 function sessionState(runtime: SdRuntime): JsonObject {

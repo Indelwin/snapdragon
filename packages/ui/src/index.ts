@@ -1,30 +1,12 @@
-export type JsonPrimitive = string | number | boolean | null;
-export type JsonValue = JsonPrimitive | JsonValue[] | { [key: string]: JsonValue };
-export type JsonObject = { [key: string]: JsonValue };
+import { cloneData } from './clone.js';
+import type { UiComponentDescriptor, UiComponentSnapshot } from './component-types.js';
+import type { JsonObject, JsonValue } from './json.js';
+import { appendBoundedLog } from './log.js';
+import type { UiLogEntry, UiWorldListener, UiWorldSnapshot } from './world-types.js';
 
-export interface UiComponentDescriptor {
-  id: string;
-  kind: string;
-  slot: string;
-  title?: string;
-  order?: number;
-  visible?: boolean;
-  props?: JsonObject;
-}
-
-export interface UiComponentSnapshot {
-  descriptor: UiComponentDescriptor;
-  state: JsonObject;
-}
-
-export interface UiLogEntry {
-  id: string;
-  level: 'debug' | 'info' | 'warn' | 'error';
-  message: string;
-  timestamp: string;
-  source?: string;
-  data?: JsonObject;
-}
+export type { UiComponentDescriptor, UiComponentSnapshot } from './component-types.js';
+export type { JsonObject, JsonPrimitive, JsonValue } from './json.js';
+export type { UiLogEntry, UiWorldListener, UiWorldSnapshot } from './world-types.js';
 
 export type UiEvent =
   | { type: 'ui.component.register'; descriptor: UiComponentDescriptor; state?: JsonObject }
@@ -35,22 +17,15 @@ export type UiEvent =
   | { type: 'ui.log.append'; entry: UiLogEntry }
   | { type: 'ui.reset' };
 
-export interface UiWorldSnapshot {
-  revision: number;
-  components: Record<string, UiComponentSnapshot>;
-  focusId?: string;
-  log: UiLogEntry[];
-}
-
 export interface UiSystem {
   readonly name: string;
   readonly eventTypes: readonly UiEvent['type'][];
   apply(world: UiWorld, event: UiEvent): void;
 }
 
-export type UiWorldListener = (snapshot: UiWorldSnapshot) => void;
-
 export class UiWorld {
+  static readonly maxLogEntries = 500;
+
   #components = new Map<string, UiComponentDescriptor>();
   #states = new Map<string, JsonObject>();
   #focusId: string | undefined;
@@ -166,7 +141,7 @@ export class UiWorld {
   }
 
   appendLog(entry: UiLogEntry): void {
-    this.#log.push(cloneData(entry));
+    this.#log = appendBoundedLog(this.#log, entry, UiWorld.maxLogEntries);
   }
 
   reset(): void {
@@ -289,8 +264,4 @@ function mergeJson(base: JsonObject, patch: JsonObject): JsonObject {
 
 function isPlainObject(value: JsonValue | undefined): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function cloneData<T>(value: T): T {
-  return JSON.parse(JSON.stringify(value)) as T;
 }

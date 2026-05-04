@@ -14,6 +14,7 @@ export const DEFAULT_SD_ENV_PATH = resolve(homedir(), '.snapdragon/.env');
 export const DEFAULT_SD_SESSION_ROOT = resolve(homedir(), '.snapdragon/sd/sessions');
 export const DEFAULT_SD_MEMORY_ROOT = resolve(homedir(), '.snapdragon/sd/memory');
 export const DEFAULT_SD_EXTENSION_ROOT = resolve(homedir(), '.snapdragon/sd/extensions');
+export const DEFAULT_SD_TODO_PATH = resolve(homedir(), '.snapdragon/sd/todos.json');
 export const DEFAULT_SD_SESSION_TITLE_PROVIDER = 'anthropic';
 export const DEFAULT_SD_SESSION_TITLE_MODEL = 'claude-haiku-4-5-20251001';
 
@@ -145,6 +146,11 @@ export interface SdSessionConfig {
   title?: SdSessionTitleConfig;
 }
 
+export interface SdTodoConfig {
+  enabled?: boolean;
+  file?: string;
+}
+
 export type { SdAgentConfig, SdAgentContextConfig } from './agent-config-types.js';
 export type { SdTuiConfig, SdTuiMouseConfig } from './tui-config.js';
 
@@ -156,6 +162,7 @@ export interface SdConfig {
   default_provider: string;
   providers: Record<string, SdProviderConfig>;
   sessions?: SdSessionConfig;
+  todo?: SdTodoConfig;
   skills?: SdSkillsConfig;
   memory?: SdMemoryConfig;
   extensions?: SdExtensionsConfig;
@@ -220,6 +227,7 @@ export function defaultSdConfig(): SdConfig {
         max_tokens: 48,
       },
     },
+    todo: { enabled: true, file: DEFAULT_SD_TODO_PATH },
     skills: {
       authoring: true,
       builtins: true,
@@ -263,7 +271,7 @@ export function defaultSdConfig(): SdConfig {
       auth: 'inherit',
     },
     toolsets: {
-      enabled: ['file', 'shell', 'repl', 'skill', 'memory'],
+      enabled: ['file', 'shell', 'repl', 'skill', 'memory', 'todo'],
       disabled: [],
       denied_tools: [],
     },
@@ -286,7 +294,6 @@ export function defaultSdConfig(): SdConfig {
         chunk_target_tokens: 8_000,
         summary_target_tokens: 1_500,
       },
-      // Extended thinking is on by default; tune with `effort` or disable via config.
       reasoning: {
         enabled: true,
         effort: 'medium',
@@ -314,6 +321,7 @@ export function withDefaults(input: Partial<SdConfig>): SdConfig {
     default_provider: input.default_provider ?? defaults.default_provider,
     providers,
     sessions: mergeSessionConfig(defaults.sessions, input.sessions),
+    todo: { ...defaults.todo, ...(input.todo ?? {}) },
     skills: mergeSkillsConfig(defaults.skills, input.skills),
     memory: mergeMemoryConfig(defaults.memory, input.memory),
     extensions: mergeExtensionsConfig(defaults.extensions, input.extensions),

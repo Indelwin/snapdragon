@@ -53,6 +53,21 @@ test('function coverage maps intersecting covered ranges and handles missing fil
   assert.equal(functionCoverage(coverage, fn), 0.5);
 });
 
+test('function coverage uses covered duplicate entries from test workers', () => {
+  const fn = { name: 'demo', start: 10, end: 30 };
+  const coverage = [
+    {
+      functionName: 'demo',
+      ranges: [{ startOffset: 10, endOffset: 30, count: 0 }],
+    },
+    {
+      functionName: 'demo',
+      ranges: [{ startOffset: 10, endOffset: 30, count: 1 }],
+    },
+  ];
+  assert.equal(functionCoverage(coverage, fn), 1);
+});
+
 test('maintainability baseline guard treats decreases as safe', () => {
   const previous = maintainabilityMetrics('function a() { if (x) return 1; return 0; }');
   const next = maintainabilityMetrics('function a() { return 1; }');
