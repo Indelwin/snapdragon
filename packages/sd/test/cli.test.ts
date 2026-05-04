@@ -61,6 +61,15 @@ test('parseArgs handles TUI and REPL modes', () => {
   assert.throws(() => parseArgs(['--mode', 'unknown']), /Invalid --mode/);
 });
 
+test('parseArgs handles background and daemon controls', () => {
+  const daemon = parseArgs(['daemon', 'status', '--background', 'inline', '--no-background']);
+  assert.equal(daemon.mode, 'daemon');
+  assert.equal(daemon.daemonAction, 'status');
+  assert.equal(daemon.backgroundMode, 'inline');
+  assert.equal(daemon.noBackground, true);
+  assert.throws(() => parseArgs(['--background', 'wat']), /Invalid --background/);
+});
+
 test('help text documents the minimal REPL surface', () => {
   assert.match(helpText, /--provider/);
   assert.match(helpText, /--repl/);
@@ -70,4 +79,6 @@ test('help text documents the minimal REPL surface', () => {
   assert.match(helpText, /--profile/);
   assert.match(helpText, /--list-sessions/);
   assert.match(helpText, /--setup/);
+  assert.match(helpText, /daemon/);
+  assert.match(helpText, /--background/);
 });

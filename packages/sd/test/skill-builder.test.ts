@@ -649,6 +649,11 @@ test('skillBuilderService is enabled by default and disables when explicitly off
   };
   // Default-on: no `skills.builder` block at all → service.enabled returns true.
   assert.equal(service.enabled?.(baseCtx), true, 'default config: enabled');
+  assert.equal(
+    service.startupDelayMs?.(baseCtx),
+    30 * 60 * 1000,
+    'automatic service defers the first run',
+  );
 
   // Explicit opt-out flips it off.
   const offCtx = {

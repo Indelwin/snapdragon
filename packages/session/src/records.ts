@@ -50,9 +50,24 @@ export type SessionRecord =
   | SessionMetaRecord
   | SessionContextChunkRecord;
 
+export interface SessionRecordStats {
+  nextStoreId: number;
+  nextChunkId: number;
+  messageCount: number;
+}
+
 export function appendRecord(path: string, record: SessionRecord): void {
   mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, `${JSON.stringify(record)}\n`, 'utf8');
+}
+
+export function readRecordStats(path: string): SessionRecordStats {
+  const stats: SessionRecordStats = { nextStoreId: 1, nextChunkId: 1, messageCount: 0 };
+  if (!existsSync(path)) return stats;
+  for (const line of readFileSync(path, 'utf8').split(/\r?\n/)) {
+    updateStats(stats, line);
+  }
+  return stats;
 }
 
 export function readRecords(path: string): SessionRecord[] {
@@ -73,4 +88,20 @@ function parseRecord(line: string): SessionRecord | undefined {
   } catch {
     return undefined;
   }
+}
+
+function updateStats(stats: SessionRecordStats, line: string): void {
+  if (line.includes('"type":"message"') || line.includes('"type": "message"')) {
+    stats.messageCount += 1;
+    stats.nextStoreId = Math.max(stats.nextStoreId, numberField(line, 'store_id') + 1);
+  } else if (line.includes('"type":"context_chunk"') || line.includes('"type": "context_chunk"')) {
+    stats.nextChunkId = Math.max(stats.nextChunkId, numberField(line, 'chunk_id') + 1);
+  }
+}
+
+function numberField(line: string, field: string): number {
+  const compact = new RegExp(`"${field}":(\\d+)`).exec(line);
+  if (compact) return Number(compact[1]);
+  const spaced = new RegExp(`"${field}"\\s*:\\s*(\\d+)`).exec(line);
+  return spaced ? Number(spaced[1]) : 0;
 }

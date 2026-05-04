@@ -19,6 +19,7 @@ export {
 export { type SessionMetadata, sessionMetadata } from './metadata.js';
 export {
   appendRecord,
+  readRecordStats,
   readRecords,
   SESSION_SCHEMA_VERSION,
   type SessionContextChunkRecord,
@@ -26,6 +27,7 @@ export {
   type SessionMetaRecord,
   type SessionOpenRecord,
   type SessionRecord,
+  type SessionRecordStats,
 } from './records.js';
 export {
   type AppendMessageOptions,

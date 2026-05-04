@@ -54,12 +54,42 @@ function textComplexity(text) {
   return (
     1 +
     countMatches(text, /\b(if|else if|for|while|case|catch|match)\b/g) +
-    countMatches(text, /&&|\|\||\?/g)
+    countMatches(text, /&&|\|\|/g) +
+    countBranchQuestionMarks(text)
   );
 }
 
 function countMatches(text, pattern) {
   return [...text.matchAll(pattern)].length;
+}
+
+function countBranchQuestionMarks(text) {
+  let count = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (!isBranchQuestionMark(text, index)) continue;
+    count += 1;
+  }
+  return count;
+}
+
+function isBranchQuestionMark(text, index) {
+  if (text[index] !== '?') return false;
+  const previous = text[index - 1] ?? '';
+  const next = text[index + 1] ?? '';
+  if (previous === '?' || next === '?' || next === '.') return false;
+  if (nextNonWhitespace(text, index + 1) === ':') return false;
+  return lineTail(text, index + 1).includes(':');
+}
+
+function nextNonWhitespace(text, index) {
+  let current = index;
+  while (/\s/.test(text[current] ?? '')) current += 1;
+  return text[current] ?? '';
+}
+
+function lineTail(text, index) {
+  const end = text.indexOf('\n', index);
+  return text.slice(index, end === -1 ? text.length : end);
 }
 
 function stripComments(text) {

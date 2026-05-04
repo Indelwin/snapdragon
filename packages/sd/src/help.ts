@@ -8,6 +8,7 @@ Usage:
   sd [options]
   sd repl [options]
   sd tui [options]
+  sd daemon [run|start|stop|status|run-once] [options]
   sd [options] "prompt"
 
 Options:
@@ -19,6 +20,8 @@ Options:
   --model <id>         Model override
   --cwd <path>         Workspace root for coding tools
   --config <path>      Config file path
+  --background <mode>  Background mode (daemon|inline|off)
+  --no-background      Disable background services for this run
   --session <id>       Resume or create a named session
   --resume             Resume --session <id> or the most recent session
   --list-sessions      Print persisted sessions and exit

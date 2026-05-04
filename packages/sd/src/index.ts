@@ -35,6 +35,7 @@ export {
 export type { SdSkillBuilderConfig } from './config.js';
 export {
   DEFAULT_SD_CONFIG_PATH,
+  DEFAULT_SD_DAEMON_ROOT,
   DEFAULT_SD_ENV_PATH,
   DEFAULT_SD_EXTENSION_ROOT,
   DEFAULT_SD_MEMORY_ROOT,
@@ -48,7 +49,6 @@ export {
   type SdAgentContextConfig,
   type SdConfig,
   type SdExtensionsConfig,
-  type SdIsolationConfig,
   type SdMemoryAutoConfig,
   type SdMemoryConfig,
   type SdMemoryWorkerConfig,
@@ -61,10 +61,23 @@ export {
   writeDefaultConfig,
   writeEnvTemplate,
 } from './config.js';
+export type {
+  SdBackgroundConfig,
+  SdBackgroundMode,
+  SdDaemonConfig,
+  SdIsolationConfig,
+} from './config-runtime-types.js';
 export {
   DEFAULT_SD_SESSION_INDEX_PATH,
   type SdSessionIndexConfig,
 } from './config-session-index.js';
+export {
+  runSdDaemon,
+  runSdDaemonOnce,
+  sdDaemonStatus,
+  startSdDaemon,
+  stopSdDaemon,
+} from './daemon.js';
 export {
   type ExitSummaryOptions,
   formatDuration,

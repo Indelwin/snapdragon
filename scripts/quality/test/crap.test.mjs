@@ -74,3 +74,18 @@ test('maintainability baseline guard treats decreases as safe', () => {
   assert.equal(worsenedMaintainability(next, previous), false);
   assert.equal(worsenedMaintainability(previous, next), true);
 });
+
+test('maintainability proxy ignores optional and nullish TypeScript syntax', () => {
+  const metrics = maintainabilityMetrics(`
+    interface Demo { value?: string; nested?: { name?: string } }
+    export function read(input?: Demo) {
+      return input?.nested?.name ?? input?.value ?? 'none';
+    }
+  `);
+  assert.equal(metrics.complexity, 1);
+});
+
+test('maintainability proxy still counts ternary branches', () => {
+  const metrics = maintainabilityMetrics('function read(flag) { return flag ? "yes" : "no"; }');
+  assert.equal(metrics.complexity, 2);
+});
