@@ -19,7 +19,7 @@ import type { Message } from '@snapdragon-ai/host';
 import type { SdBackgroundChat } from './background.js';
 import type { SdConfig, SdSkillBuilderConfig } from './config.js';
 import type { SdProfileInfo } from './profile.js';
-import type { CandidateExample, SdSkillPattern } from './skill-builder-detect.js';
+import type { CandidateExample, SdSkillPattern } from './skill-builder-types.js';
 import { resolveSdSkillRoots } from './skills.js';
 
 export const DRAFTS_DIRNAME = '.drafts';

@@ -1,7 +1,5 @@
 import { createCodingReplAgent, type SnapdragonAgent } from '@snapdragon-ai/agent';
-import { normalizeToolsetsConfig } from '@snapdragon-ai/config';
 import type { JsonlSession } from '@snapdragon-ai/session';
-import { memoryToolset, skillToolset } from '@snapdragon-ai/tools';
 import type { SdCliArgs } from './args-types.js';
 import type { SdBackgroundServicesHandle } from './background.js';
 import { loadSdConfig, loadSdEnvironment, type SdConfig } from './config.js';
@@ -14,12 +12,14 @@ import { makeSdProvider, type SdProviderRuntime } from './provider.js';
 import { startRuntimeBackgroundServices } from './runtime-background.js';
 import { contextOptions } from './runtime-context.js';
 import { resolveInitialRuntimePlan } from './runtime-initial-plan.js';
+import { initialRuntimeSession } from './runtime-initial-session.js';
 import { normalizeRuntimeOptions, type SdRuntimeOptions } from './runtime-options.js';
 import { sessionRoot } from './runtime-session.js';
-import { createRuntimeSession } from './runtime-session-create.js';
 import { ensureRuntimeSessionMeta } from './runtime-session-meta-record.js';
 import { createIndexedRuntimeStores } from './runtime-stores.js';
+import { registerRuntimeToolsets } from './runtime-toolsets.js';
 import type { SdSkillStore } from './skills.js';
+import type { SdTodoStore } from './todo.js';
 
 export interface SdRuntime {
   agent: SnapdragonAgent;
@@ -32,6 +32,7 @@ export interface SdRuntime {
   sessionRoot?: string;
   skills: SdSkillStore;
   memory: SdMemoryProvider;
+  todo: SdTodoStore;
   background: SdBackgroundServicesHandle;
   extensions: SdExtensionStore;
   extensionRuntime: SdExtensionRuntime;
@@ -67,13 +68,9 @@ export async function createSdRuntime(
     env,
   });
   const provider = makeSdProvider(config, {}, env, extensionRuntime.providers);
-  const session =
-    plan.sessionSelection.session ??
-    (plan.sessionSelection.createAfterProvider
-      ? createRuntimeSession(options, config, provider, profile)
-      : undefined);
+  const session = initialRuntimeSession(plan.sessionSelection, options, config, provider, profile);
   ensureRuntimeSessionMeta(session, options, provider, profile);
-  const { skills, memory } = createIndexedRuntimeStores(config, profile, extensionRuntime);
+  const { skills, memory, todo } = createIndexedRuntimeStores(config, profile, extensionRuntime);
   return finishRuntime({
     baseConfig,
     config,
@@ -86,6 +83,7 @@ export async function createSdRuntime(
     profileStore,
     session,
     skills,
+    todo,
     systemPrompt,
     options,
     warnings: plan.warnings,
@@ -110,6 +108,7 @@ async function finishRuntime(
     parts.session,
     parts.skills,
     parts.memory,
+    parts.todo,
     parts.extensionRuntime,
     parts.systemPrompt,
   );
@@ -134,6 +133,7 @@ export async function createSdAgent(
   session: JsonlSession | undefined,
   skills: SdSkillStore,
   memory: SdMemoryProvider,
+  todo: SdTodoStore,
   extensionRuntime: SdExtensionRuntime,
   systemPrompt?: string,
 ): Promise<SnapdragonAgent> {
@@ -149,20 +149,7 @@ export async function createSdAgent(
     maxTokens: config.agent?.max_tokens,
     reasoning: config.agent?.reasoning ?? provider.reasoning,
   });
-  await agent.registry.register(
-    skillToolset({ catalog: skills, authoring: config.skills?.authoring ?? true }),
-  );
-  await agent.registry.register(
-    memoryToolset({ provider: memory, authoring: config.memory?.authoring ?? true }),
-  );
-  await agent.registry.registerMany(extensionRuntime.toolsets);
-  const toolsets = normalizeToolsetsConfig(config.toolsets);
-  agent.registry.applyConfig({
-    enabled: toolsets.enabled,
-    disabled: toolsets.disabled,
-    allowedTools: toolsets.allowedTools,
-    deniedTools: toolsets.deniedTools,
-  });
+  await registerRuntimeToolsets({ agent, config, skills, memory, todo, extensionRuntime });
   return agent;
 }
 

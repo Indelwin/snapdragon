@@ -3,7 +3,7 @@ import { appendFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
-import { SessionStore } from '../src/index.ts';
+import { readMessagePreviews, SessionStore } from '../src/index.ts';
 
 test('JSONL sessions create, append, reopen, assemble, and delete', () => {
   const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-session-')) });
@@ -81,6 +81,36 @@ test('JSONL sessions skip malformed trailing lines', () => {
   appendFileSync(session.jsonlPath, '{"type": "message"\n', 'utf8');
 
   assert.equal(store.open('session_2').messages().length, 1);
+});
+
+test('message preview reader skips large tool payloads without dropping adjacent messages', async () => {
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-session-')) });
+  const session = store.create('session_preview');
+  session.appendMessage({ role: 'user', content: 'remember to keep previews light' });
+  session.appendMessage({
+    role: 'assistant',
+    content: 'using a tool',
+    tool_calls: [{ id: 'call_1', name: 'run_shell', args_json: '{"cmd":"npm test"}' }],
+  });
+  session.appendMessage({
+    role: 'tool',
+    content: 'x'.repeat(900_000),
+    tool_call_id: 'call_1',
+  });
+
+  const previews = await readMessagePreviews(session.jsonlPath, {
+    roles: ['user', 'assistant'],
+    includeContent: true,
+    includeToolCalls: true,
+    maxContentChars: 80,
+  });
+
+  assert.deepEqual(
+    previews.map((preview) => preview.role),
+    ['user', 'assistant'],
+  );
+  assert.equal(previews[0]?.contentText, 'remember to keep previews light');
+  assert.equal(previews[1]?.tool_calls?.[0]?.name, 'run_shell');
 });
 
 test('JSONL sessions compact older messages into append-only context chunks', () => {

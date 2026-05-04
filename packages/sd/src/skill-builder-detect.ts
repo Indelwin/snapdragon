@@ -4,35 +4,20 @@
  * example context for the drafter.
  */
 
-import type { SessionMessageRecord } from '@snapdragon-ai/session';
 import type { SdSkillBuilderConfig } from './config.js';
+import { buildExample } from './skill-builder-example.js';
+import type {
+  CandidateExample,
+  SdSkillPattern,
+  SkillBuilderMessageRecord,
+  SkillBuilderTraceEntry,
+} from './skill-builder-types.js';
 
-/**
- * Detected pattern: an n-gram of tool names with the sessions/runs it
- * appeared in.
- */
-export interface SdSkillPattern {
-  /** Stable id derived from the n-gram (e.g. 'read_file→write_file'). */
-  id: string;
-  ngram: string[];
-  totalCount: number;
-  distinctSessions: number;
-  exampleSessions: string[];
-  /** Up to 3 example occurrences with surrounding user-prompt context. */
-  examples?: CandidateExample[];
-}
-
-/**
- * One example occurrence of a candidate n-gram, captured at detection time
- * so the drafter doesn't have to re-read the JSONL.
- */
-export interface CandidateExample {
-  sessionId: string;
-  /** Most-recent user prompt text before the n-gram (truncated). */
-  precedingPrompt: string;
-  /** Tool calls in n-gram order with truncated args. */
-  calls: Array<{ name: string; args: string }>;
-}
+export type {
+  CandidateExample,
+  SdSkillPattern,
+  SkillBuilderMessageRecord,
+} from './skill-builder-types.js';
 
 interface NgramEntry {
   ngram: string[];
@@ -54,28 +39,65 @@ export function createNgramStats(): NgramStats {
  * n-grams of length 2 and 3 to the running stats.
  */
 export function ingestSessionIntoStats(
-  records: SessionMessageRecord[],
+  records: SkillBuilderMessageRecord[],
   sessionId: string,
   stats: NgramStats,
 ): void {
   const trace = collectToolCallTrace(records);
   const sequence = trace.map((entry) => entry.call.name);
-  for (const n of [2, 3] as const) {
-    if (sequence.length < n) continue;
-    for (let i = 0; i <= sequence.length - n; i += 1) {
-      const ngram = sequence.slice(i, i + n);
-      if (!isInterestingNgram(ngram)) continue;
-      const id = ngram.join('→');
-      const entry = stats.get(id) ?? { ngram, count: 0, sessions: new Set<string>(), examples: [] };
-      entry.count += 1;
-      entry.sessions.add(sessionId);
-      if (entry.examples.length < 3 && !entry.examples.some((e) => e.sessionId === sessionId)) {
-        const example = buildExample(sessionId, records, trace, i, n);
-        if (example) entry.examples.push(example);
-      }
-      stats.set(id, entry);
-    }
+  for (const length of [2, 3] as const)
+    ingestNgramsOfLength(records, sessionId, stats, trace, sequence, length);
+}
+
+function ingestNgramsOfLength(
+  records: SkillBuilderMessageRecord[],
+  sessionId: string,
+  stats: NgramStats,
+  trace: SkillBuilderTraceEntry[],
+  sequence: string[],
+  length: 2 | 3,
+): void {
+  if (sequence.length < length) return;
+  for (let index = 0; index <= sequence.length - length; index += 1) {
+    ingestNgramAt(records, sessionId, stats, trace, sequence, index, length);
   }
+}
+
+function ingestNgramAt(
+  records: SkillBuilderMessageRecord[],
+  sessionId: string,
+  stats: NgramStats,
+  trace: SkillBuilderTraceEntry[],
+  sequence: string[],
+  index: number,
+  length: 2 | 3,
+): void {
+  const ngram = sequence.slice(index, index + length);
+  if (!isInterestingNgram(ngram)) return;
+  const entry = statsEntry(stats, ngram);
+  entry.count += 1;
+  entry.sessions.add(sessionId);
+  appendCandidateExample(entry, sessionId, records, trace, index, length);
+}
+
+function statsEntry(stats: NgramStats, ngram: string[]): NgramEntry {
+  const id = ngram.join('→');
+  const entry = stats.get(id) ?? { ngram, count: 0, sessions: new Set<string>(), examples: [] };
+  stats.set(id, entry);
+  return entry;
+}
+
+function appendCandidateExample(
+  entry: NgramEntry,
+  sessionId: string,
+  records: SkillBuilderMessageRecord[],
+  trace: SkillBuilderTraceEntry[],
+  index: number,
+  length: 2 | 3,
+): void {
+  if (entry.examples.length >= 3 || entry.examples.some((e) => e.sessionId === sessionId)) return;
+  const example = buildExample(sessionId, records, trace, index, length);
+  if (example) entry.examples.push(example);
 }
 
 /**
@@ -159,13 +181,8 @@ function containsSlice(haystack: string[], needle: string[]): boolean {
   return false;
 }
 
-interface TraceEntry {
-  call: { name: string; args_json?: string };
-  recordIndex: number;
-}
-
-function collectToolCallTrace(records: SessionMessageRecord[]): TraceEntry[] {
-  const out: TraceEntry[] = [];
+function collectToolCallTrace(records: SkillBuilderMessageRecord[]): SkillBuilderTraceEntry[] {
+  const out: SkillBuilderTraceEntry[] = [];
   records.forEach((record, recordIndex) => {
     if (record.role !== 'assistant') return;
     for (const call of record.tool_calls ?? []) {
@@ -182,59 +199,4 @@ function collectToolCallTrace(records: SessionMessageRecord[]): TraceEntry[] {
  */
 function isInterestingNgram(ngram: string[]): boolean {
   return new Set(ngram).size >= 2;
-}
-
-function buildExample(
-  sessionId: string,
-  records: SessionMessageRecord[],
-  trace: TraceEntry[],
-  ngramStart: number,
-  n: number,
-): CandidateExample | undefined {
-  const slice = trace.slice(ngramStart, ngramStart + n);
-  if (slice.length === 0) return undefined;
-  const firstCallRecordIndex = slice[0]?.recordIndex ?? 0;
-  let precedingPrompt = '';
-  for (let i = firstCallRecordIndex - 1; i >= 0; i -= 1) {
-    const r = records[i];
-    if (r?.role === 'user') {
-      precedingPrompt = textFromContent(r.content);
-      break;
-    }
-  }
-  return {
-    sessionId,
-    precedingPrompt: truncate(precedingPrompt, 200),
-    calls: slice.map(({ call }) => ({
-      name: call.name,
-      args: truncate(safeArgsPreview(call.args_json), 80),
-    })),
-  };
-}
-
-function textFromContent(content: SessionMessageRecord['content']): string {
-  if (typeof content === 'string') return content;
-  if (!Array.isArray(content)) return '';
-  return content
-    .filter((b): b is { type: 'text'; text: string } => b?.type === 'text')
-    .map((b) => b.text)
-    .join(' ')
-    .trim();
-}
-
-function safeArgsPreview(argsJson: string | undefined): string {
-  if (!argsJson) return '';
-  try {
-    const parsed = JSON.parse(argsJson) as Record<string, unknown>;
-    return Object.entries(parsed)
-      .map(([k, v]) => `${k}=${typeof v === 'string' ? v : JSON.stringify(v)}`)
-      .join(', ');
-  } catch {
-    return argsJson;
-  }
-}
-
-function truncate(value: string, max: number): string {
-  const single = value.replace(/\s+/g, ' ').trim();
-  return single.length <= max ? single : `${single.slice(0, max - 1)}…`;
 }

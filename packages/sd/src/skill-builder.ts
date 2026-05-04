@@ -27,7 +27,6 @@
 
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
-import { readRecords, type SessionMessageRecord } from '@snapdragon-ai/session';
 import type {
   SdBackgroundChat,
   SdBackgroundContext,
@@ -37,16 +36,15 @@ import type {
 import type { SdConfig, SdSkillBuilderConfig } from './config.js';
 import type { SdMemoryProvider } from './memory.js';
 import type { SdProfileInfo } from './profile.js';
-import { runtimeSessionStore } from './runtime-session.js';
-import {
-  createNgramStats,
-  ingestSessionIntoStats,
-  rankCandidates,
-  type SdSkillPattern,
-} from './skill-builder-detect.js';
+import { rankCandidates } from './skill-builder-detect.js';
 import { draftCandidateSkill, resolveDraftsDir } from './skill-builder-draft.js';
+import { scanSessionsForNgrams } from './skill-builder-session-scan.js';
+import type {
+  BuilderState,
+  SdSkillBuilderScanResult,
+  SdSkillPattern,
+} from './skill-builder-types.js';
 
-export type { CandidateExample, SdSkillPattern } from './skill-builder-detect.js';
 export {
   acceptSkillDraft,
   listSkillDrafts,
@@ -54,24 +52,12 @@ export {
   rejectSkillDraft,
   type SdSkillDraft,
 } from './skill-builder-draft.js';
-
-interface BuilderState {
-  version: 1;
-  /** Per-session high-watermark message timestamp processed. */
-  sessions: Record<string, { last_processed_at: number }>;
-  /** Hashes of candidates already surfaced — never re-emit the same one. */
-  emitted: string[];
-  /** Hashes of candidates already turned into a draft SKILL.md. */
-  drafted?: string[];
-}
-
-export interface SdSkillBuilderScanResult {
-  scanned_sessions: number;
-  patterns_found: number;
-  candidates_emitted: number;
-  drafts_written: number;
-  errors: string[];
-}
+export type {
+  BuilderState,
+  CandidateExample,
+  SdSkillBuilderScanResult,
+  SdSkillPattern,
+} from './skill-builder-types.js';
 
 export interface SdSkillBuilderOptions {
   config: SdConfig;
@@ -109,7 +95,7 @@ export async function runSdSkillBuilderOnce(
   const statePath = join(stateDir, STATE_FILENAME);
   const state = readState(statePath);
 
-  const stats = scanSessionsForNgrams(options.config, state, result, cfg);
+  const stats = await scanSessionsForNgrams(options.config, state, result, cfg);
   const candidates = rankCandidates(stats, cfg);
   result.patterns_found = candidates.length;
 
@@ -117,49 +103,6 @@ export async function runSdSkillBuilderOnce(
 
   writeState(statePath, state);
   return result;
-}
-
-/**
- * Sweep recent session JSONLs and accumulate n-gram stats. Updates the
- * watermark in-place so the next run skips already-scanned tails.
- */
-function scanSessionsForNgrams(
-  config: SdConfig,
-  state: BuilderState,
-  result: SdSkillBuilderScanResult,
-  cfg: SdSkillBuilderConfig,
-) {
-  const lookback = cfg.lookback_sessions ?? 10;
-  const sessions = runtimeSessionStore(config).list().slice(0, lookback);
-  const stats = createNgramStats();
-  for (const session of sessions) {
-    result.scanned_sessions += 1;
-    const watermark = state.sessions[session.session_id]?.last_processed_at ?? 0;
-    let records: SessionMessageRecord[] = [];
-    try {
-      records = readRecords(session.jsonl_path).filter(
-        (record): record is SessionMessageRecord => record.type === 'message',
-      );
-    } catch (error) {
-      result.errors.push(
-        `Failed to read ${session.jsonl_path}: ${error instanceof Error ? error.message : String(error)}`,
-      );
-      continue;
-    }
-    const newRecords = records.filter((record) => record.created_at > watermark);
-    if (newRecords.length === 0) continue;
-    // Use the FULL session for n-gram stats (not just newRecords) so
-    // patterns aren't broken across watermark boundaries.
-    ingestSessionIntoStats(records, session.session_id, stats);
-    const highest = newRecords.reduce(
-      (max, r) => (r.created_at > max ? r.created_at : max),
-      watermark,
-    );
-    if (highest > watermark) {
-      state.sessions[session.session_id] = { last_processed_at: highest };
-    }
-  }
-  return stats;
 }
 
 /**
