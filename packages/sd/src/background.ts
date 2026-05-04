@@ -89,6 +89,24 @@ export interface SdBackgroundServicesHandle {
   runNow(name: string): Promise<SdBackgroundServiceStatus | undefined>;
   list(): SdBackgroundServiceStatus[];
   status(name: string): SdBackgroundServiceStatus | undefined;
+  /**
+   * Hot-swap shared deps (config / stores / chat / profile) seen by every
+   * running service WITHOUT tearing down timers or losing watermark state.
+   * The next `runOnce(ctx)` call sees the new values; an in-flight tick
+   * keeps the values it captured. Omitted keys preserved; explicit
+   * `undefined` clears nullable fields. `interval_ms` and the service
+   * registry are NOT rebindable — restart for those.
+   */
+  rebindStores(parts: SdBackgroundRebindParts): void;
+}
+
+/** Subset of `SdBackgroundServicesOptions` swappable via `rebindStores`. */
+export interface SdBackgroundRebindParts {
+  config?: SdConfig;
+  memory?: SdMemoryProvider;
+  profile?: SdProfileInfo;
+  skills?: SdSkillStore;
+  chat?: SdBackgroundChat;
 }
 
 export interface SdBackgroundServicesOptions {
@@ -107,55 +125,82 @@ export interface SdBackgroundServicesOptions {
   log?: (line: string) => void;
 }
 
+/** Mutable bag of shared deps; one instance per gateway, swapped via rebindStores. */
+interface SharedBackgroundParts {
+  config: SdConfig;
+  memory: SdMemoryProvider;
+  profile?: SdProfileInfo;
+  skills?: SdSkillStore;
+  chat?: SdBackgroundChat;
+}
+
 interface ServiceState {
   service: SdBackgroundService;
-  ctx: SdBackgroundContext;
+  shared: SharedBackgroundParts;
+  log: (line: string) => void;
+  now: () => number;
   status: SdBackgroundServiceStatus;
   timer?: NodeJS.Timeout;
   inflight: Promise<void>;
   stopped: boolean;
 }
 
+/** Build a fresh `SdBackgroundContext` view over the shared bag. */
+function ctxOf(state: ServiceState): SdBackgroundContext {
+  const { shared } = state;
+  return {
+    config: shared.config,
+    memory: shared.memory,
+    profile: shared.profile,
+    skills: shared.skills,
+    chat: shared.chat,
+    now: state.now,
+    log: state.log,
+  };
+}
+
 /** Build the initial state for one service (context + status + flags). */
 function buildServiceState(
   service: SdBackgroundService,
+  shared: SharedBackgroundParts,
   options: SdBackgroundServicesOptions,
   disableSet: Set<string>,
   log: (line: string) => void,
   now: () => number,
 ): ServiceState {
-  const ctx: SdBackgroundContext = {
-    config: options.config,
-    memory: options.memory,
-    profile: options.profile,
-    skills: options.skills,
-    chat: options.chat,
-    now,
+  const state: ServiceState = {
+    service,
+    shared,
     log: (line) => log(`[bg:${service.name}] ${line}`),
+    now,
+    status: {
+      name: service.name,
+      enabled: false,
+      runs: 0,
+      errors: 0,
+      metrics: {},
+      in_flight: false,
+    },
+    inflight: Promise.resolve(),
+    stopped: false,
   };
+  const ctx = ctxOf(state);
   const enabledByService = service.enabled?.(ctx) ?? true;
   const externallyDisabled = options.disableAll === true || disableSet.has(service.name);
   const enabled = enabledByService && !externallyDisabled;
   const intervalMs = enabled ? service.intervalMs?.(ctx) : undefined;
-  const status: SdBackgroundServiceStatus = {
-    name: service.name,
-    enabled,
-    interval_ms: positiveInterval(intervalMs),
-    runs: 0,
-    errors: 0,
-    metrics: {},
-    in_flight: false,
-  };
-  return { service, ctx, status, inflight: Promise.resolve(), stopped: false };
+  state.status.enabled = enabled;
+  state.status.interval_ms = positiveInterval(intervalMs);
+  return state;
 }
 
 /** Run one tick: invoke `runOnce`, fold result into status, swallow errors. */
 async function runTick(state: ServiceState): Promise<void> {
   if (state.stopped) return;
   state.status.in_flight = true;
-  const started = state.ctx.now();
+  const started = state.now();
   try {
-    const result = (await state.service.runOnce(state.ctx)) ?? undefined;
+    const result = (await state.service.runOnce(ctxOf(state))) ?? undefined;
     state.status.runs += 1;
     state.status.last_run_at = started;
     state.status.last_summary = result?.summary;
@@ -167,7 +212,7 @@ async function runTick(state: ServiceState): Promise<void> {
   } catch (error) {
     state.status.errors += 1;
     state.status.last_error = error instanceof Error ? error.message : String(error);
-    state.ctx.log(`tick failed: ${state.status.last_error}`);
+    state.log(`tick failed: ${state.status.last_error}`);
   } finally {
     state.status.in_flight = false;
   }
@@ -180,7 +225,7 @@ function scheduleTick(state: ServiceState): void {
 /** Wire startup-delay / interval timers for an enabled service. */
 function scheduleService(state: ServiceState): void {
   if (!state.status.enabled) return;
-  const startupDelay = state.service.startupDelayMs?.(state.ctx);
+  const startupDelay = state.service.startupDelayMs?.(ctxOf(state));
   if (startupDelay && Number.isFinite(startupDelay) && startupDelay > 0) {
     const initial = setTimeout(() => {
       if (!state.stopped) scheduleTick(state);
@@ -211,12 +256,19 @@ export function startSdBackgroundServices(
   const now = options.now ?? Date.now;
   const disableSet = toSet(options.disable);
   const states = new Map<string, ServiceState>();
+  const shared: SharedBackgroundParts = {
+    config: options.config,
+    memory: options.memory,
+    profile: options.profile,
+    skills: options.skills,
+    chat: options.chat,
+  };
 
   for (const service of services) {
     if (states.has(service.name)) {
       throw new Error(`duplicate background service name: ${service.name}`);
     }
-    states.set(service.name, buildServiceState(service, options, disableSet, log, now));
+    states.set(service.name, buildServiceState(service, shared, options, disableSet, log, now));
   }
   for (const state of states.values()) scheduleService(state);
 
@@ -229,7 +281,15 @@ export function startSdBackgroundServices(
       const state = states.get(name);
       return state ? cloneStatus(state.status) : undefined;
     },
+    rebindStores: (parts) => rebindShared(shared, parts),
   };
+}
+
+/** In-place swap. Omitted keys preserved; explicit `undefined` clears nullable fields. */
+function rebindShared(shared: SharedBackgroundParts, parts: SdBackgroundRebindParts): void {
+  for (const key of Object.keys(parts) as Array<keyof SdBackgroundRebindParts>) {
+    (shared as unknown as Record<string, unknown>)[key] = parts[key];
+  }
 }
 
 function stopAll(states: Map<string, ServiceState>): void {

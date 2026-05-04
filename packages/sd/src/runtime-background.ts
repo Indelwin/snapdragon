@@ -1,5 +1,9 @@
 import type { SdSessionIndex } from '@snapdragon-ai/session';
-import type { SdBackgroundChat, SdBackgroundService } from './background.js';
+import type {
+  SdBackgroundChat,
+  SdBackgroundService,
+  SdBackgroundServicesHandle,
+} from './background.js';
 import { startSdBackgroundServices } from './background.js';
 import type { SdConfig } from './config.js';
 import type { SdMemoryProvider } from './memory.js';
@@ -10,6 +14,15 @@ import type { SdRuntimeOptions } from './runtime-options.js';
 import { defaultSessionIndexRootFor, sessionIndexService } from './session-index.js';
 import { skillBuilderService } from './skill-builder.js';
 import type { SdSkillStore } from './skills.js';
+
+export interface RuntimeBackgroundParts {
+  config: SdConfig;
+  provider: SdProviderRuntime;
+  profile?: SdProfileInfo;
+  skills: SdSkillStore;
+  memory: SdMemoryProvider;
+  sessionIndex?: SdSessionIndex;
+}
 
 export function backgroundChatFromProvider(provider: SdProviderRuntime): SdBackgroundChat {
   return async (messages, options) => {
@@ -62,4 +75,43 @@ export function startRuntimeBackgroundServices(
     disableAll: options.noBackground,
     disable: collectDisabledServices(options),
   });
+}
+
+/**
+ * Hot path: same session-index ref & live gateway ⇒ rebind stores in place.
+ * Otherwise (session-index attached/detached/swapped) full restart.
+ */
+export interface ReplaceRuntimeBackgroundCurrent {
+  background: SdBackgroundServicesHandle;
+  sessionIndex: SdSessionIndex | undefined;
+  options: SdRuntimeOptions;
+}
+
+export function replaceRuntimeBackground(
+  current: ReplaceRuntimeBackgroundCurrent,
+  parts: RuntimeBackgroundParts,
+): SdBackgroundServicesHandle {
+  if (current.sessionIndex === parts.sessionIndex) {
+    current.background.rebindStores({
+      config: parts.config,
+      memory: parts.memory,
+      profile: parts.profile,
+      skills: parts.skills,
+      chat: backgroundChatFromProvider(parts.provider),
+    });
+    return current.background;
+  }
+  current.background.stop();
+  if (current.sessionIndex && current.sessionIndex !== parts.sessionIndex) {
+    current.sessionIndex.close();
+  }
+  return startRuntimeBackgroundServices(
+    current.options,
+    parts.config,
+    parts.provider,
+    parts.profile,
+    parts.skills,
+    parts.memory,
+    parts.sessionIndex,
+  );
 }

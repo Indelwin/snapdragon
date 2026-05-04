@@ -188,6 +188,184 @@ test('gateway interval reschedules runs and stop halts them', async () => {
   }
 });
 
+test('rebindStores swaps stores seen by the next tick without restarting timers', async () => {
+  const seen: SdMemoryProvider[] = [];
+  const service: SdBackgroundService = {
+    name: 'spy',
+    enabled: () => true,
+    intervalMs: () => undefined,
+    async runOnce(ctx) {
+      seen.push(ctx.memory);
+      return { summary: 'ok' };
+    },
+  };
+  const memoryA = stubMemory;
+  const memoryB: SdMemoryProvider = {
+    describe() {
+      return { id: 'B', kind: 'memory' };
+    },
+    async append() {
+      return { success: true };
+    },
+    async read() {
+      return { entries: [] };
+    },
+  };
+  const handle = startSdBackgroundServices([service], {
+    config: makeConfig(),
+    memory: memoryA,
+  });
+  try {
+    await handle.flush();
+    assert.equal(seen.length, 1);
+    assert.strictEqual(seen[0], memoryA);
+
+    handle.rebindStores({ memory: memoryB });
+    await handle.runNow('spy');
+    assert.equal(seen.length, 2);
+    assert.strictEqual(seen[1], memoryB, 'next tick should observe the rebound memory store');
+  } finally {
+    handle.stop();
+  }
+});
+
+test('rebindStores leaves omitted fields untouched and clears explicit undefined', async () => {
+  const seenSkills: Array<unknown> = [];
+  const seenProfile: Array<unknown> = [];
+  const service: SdBackgroundService = {
+    name: 'spy',
+    enabled: () => true,
+    intervalMs: () => undefined,
+    async runOnce(ctx) {
+      seenSkills.push(ctx.skills);
+      seenProfile.push(ctx.profile);
+      return undefined;
+    },
+  };
+  const skillsA = { tag: 'A' } as unknown as Parameters<
+    typeof startSdBackgroundServices
+  >[1]['skills'];
+  const profileA = { name: 'p1' } as unknown as Parameters<
+    typeof startSdBackgroundServices
+  >[1]['profile'];
+  const handle = startSdBackgroundServices([service], {
+    config: makeConfig(),
+    memory: stubMemory,
+    skills: skillsA,
+    profile: profileA,
+  });
+  try {
+    await handle.flush();
+    assert.strictEqual(seenSkills[0], skillsA);
+    assert.strictEqual(seenProfile[0], profileA);
+
+    // Rebinding only `memory` must NOT clobber skills / profile.
+    handle.rebindStores({ memory: stubMemory });
+    await handle.runNow('spy');
+    assert.strictEqual(seenSkills[1], skillsA, 'omitted field preserved');
+    assert.strictEqual(seenProfile[1], profileA, 'omitted field preserved');
+
+    // Explicit undefined clears the field.
+    handle.rebindStores({ profile: undefined });
+    await handle.runNow('spy');
+    assert.strictEqual(seenProfile[2], undefined, 'explicit undefined clears the field');
+    assert.strictEqual(seenSkills[2], skillsA, 'unrelated field still preserved');
+  } finally {
+    handle.stop();
+  }
+});
+
+test('rebindStores swaps the chat handle seen by the next tick', async () => {
+  const seen: Array<unknown> = [];
+  const service: SdBackgroundService = {
+    name: 'spy',
+    enabled: () => true,
+    intervalMs: () => undefined,
+    async runOnce(ctx) {
+      seen.push(ctx.chat);
+      return undefined;
+    },
+  };
+  const chatA = async () => ({ content: 'a' });
+  const chatB = async () => ({ content: 'b' });
+  const handle = startSdBackgroundServices([service], {
+    config: makeConfig(),
+    memory: stubMemory,
+    chat: chatA,
+  });
+  try {
+    await handle.flush();
+    assert.strictEqual(seen[0], chatA);
+    handle.rebindStores({ chat: chatB });
+    await handle.runNow('spy');
+    assert.strictEqual(seen[1], chatB, 'next tick observes the new chat handle');
+  } finally {
+    handle.stop();
+  }
+});
+
+test('rebindStores during an in-flight tick does not mutate the captured ctx', async () => {
+  // Contract: a tick that has already started keeps the values it captured
+  // when `runOnce(ctx)` was called. The rebind only affects subsequent ticks.
+  let release: (() => void) | undefined;
+  const block = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const seen: SdMemoryProvider[] = [];
+  const service: SdBackgroundService = {
+    name: 'slow',
+    enabled: () => true,
+    intervalMs: () => undefined,
+    async runOnce(ctx) {
+      seen.push(ctx.memory);
+      await block;
+      // After the await, capture again — `ctx` is a frozen view, so the
+      // memory ref the service holds onto must still be the original.
+      seen.push(ctx.memory);
+      return undefined;
+    },
+  };
+  const memoryA = stubMemory;
+  const memoryB: SdMemoryProvider = {
+    describe() {
+      return { id: 'B', kind: 'memory' };
+    },
+    async append() {
+      return { success: true };
+    },
+    async read() {
+      return { entries: [] };
+    },
+  };
+  const handle = startSdBackgroundServices([service], {
+    config: makeConfig(),
+    memory: memoryA,
+  });
+  try {
+    // First tick is mid-flight (awaiting `block`).
+    await Promise.resolve();
+    assert.equal(seen.length, 1);
+    assert.strictEqual(seen[0], memoryA);
+
+    // Rebind while in flight.
+    handle.rebindStores({ memory: memoryB });
+
+    // Let the in-flight tick complete; it must still see memoryA.
+    release?.();
+    await handle.flush();
+    assert.equal(seen.length, 2);
+    assert.strictEqual(seen[1], memoryA, 'in-flight tick keeps its captured memory ref');
+
+    // The NEXT tick observes the rebound store.
+    await handle.runNow('slow');
+    // runNow blocks on `block`, but `block` already resolved — fine.
+    assert.strictEqual(seen[2], memoryB, 'subsequent tick observes the rebound store');
+  } finally {
+    release?.();
+    handle.stop();
+  }
+});
+
 test('gateway rejects duplicate service names', () => {
   const a = recordingService('alpha');
   const b = recordingService('alpha');
