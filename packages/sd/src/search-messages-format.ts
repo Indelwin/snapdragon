@@ -1,4 +1,5 @@
 import type { SessionSearchHit } from '@snapdragon-ai/session';
+import { formatHitTimestamp } from './session-hit-time.js';
 
 export function formatHitsForLLM(hits: SessionSearchHit[]): string {
   if (hits.length === 0) return 'No matches.';
@@ -8,9 +9,7 @@ export function formatHitsForLLM(hits: SessionSearchHit[]): string {
 }
 
 function renderHit(hit: SessionSearchHit): string[] {
-  const when = hit.createdAt
-    ? new Date(hit.createdAt).toISOString().replace('T', ' ').slice(0, 19)
-    : '';
+  const when = formatHitTimestamp(hit.createdAt);
   const session = hit.sessionId.slice(0, 24);
   return [`- [${hit.role}] ${when} ${session}`, `  ${preview(hit.content, 240)}`];
 }
