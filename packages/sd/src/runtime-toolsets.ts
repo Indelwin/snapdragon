@@ -1,9 +1,11 @@
 import type { SnapdragonAgent } from '@snapdragon-ai/agent';
 import { normalizeToolsetsConfig } from '@snapdragon-ai/config';
+import type { SdSessionIndex } from '@snapdragon-ai/session';
 import { memoryToolset, skillToolset } from '@snapdragon-ai/tools';
 import type { SdConfig } from './config.js';
 import type { SdExtensionRuntime } from './extension-runtime.js';
 import type { SdMemoryProvider } from './memory.js';
+import { searchMessagesToolset } from './search-messages-tool.js';
 import type { SdSkillStore } from './skills.js';
 import type { SdTodoStore } from './todo.js';
 import { todoToolset } from './todo.js';
@@ -14,6 +16,7 @@ export async function registerRuntimeToolsets(args: {
   skills: SdSkillStore;
   memory: SdMemoryProvider;
   todo: SdTodoStore;
+  sessionIndex?: SdSessionIndex;
   extensionRuntime: SdExtensionRuntime;
 }): Promise<void> {
   await args.agent.registry.register(
@@ -23,6 +26,9 @@ export async function registerRuntimeToolsets(args: {
     memoryToolset({ provider: args.memory, authoring: args.config.memory?.authoring ?? true }),
   );
   await registerTodoToolset(args);
+  if (args.sessionIndex) {
+    await args.agent.registry.register(searchMessagesToolset(args.sessionIndex));
+  }
   await args.agent.registry.registerMany(args.extensionRuntime.toolsets);
   applyToolsetFilters(args.agent, args.config);
 }

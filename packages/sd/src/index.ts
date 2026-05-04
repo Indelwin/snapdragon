@@ -62,6 +62,10 @@ export {
   writeEnvTemplate,
 } from './config.js';
 export {
+  DEFAULT_SD_SESSION_INDEX_PATH,
+  type SdSessionIndexConfig,
+} from './config-session-index.js';
+export {
   type ExitSummaryOptions,
   formatDuration,
   renderExitSummary,
@@ -145,6 +149,19 @@ export {
   type SdRuntimeRebuildOptions,
   switchRuntimeProfile,
 } from './runtime-transitions.js';
+export { searchMessagesToolset } from './search-messages-tool.js';
+export {
+  defaultSessionIndexRootFor,
+  formatSessionSearchHit,
+  formatSessionSearchHits,
+  openSdSessionIndex,
+  resolveSdSessionIndexPath,
+  SdSessionIndex,
+  type SessionSearchHit,
+  type SessionSearchOptions,
+  sessionIndexEnabled,
+  sessionIndexService,
+} from './session-index.js';
 export {
   fallbackTitleFromMessages,
   latestSessionMeta,

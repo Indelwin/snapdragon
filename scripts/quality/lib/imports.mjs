@@ -37,7 +37,7 @@ function importSpecifier(node) {
 }
 
 function literalText(node) {
-  return ts.isStringLiteral(node) ? node.text : undefined;
+  return node && ts.isStringLiteral(node) ? node.text : undefined;
 }
 
 async function resolveImport(fromFile, specifier, root) {
