@@ -114,11 +114,44 @@ export function defaultSdConfig(): SdConfig {
       hot_reload: true,
       builtins: true,
     },
+    gateway: {
+      runtime: 'rust',
+      root: DEFAULT_SD_DAEMON_ROOT,
+      services: {
+        'memory-worker': { enabled: false, restart: 'transient', interval_ms: 5 * 60 * 1000 },
+        'skill-builder': { enabled: false, restart: 'transient', interval_ms: 10 * 60 * 1000 },
+        'channel-events': {
+          enabled: true,
+          restart: 'transient',
+          interval_ms: 60_000,
+          startup_delay_ms: 2_000,
+        },
+        'session-index': {
+          enabled: true,
+          restart: 'transient',
+          interval_ms: 60_000,
+          startup_delay_ms: 2_000,
+        },
+      },
+    },
     background: {
       mode: 'daemon',
       daemon: {
         root: DEFAULT_SD_DAEMON_ROOT,
         auto_start: false,
+      },
+      channels: {
+        enabled: true,
+        default_platform: 'local',
+        events: {
+          enabled: true,
+          interval_ms: 60_000,
+          startup_delay_ms: 2_000,
+          max_events_per_pass: 3,
+          max_prompt_chars: 50_000,
+          max_response_chars: 24_000,
+          max_tokens: 4_000,
+        },
       },
     },
     isolation: {

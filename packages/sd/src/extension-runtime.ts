@@ -1,65 +1,28 @@
 import { existsSync, statSync } from 'node:fs';
 import { relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import type { ExtensionDescriptor, MemoryProvider } from '@snapdragon-ai/content';
-import type { ProviderModel, ReasoningRequest, StreamingChatHandler } from '@snapdragon-ai/host';
-import type { Toolset } from '@snapdragon-ai/tools';
-import type { SdConfig, SdProviderConfig, SdProviderKind } from './config.js';
+import type { ExtensionDescriptor, ExtensionGatewayServiceManifest } from '@snapdragon-ai/content';
+import type { GatewayServiceSpec } from '@snapdragon-ai/gateway';
+import type { SdConfig } from './config.js';
 import type { SdExtensionStore } from './extensions.js';
 import type { SdProfileInfo } from './profile.js';
+
+export type {
+  SdExtensionActivationContext,
+  SdExtensionModule,
+  SdExtensionProviderCreateOptions,
+  SdExtensionProviderFactory,
+  SdExtensionProviderRuntime,
+  SdExtensionRuntime,
+  SdExtensionSkillRoot,
+} from './extension-runtime-types.js';
+
+import type {
+  SdExtensionActivationContext,
+  SdExtensionModule,
+  SdExtensionRuntime,
+} from './extension-runtime-types.js';
 import type { SdRuntimeOptions } from './runtime-options.js';
-
-export interface SdExtensionSkillRoot {
-  root: string;
-  source: 'extension';
-  extensionId: string;
-  writable?: boolean;
-}
-
-export interface SdExtensionProviderCreateOptions {
-  id: string;
-  model: string;
-  kind: SdProviderKind;
-  config: SdProviderConfig;
-  env: NodeJS.ProcessEnv;
-}
-
-export interface SdExtensionProviderRuntime {
-  handler: StreamingChatHandler;
-  model?: string;
-  reasoning?: ReasoningRequest;
-}
-
-export interface SdExtensionProviderFactory {
-  create(options: SdExtensionProviderCreateOptions): SdExtensionProviderRuntime;
-  listModels?(options: Omit<SdExtensionProviderCreateOptions, 'model'>): ProviderModel[];
-}
-
-export interface SdExtensionActivationContext {
-  descriptor: ExtensionDescriptor;
-  config: SdConfig;
-  profile?: SdProfileInfo;
-  options: SdRuntimeOptions;
-  env: NodeJS.ProcessEnv;
-  registerToolset(toolset: Toolset): void;
-  registerSkillRoot(path: string, options?: { writable?: boolean }): void;
-  registerMemoryProvider(id: string, provider: MemoryProvider): void;
-  registerProvider(id: string, provider: SdExtensionProviderFactory): void;
-  log(message: string): void;
-}
-
-export interface SdExtensionModule {
-  activate?(context: SdExtensionActivationContext): void | Promise<void>;
-}
-
-export interface SdExtensionRuntime {
-  toolsets: Toolset[];
-  skillRoots: SdExtensionSkillRoot[];
-  memoryProviders: Map<string, MemoryProvider>;
-  providers: Map<string, SdExtensionProviderFactory>;
-  logs: Array<{ extensionId: string; message: string }>;
-  errors: Array<{ extensionId: string; message: string }>;
-}
 
 export async function activateSdExtensions(options: {
   store: SdExtensionStore;
@@ -90,6 +53,8 @@ function emptyExtensionRuntime(): SdExtensionRuntime {
     skillRoots: [],
     memoryProviders: new Map(),
     providers: new Map(),
+    gatewayServices: [],
+    appliances: [],
     logs: [],
     errors: [],
   };
@@ -106,6 +71,12 @@ function collectManifestContributions(
       extensionId: descriptor.id,
       writable: false,
     });
+  }
+  for (const service of descriptor.contributes?.gateway?.services ?? []) {
+    runtime.gatewayServices.push(gatewayServiceFromManifest(service));
+  }
+  for (const appliance of descriptor.contributes?.appliances ?? []) {
+    runtime.appliances.push({ ...appliance });
   }
 }
 
@@ -142,9 +113,24 @@ function extensionContext(
     registerProvider(id, provider) {
       runtime.providers.set(id, provider);
     },
+    registerGatewayService(service) {
+      runtime.gatewayServices.push(service);
+    },
+    registerAppliance(appliance) {
+      runtime.appliances.push({ ...appliance });
+    },
     log(message) {
       runtime.logs.push({ extensionId: descriptor.id, message });
     },
+  };
+}
+
+function gatewayServiceFromManifest(service: ExtensionGatewayServiceManifest): GatewayServiceSpec {
+  return {
+    name: service.name,
+    enabled: service.enabled,
+    intervalMs: service.interval_ms,
+    startupDelayMs: service.startup_delay_ms,
   };
 }
 

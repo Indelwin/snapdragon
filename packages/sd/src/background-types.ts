@@ -1,5 +1,6 @@
 import type { Message } from '@snapdragon-ai/host';
 import type { SdConfig } from './config.js';
+import type { SdGatewayChannelStore } from './gateway-channels.js';
 import type { SdMemoryProvider } from './memory.js';
 import type { SdProfileInfo } from './profile.js';
 import type { SdSkillStore } from './skills.js';
@@ -23,6 +24,8 @@ export interface SdBackgroundContext {
   profile?: SdProfileInfo;
   /** Active skill catalog; lets services consult what already exists. */
   skills?: SdSkillStore;
+  /** Channel directory/home store for gateway-addressed background work. */
+  channels?: SdGatewayChannelStore;
   /** Optional one-shot LLM completion; absent on runtimes without a provider. */
   chat?: SdBackgroundChat;
   /** Stable wall-clock for tests; default is `Date.now()`. */
@@ -90,6 +93,7 @@ export interface SdBackgroundRebindParts {
   memory?: SdMemoryProvider;
   profile?: SdProfileInfo;
   skills?: SdSkillStore;
+  channels?: SdGatewayChannelStore;
   chat?: SdBackgroundChat;
 }
 
@@ -99,6 +103,8 @@ export interface SdBackgroundServicesOptions {
   profile?: SdProfileInfo;
   /** Active skill catalog; lets services see existing skills. */
   skills?: SdSkillStore;
+  /** Channel directory/home store for gateway-addressed background work. */
+  channels?: SdGatewayChannelStore;
   /** Optional LLM completion handle, plumbed into each service's context. */
   chat?: SdBackgroundChat;
   /** Disable every service regardless of per-service config. */

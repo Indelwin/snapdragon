@@ -6,6 +6,7 @@ import { loadSdConfig, loadSdEnvironment, type SdConfig } from './config.js';
 import { activateSdExtensions, type SdExtensionRuntime } from './extension-runtime.js';
 import { createSdExtensionStore, type SdExtensionStore } from './extensions.js';
 import { ensureFirstPartyExtensionsForConfig, ensureFirstPartyProfile } from './first-party.js';
+import type { SdGatewayChannelStore } from './gateway-channels.js';
 import type { SdMemoryProvider } from './memory.js';
 import { type SdProfileInfo, SdProfileStore } from './profile.js';
 import { makeSdProvider, type SdProviderRuntime } from './provider.js';
@@ -32,6 +33,7 @@ export interface SdRuntime {
   session?: JsonlSession;
   sessionRoot?: string;
   skills: SdSkillStore;
+  channels: SdGatewayChannelStore;
   memory: SdMemoryProvider;
   todo: SdTodoStore;
   sessionIndex?: SdSessionIndex;
@@ -73,7 +75,11 @@ export async function createSdRuntime(
   const provider = makeSdProvider(config, {}, env, extensionRuntime.providers);
   const session = initialRuntimeSession(plan.sessionSelection, options, config, provider, profile);
   ensureRuntimeSessionMeta(session, options, provider, profile);
-  const { skills, memory, todo } = createIndexedRuntimeStores(config, profile, extensionRuntime);
+  const { skills, memory, todo, channels } = createIndexedRuntimeStores(
+    config,
+    profile,
+    extensionRuntime,
+  );
   const sessionIndex = openSdSessionIndex(config);
   return finishRuntime({
     baseConfig,
@@ -87,6 +93,7 @@ export async function createSdRuntime(
     profileStore,
     session,
     skills,
+    channels,
     todo,
     sessionIndex,
     systemPrompt,
@@ -105,6 +112,7 @@ async function finishRuntime(
     parts.profile,
     parts.skills,
     parts.memory,
+    parts.channels,
     parts.sessionIndex,
   );
   const agent = await createSdAgent(

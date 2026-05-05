@@ -1,6 +1,7 @@
 import { rmSync, writeFileSync } from 'node:fs';
 import type { SdDaemonPaths } from './daemon-paths.js';
 import { daemonPid, isPidAlive, writeDaemonStatus } from './daemon-status.js';
+import { gatewayEventRootForConfig } from './gateway-events-types.js';
 import type { SdRuntime } from './runtime.js';
 import type { SdRuntimeOptions } from './runtime-options.js';
 
@@ -52,5 +53,14 @@ function writeRuntimeStatus(
     config_path: options.configPath,
     cwd: options.cwd,
     services: runtime.background.list(),
+    channels: {
+      enabled: runtime.config.background?.channels?.enabled !== false,
+      root: runtime.channels.root,
+      count: runtime.channels.listSync().length,
+      events: {
+        enabled: runtime.config.background?.channels?.events?.enabled !== false,
+        root: gatewayEventRootForConfig(runtime.config),
+      },
+    },
   });
 }

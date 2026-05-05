@@ -44,7 +44,7 @@ export async function applyRuntimeRebuild(
     env: runtime.env,
   });
   const provider = makeSdProvider(config, {}, runtime.env, extensionRuntime.providers);
-  const { skills, memory, todo } = createIndexedRuntimeStores(
+  const { skills, memory, todo, channels } = createIndexedRuntimeStores(
     config,
     request.profile,
     extensionRuntime,
@@ -73,6 +73,7 @@ export async function applyRuntimeRebuild(
       provider,
       profile: request.profile,
       skills,
+      channels,
       memory,
       sessionIndex,
     },
@@ -85,6 +86,7 @@ export async function applyRuntimeRebuild(
     profile: request.profile,
     session: request.session,
     skills,
+    channels,
     memory,
     todo,
     sessionIndex,

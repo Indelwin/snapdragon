@@ -11,7 +11,7 @@ import {
 } from './config-constants.js';
 import { defaultSdConfig } from './config-default.js';
 import { configPathForLoad } from './config-path.js';
-import type { SdBackgroundConfig } from './config-runtime-types.js';
+import type { SdBackgroundConfig, SdGatewayConfig } from './config-runtime-types.js';
 import type {
   SdConfig,
   SdExtensionsConfig,
@@ -36,6 +36,11 @@ export {
   LEGACY_SD_CONFIG_PATH,
 } from './config-constants.js';
 export { defaultSdConfig } from './config-default.js';
+export type {
+  SdGatewayConfig,
+  SdGatewayRuntime,
+  SdGatewayServiceConfig,
+} from './config-runtime-types.js';
 export type {
   SdConfig,
   SdExtensionsConfig,
@@ -90,10 +95,25 @@ export function withDefaults(input: Partial<SdConfig>): SdConfig {
     skills: mergeSkillsConfig(defaults.skills, input.skills),
     memory: mergeMemoryConfig(defaults.memory, input.memory),
     extensions: mergeExtensionsConfig(defaults.extensions, input.extensions),
+    gateway: mergeGatewayConfig(defaults.gateway, input.gateway),
     background: mergeBackgroundConfig(defaults.background, input.background),
     isolation: { ...defaults.isolation, ...(input.isolation ?? {}) },
     toolsets: { ...defaults.toolsets, ...(input.toolsets ?? {}) },
     agent: mergeAgentConfig(defaults.agent, input.agent),
+  };
+}
+
+function mergeGatewayConfig(
+  defaults: SdGatewayConfig | undefined,
+  input: SdGatewayConfig | undefined,
+): SdGatewayConfig {
+  return {
+    ...defaults,
+    ...(input ?? {}),
+    services: {
+      ...(defaults?.services ?? {}),
+      ...(input?.services ?? {}),
+    },
   };
 }
 
@@ -141,10 +161,15 @@ function mergeBackgroundConfig(
   defaults: SdBackgroundConfig | undefined,
   input: SdBackgroundConfig | undefined,
 ): SdBackgroundConfig {
+  const channels = { ...(defaults?.channels ?? {}), ...(input?.channels ?? {}) };
   return {
     ...defaults,
     ...(input ?? {}),
     daemon: { ...(defaults?.daemon ?? {}), ...(input?.daemon ?? {}) },
+    channels: {
+      ...channels,
+      events: { ...(defaults?.channels?.events ?? {}), ...(input?.channels?.events ?? {}) },
+    },
   };
 }
 

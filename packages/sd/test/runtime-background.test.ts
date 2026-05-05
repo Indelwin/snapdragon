@@ -3,6 +3,7 @@ import test from 'node:test';
 import type { SdSessionIndex } from '@snapdragon-ai/session';
 import type { SdBackgroundRebindParts, SdBackgroundServicesHandle } from '../src/background.ts';
 import { defaultSdConfig } from '../src/config.ts';
+import type { SdGatewayChannelStore } from '../src/gateway-channels.ts';
 import type { SdMemoryProvider } from '../src/memory.ts';
 import type { SdProviderRuntime } from '../src/provider.ts';
 import {
@@ -26,6 +27,7 @@ const stubMemory: SdMemoryProvider = {
 };
 
 const stubSkills = {} as unknown as SdSkillStore;
+const stubChannels = { root: 'stub' } as unknown as SdGatewayChannelStore;
 
 function stubProvider(): SdProviderRuntime {
   return {
@@ -77,6 +79,7 @@ function makeParts(overrides: Partial<RuntimeBackgroundParts> = {}): RuntimeBack
     config: defaultSdConfig(),
     provider: stubProvider(),
     skills: stubSkills,
+    channels: stubChannels,
     memory: stubMemory,
     ...overrides,
   };

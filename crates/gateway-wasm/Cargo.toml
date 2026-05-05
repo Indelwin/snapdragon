@@ -1,0 +1,18 @@
+[package]
+name = "snapdragon-gateway-wasm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Budgeted WASM execution contracts for Snapdragon gateway systems."
+
+[lib]
+crate-type = ["rlib"]
+
+[features]
+default = []
+wasmtime-runtime = []
+
+[dependencies]
+serde = { workspace = true, features = ["std"] }
+snapdragon-gateway-core = { path = "../gateway-core" }
