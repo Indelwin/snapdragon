@@ -49,6 +49,9 @@ export {
   type SdAgentContextConfig,
   type SdConfig,
   type SdExtensionsConfig,
+  type SdGatewayConfig,
+  type SdGatewayRuntime,
+  type SdGatewayServiceConfig,
   type SdMemoryAutoConfig,
   type SdMemoryConfig,
   type SdMemoryWorkerConfig,
@@ -65,6 +68,8 @@ export type {
   SdBackgroundConfig,
   SdBackgroundMode,
   SdDaemonConfig,
+  SdGatewayChannelEventsConfig,
+  SdGatewayChannelsConfig,
   SdIsolationConfig,
 } from './config-runtime-types.js';
 export {
@@ -101,6 +106,41 @@ export {
   SdExtensionStore,
   type SdExtensionStoreOptions,
 } from './extensions.js';
+export {
+  channelRootForTarget,
+  createSdGatewayChannelStore,
+  gatewayChannelRootForConfig,
+  normalizeGatewayChannelTarget,
+  type SdGatewayChannelDescriptor,
+  type SdGatewayChannelEnsureOptions,
+  type SdGatewayChannelLogEntry,
+  type SdGatewayChannelStore,
+  type SdGatewayChannelTarget,
+} from './gateway-channels.js';
+export { runGatewayCommand } from './gateway-command.js';
+export {
+  channelEventService,
+  runSdGatewayChannelEventsOnce,
+  type SdGatewayEventScanResult,
+} from './gateway-event-service.js';
+export {
+  claimDueGatewayChannelEvents,
+  completeGatewayChannelEvent,
+  writeSdGatewayChannelEvent,
+} from './gateway-events-files.js';
+export {
+  eventPath,
+  gatewayEventRootForConfig,
+  isGatewayChannelEventDue,
+  normalizeGatewayChannelEvent,
+  type SdGatewayChannelEvent,
+  type SdGatewayChannelEventClaim,
+  type SdGatewayChannelEventInput,
+  type SdGatewayChannelEventResult,
+  type SdGatewayChannelEventState,
+  type SdGatewayChannelEventType,
+  type SdGatewayChannelEventWriteResult,
+} from './gateway-events-types.js';
 export {
   createSdMemoryStore,
   DEFAULT_SD_MEMORY_FILE,

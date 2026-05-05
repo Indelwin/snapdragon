@@ -304,6 +304,39 @@ test('rebindStores swaps the chat handle seen by the next tick', async () => {
   }
 });
 
+test('rebindStores swaps the channel store seen by the next tick', async () => {
+  const seen: Array<unknown> = [];
+  const service: SdBackgroundService = {
+    name: 'spy',
+    enabled: () => true,
+    intervalMs: () => undefined,
+    async runOnce(ctx) {
+      seen.push(ctx.channels);
+      return undefined;
+    },
+  };
+  const channelsA = { root: 'a' } as unknown as Parameters<
+    typeof startSdBackgroundServices
+  >[1]['channels'];
+  const channelsB = { root: 'b' } as unknown as Parameters<
+    typeof startSdBackgroundServices
+  >[1]['channels'];
+  const handle = startSdBackgroundServices([service], {
+    config: makeConfig(),
+    memory: stubMemory,
+    channels: channelsA,
+  });
+  try {
+    await handle.flush();
+    assert.strictEqual(seen[0], channelsA);
+    handle.rebindStores({ channels: channelsB });
+    await handle.runNow('spy');
+    assert.strictEqual(seen[1], channelsB, 'next tick observes the new channel store');
+  } finally {
+    handle.stop();
+  }
+});
+
 test('rebindStores during an in-flight tick does not mutate the captured ctx', async () => {
   // Contract: a tick that has already started keeps the values it captured
   // when `runOnce(ctx)` was called. The rebind only affects subsequent ticks.

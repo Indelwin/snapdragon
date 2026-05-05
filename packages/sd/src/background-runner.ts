@@ -33,6 +33,7 @@ function sharedParts(options: SdBackgroundServicesOptions): SharedBackgroundPart
     memory: options.memory,
     profile: options.profile,
     skills: options.skills,
+    channels: options.channels,
     chat: options.chat,
   };
 }

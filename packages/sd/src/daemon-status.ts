@@ -11,7 +11,18 @@ export interface SdDaemonStatus {
   config_path?: string;
   cwd?: string;
   services: SdBackgroundServiceStatus[];
+  channels?: SdDaemonChannelStatus;
   error?: string;
+}
+
+export interface SdDaemonChannelStatus {
+  enabled: boolean;
+  root: string;
+  count: number;
+  events?: {
+    enabled: boolean;
+    root: string;
+  };
 }
 
 export function daemonBackedBackgroundHandle(config: SdConfig): SdBackgroundServicesHandle {

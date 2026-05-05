@@ -1,4 +1,14 @@
 import { parse as parseYaml } from 'yaml';
+import type { ExtensionManifest } from './extension-types.js';
+
+export type {
+  ExtensionApplianceManifest,
+  ExtensionContributionManifest,
+  ExtensionDescriptor,
+  ExtensionGatewayContributionManifest,
+  ExtensionGatewayServiceManifest,
+  ExtensionManifest,
+} from './extension-types.js';
 
 export const SKILL_INDEX_FILE = 'SKILL.md';
 
@@ -203,33 +213,6 @@ export interface MemoryAutoCaptureDecision {
    */
   extracted?: string;
   reason?: string;
-}
-
-export interface ExtensionContributionManifest {
-  skills?: string[];
-  profiles?: string[];
-  tools?: string[];
-  providers?: string[];
-  memory?: string[];
-  ui?: string[];
-  sandboxes?: string[];
-}
-
-export interface ExtensionManifest {
-  id: string;
-  name: string;
-  version?: string;
-  description?: string;
-  main?: string;
-  capabilities?: string[];
-  contributes?: ExtensionContributionManifest;
-  metadata?: Record<string, unknown>;
-}
-
-export interface ExtensionDescriptor extends ExtensionManifest {
-  path?: string;
-  dir?: string;
-  enabled?: boolean;
 }
 
 /**

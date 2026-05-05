@@ -33,6 +33,7 @@ const commandHandlers: Partial<Record<SdCliMode, CommandHandler>> = {
   'delete-session': (args) => deleteSession(args.configPath, args.deleteSessionId),
   'list-profiles': (args) => listProfiles(new SdProfileStore({ root: args.profileRoot })),
   daemon: runDaemonCommand,
+  gateway: runGatewayCommand,
 };
 
 export async function runPreRuntimeCommand(args: SdCliArgs): Promise<boolean> {
@@ -62,6 +63,11 @@ async function runDaemonCommand(args: SdCliArgs): Promise<void> {
   const result = handlers[action](args);
   if (action === 'run') await result;
   else await writeDaemonResult(result as Promise<string>);
+}
+
+async function runGatewayCommand(args: SdCliArgs): Promise<void> {
+  const { runGatewayCommand: executeGatewayCommand } = await import('./gateway-command.js');
+  stdout.write(await executeGatewayCommand(args));
 }
 
 async function listSessions(configPath: string): Promise<void> {

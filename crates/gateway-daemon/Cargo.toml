@@ -1,0 +1,20 @@
+[package]
+name = "snapdragon-gateway-daemon"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Native Rust daemon and supervisor shell for the Snapdragon gateway."
+
+[lib]
+crate-type = ["rlib"]
+
+[[bin]]
+name = "snapdragon-gateway-daemon"
+path = "src/main.rs"
+
+[dependencies]
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }
+snapdragon-gateway-core = { path = "../gateway-core" }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process", "signal"] }

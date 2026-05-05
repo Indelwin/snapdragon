@@ -28,6 +28,22 @@ test('default config uses Anthropic Opus 4.7 without storing secrets', () => {
   assert.equal(config.sessions?.index?.path, undefined);
   assert.equal(config.background?.mode, 'daemon');
   assert.equal(config.background?.daemon?.auto_start, false);
+  assert.equal(config.gateway?.runtime, 'rust');
+  assert.equal(config.gateway?.services?.['channel-events']?.enabled, true);
+  assert.equal(config.gateway?.services?.['memory-worker']?.enabled, false);
+  assert.deepEqual(config.background?.channels, {
+    enabled: true,
+    default_platform: 'local',
+    events: {
+      enabled: true,
+      interval_ms: 60_000,
+      startup_delay_ms: 2_000,
+      max_events_per_pass: 3,
+      max_prompt_chars: 50_000,
+      max_response_chars: 24_000,
+      max_tokens: 4_000,
+    },
+  });
   assert.ok(config.toolsets?.enabled?.includes('search'));
   assert.equal(config.agent?.max_tokens, 32_000);
   assert.deepEqual(config.agent?.context, {

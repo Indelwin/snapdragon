@@ -1,5 +1,6 @@
 import { applyDaemonToken } from './args-daemon.js';
 import { applyBooleanFlag } from './args-flags.js';
+import { applyGatewayToken } from './args-gateway.js';
 import {
   addPromptPart,
   applyPrompt,
@@ -46,6 +47,9 @@ export function parseArgs(argv: string[], cwd = process.cwd()): SdCliArgs {
 
     if (applyBooleanFlag(out, parsed.flag)) continue;
     if (applyDaemonToken(raw, out, promptParts)) {
+      continue;
+    }
+    if (applyGatewayToken(raw, out, promptParts)) {
       continue;
     }
     addPromptPart(raw, out, promptParts);

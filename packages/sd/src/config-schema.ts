@@ -1,6 +1,10 @@
 import type { ReasoningRequest } from '@snapdragon-ai/host';
 import type { SdAgentConfig } from './agent-config-types.js';
-import type { SdBackgroundConfig, SdIsolationConfig } from './config-runtime-types.js';
+import type {
+  SdBackgroundConfig,
+  SdGatewayConfig,
+  SdIsolationConfig,
+} from './config-runtime-types.js';
 import type { SdSessionIndexConfig } from './config-session-index.js';
 import type { SdTuiConfig } from './tui-config.js';
 
@@ -123,6 +127,7 @@ export interface SdConfig {
   skills?: SdSkillsConfig;
   memory?: SdMemoryConfig;
   extensions?: SdExtensionsConfig;
+  gateway?: SdGatewayConfig;
   background?: SdBackgroundConfig;
   isolation?: SdIsolationConfig;
   toolsets?: SdToolsetsConfig;
