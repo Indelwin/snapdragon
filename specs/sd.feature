@@ -90,6 +90,26 @@ Feature: sd batteries-included agent
     Then the extension may register toolsets, provider factories, memory providers, and skill roots
     And those contributions should be rebuilt through the same guarded runtime transition path
 
+  Scenario: sd provides gateway channel homes
+    Given the background gateway is enabled
+    When a service or scheduled run targets a channel id
+    Then sd should normalize the target as platform:id
+    And it should create a channel-local home for sessions, skills, workspace, logs, and future process isolation
+    And daemon status should report the channel root and channel count
+
+  Scenario: sd runs due gateway channel events
+    Given the daemon channel event service is enabled
+    When an immediate or due scheduled event is present in the pending event queue
+    Then sd should claim the event, run it through the background chat gateway, and write channel-local logs
+    And one-shot events should move to done or failed
+    And periodic events should be requeued with the next due timestamp
+
+  Scenario: sd runs gateway services as headless workers
+    Given the Rust gateway runtime is enabled
+    When the daemon runs a configured sd service worker
+    Then the worker should load config, profiles, extensions, stores, and optional background chat
+    And it should not start the Ink TUI or interactive sd controller
+
   Scenario: sd guards runtime transitions
     Given an agent run is active in the TUI
     When the user tries to switch profiles or sessions

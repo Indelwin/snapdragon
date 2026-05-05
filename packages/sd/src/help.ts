@@ -9,6 +9,7 @@ Usage:
   sd repl [options]
   sd tui [options]
   sd daemon [run|start|stop|status|run-once] [options]
+  sd gateway <command> [options]
   sd [options] "prompt"
 
 Options:

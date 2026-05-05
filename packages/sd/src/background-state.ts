@@ -7,6 +7,7 @@ import type {
   SdBackgroundServicesOptions,
 } from './background-types.js';
 import type { SdConfig } from './config.js';
+import type { SdGatewayChannelStore } from './gateway-channels.js';
 import type { SdMemoryProvider } from './memory.js';
 import type { SdProfileInfo } from './profile.js';
 import type { SdSkillStore } from './skills.js';
@@ -17,6 +18,7 @@ export interface SharedBackgroundParts {
   memory: SdMemoryProvider;
   profile?: SdProfileInfo;
   skills?: SdSkillStore;
+  channels?: SdGatewayChannelStore;
   chat?: SdBackgroundChat;
 }
 
@@ -39,6 +41,7 @@ export function ctxOf(state: ServiceState): SdBackgroundContext {
     memory: shared.memory,
     profile: shared.profile,
     skills: shared.skills,
+    channels: shared.channels,
     chat: shared.chat,
     now: state.now,
     log: state.log,

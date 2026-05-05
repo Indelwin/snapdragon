@@ -2,9 +2,15 @@
 resolver = "3"
 members = [
     "crates/core",
+    "crates/gateway-core",
+    "crates/gateway-daemon",
+    "crates/gateway-wasm",
 ]
 default-members = [
     "crates/core",
+    "crates/gateway-core",
+    "crates/gateway-daemon",
+    "crates/gateway-wasm",
 ]
 
 [workspace.package]
@@ -17,6 +23,7 @@ repository = "https://github.com/Indelwin/snapdragon"
 serde      = { version = "1", default-features = false, features = ["alloc", "derive"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 blake3     = { version = "1", default-features = false }
+tokio      = { version = "1", default-features = false }
 
 [profile.release]
 opt-level = "z"

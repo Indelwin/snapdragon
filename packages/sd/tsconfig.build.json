@@ -11,6 +11,7 @@
     { "path": "../agent/tsconfig.build.json" },
     { "path": "../config/tsconfig.build.json" },
     { "path": "../content/tsconfig.build.json" },
+    { "path": "../gateway/tsconfig.build.json" },
     { "path": "../host/tsconfig.build.json" },
     { "path": "../session/tsconfig.build.json" },
     { "path": "../tools/tsconfig.build.json" },
