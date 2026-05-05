@@ -33,6 +33,46 @@ Memory uses an active provider contract. The default `sd` provider is a
 profile-local or global `MEMORY.md` file that can be read, searched, appended
 by tools, and auto-captured from stable user preferences.
 
+## Gateway and Background Services
+
+`sd` uses the Snapdragon gateway for background work. The default runtime is
+the Rust daemon; `inline-ts` remains available for tests and very small embedded
+hosts.
+
+```sh
+sd gateway start
+sd gateway status
+sd gateway restart
+sd gateway stop
+sd gateway ps
+sd gateway services list
+sd gateway services run memory-worker
+sd gateway services enable channel-events
+sd gateway services disable skill-builder
+sd gateway channels list
+sd gateway channels ensure local:demo
+sd gateway channels show local:demo
+sd gateway events enqueue local:demo "run the next queued task"
+sd gateway events list
+sd gateway registry list
+sd gateway tables list
+```
+
+Configured services are in `gateway.services`; background channel settings are
+in `background.channels`. First-party services currently include
+`memory-worker`, `skill-builder`, `channel-events`, and `session-index`.
+
+When the Rust runtime is active, services are executed through an internal
+headless worker command. The worker rebuilds only the runtime pieces a service
+needs: config, profile overlays, extensions, skills, memory, todos, channels,
+and the optional one-shot background chat helper. It does not load the Ink TUI
+or run the interactive `sd` controller.
+
+Channel homes live under the configured gateway channel root and contain
+sessions, skills, workspace, logs, and home directories for future stronger
+isolation. Authentication inheritance is still the default unless profile or
+config policy changes it.
+
 Interactive commands:
 
 ```text

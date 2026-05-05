@@ -1,0 +1,14 @@
+[package]
+name = "snapdragon-gateway-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Rust-first Snapdragon gateway actor, registry, supervision, and table primitives."
+
+[lib]
+crate-type = ["rlib"]
+
+[dependencies]
+serde = { workspace = true, features = ["std"] }
+serde_json = { workspace = true, features = ["std"] }

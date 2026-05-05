@@ -10,6 +10,8 @@ import type { SdConfig } from './config.js';
 import type { SdBackgroundMode } from './config-runtime-types.js';
 import { ensureSdDaemonProcess } from './daemon-spawn.js';
 import { daemonBackedBackgroundHandle } from './daemon-status.js';
+import type { SdGatewayChannelStore } from './gateway-channels.js';
+import { channelEventService } from './gateway-event-service.js';
 import type { SdMemoryProvider } from './memory.js';
 import { memoryWorkerService } from './memory-worker.js';
 import type { SdProfileInfo } from './profile.js';
@@ -24,6 +26,7 @@ export interface RuntimeBackgroundParts {
   provider: SdProviderRuntime;
   profile?: SdProfileInfo;
   skills: SdSkillStore;
+  channels: SdGatewayChannelStore;
   memory: SdMemoryProvider;
   sessionIndex?: SdSessionIndex;
 }
@@ -46,7 +49,7 @@ export function backgroundChatFromProvider(provider: SdProviderRuntime): SdBackg
 }
 
 export function defaultSdBackgroundServices(): SdBackgroundService[] {
-  return [memoryWorkerService(), skillBuilderService()];
+  return [memoryWorkerService(), skillBuilderService(), channelEventService()];
 }
 
 export function collectDisabledServices(options: SdRuntimeOptions): string[] {
@@ -62,6 +65,7 @@ export function startRuntimeBackgroundServices(
   profile: SdProfileInfo | undefined,
   skills: SdSkillStore,
   memory: SdMemoryProvider,
+  channels: SdGatewayChannelStore,
   sessionIndex?: SdSessionIndex,
 ) {
   const mode = runtimeBackgroundMode(options, config);
@@ -77,6 +81,7 @@ export function startRuntimeBackgroundServices(
     profile,
     skills,
     memory,
+    channels,
     sessionIndex,
   );
 }
@@ -88,6 +93,7 @@ export function startInlineRuntimeBackgroundServices(
   profile: SdProfileInfo | undefined,
   skills: SdSkillStore,
   memory: SdMemoryProvider,
+  channels: SdGatewayChannelStore,
   sessionIndex?: SdSessionIndex,
 ) {
   const services = defaultSdBackgroundServices();
@@ -96,14 +102,38 @@ export function startInlineRuntimeBackgroundServices(
       sessionIndexService({ index: sessionIndex, rootFor: defaultSessionIndexRootFor() }),
     );
   }
-  return startSdBackgroundServices(services, {
+  return startSdBackgroundServices(configuredBackgroundServices(services, config), {
     config,
     memory,
     profile,
     skills,
+    channels,
     chat: backgroundChatFromProvider(provider),
     disableAll: options.noBackground,
     disable: collectDisabledServices(options),
+  });
+}
+
+export function configuredBackgroundServices(
+  services: SdBackgroundService[],
+  config: SdConfig,
+): SdBackgroundService[] {
+  return services.map((service) => {
+    const serviceConfig = config.gateway?.services?.[service.name];
+    if (!serviceConfig) return service;
+    return {
+      ...service,
+      enabled(ctx) {
+        if (serviceConfig.enabled !== undefined) return serviceConfig.enabled;
+        return service.enabled?.(ctx) ?? true;
+      },
+      intervalMs(ctx) {
+        return serviceConfig.interval_ms ?? service.intervalMs?.(ctx);
+      },
+      startupDelayMs(ctx) {
+        return serviceConfig.startup_delay_ms ?? service.startupDelayMs?.(ctx);
+      },
+    };
   });
 }
 
@@ -135,6 +165,7 @@ export function replaceRuntimeBackground(
       memory: parts.memory,
       profile: parts.profile,
       skills: parts.skills,
+      channels: parts.channels,
       chat: backgroundChatFromProvider(parts.provider),
     });
     return current.background;
@@ -150,6 +181,7 @@ export function replaceRuntimeBackground(
     parts.profile,
     parts.skills,
     parts.memory,
+    parts.channels,
     parts.sessionIndex,
   );
 }

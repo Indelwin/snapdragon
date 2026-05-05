@@ -14,12 +14,42 @@ The core is in Rust, so I can work on optimising the ECS system as much as possi
 | `@snapdragon-ai/host` | Capability registry and streaming provider adapters. |
 | `@snapdragon-ai/ui` | Renderer-neutral UI ECS descriptors and state. |
 | `@snapdragon-ai/content` | Side-effect-free contracts for skills, memory, profiles, and extensions. |
+| `@snapdragon-ai/gateway` | Gateway service contracts, Rust client, and inline harness. |
+| `@snapdragon-ai/learn` | Learning, eval, rollout, rubric, and training job contracts. |
 | `@snapdragon-ai/session` | Portable append-only JSONL sessions. |
 | `@snapdragon-ai/config` | Side-effect-free resolved config contracts. |
 | `@snapdragon-ai/tools` | Tool registry, coding tools, and the REPL toolset. |
 | `@snapdragon-ai/agent` | Embeddable chat/coding agent loop. |
 | `@snapdragon-ai/sd` | Batteries included TUI agent for me to test, and use to develop itself! |
 | `@snapdragon-ai/repl` | Minimal CLI for the default coding REPL agent. |
+
+## Gateway
+
+Snapdragon's gateway is the lightweight runtime substrate for background work,
+service scheduling, channels, and future appliance-style extensions. The default
+runtime is Rust (`crates/gateway-daemon`) with a TypeScript facade in
+`@snapdragon-ai/gateway`; tests and embedded hosts can still use the inline
+TypeScript harness.
+
+`sd` is only one consumer of the gateway. Its background services run as
+headless worker processes, so scheduled memory, skill, session-index, and
+channel-event work can reuse `sd` config, profiles, extensions, stores, and
+providers without starting the Ink TUI or the interactive agent shell.
+
+```bash
+sd gateway start
+sd gateway status
+sd gateway services list
+sd gateway services run session-index
+sd gateway channels ensure local:demo
+sd gateway events enqueue local:demo "summarize this channel"
+sd gateway stop
+```
+
+Current gateway state is local-first. The Rust crates already model mailboxes,
+registry entries, service specs, ETS-like tables, links, monitors, supervision
+types, and Wasmtime budget exits, while distributed clustering and Iroh
+transport are intentionally deferred until local semantics are solid.
 
 ## sd Extensions
 
@@ -39,6 +69,8 @@ providers through the activation context. Runtime reload is available with
 packages/
   core/
   host/
+  gateway/
+  learn/
   session/
   config/
   tools/
@@ -47,6 +79,9 @@ packages/
   repl/
 crates/
   core/
+  gateway-core/
+  gateway-daemon/
+  gateway-wasm/
 examples/
   basic-agent/
   coding-repl/

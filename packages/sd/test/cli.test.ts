@@ -67,6 +67,9 @@ test('parseArgs handles background and daemon controls', () => {
   assert.equal(daemon.daemonAction, 'status');
   assert.equal(daemon.backgroundMode, 'inline');
   assert.equal(daemon.noBackground, true);
+  const gateway = parseArgs(['gateway', 'services', 'run', 'memory-worker']);
+  assert.equal(gateway.mode, 'gateway');
+  assert.deepEqual(gateway.gatewayArgs, ['services', 'run', 'memory-worker']);
   assert.throws(() => parseArgs(['--background', 'wat']), /Invalid --background/);
 });
 
@@ -80,5 +83,6 @@ test('help text documents the minimal REPL surface', () => {
   assert.match(helpText, /--list-sessions/);
   assert.match(helpText, /--setup/);
   assert.match(helpText, /daemon/);
+  assert.match(helpText, /gateway/);
   assert.match(helpText, /--background/);
 });
