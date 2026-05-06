@@ -24,6 +24,7 @@ serde      = { version = "1", default-features = false, features = ["alloc", "de
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 blake3     = { version = "1", default-features = false }
 tokio      = { version = "1", default-features = false }
+rusqlite   = { version = "0.37", features = ["bundled"] }
 
 [profile.release]
 opt-level = "z"

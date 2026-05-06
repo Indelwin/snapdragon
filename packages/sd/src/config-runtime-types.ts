@@ -11,6 +11,12 @@ export interface SdGatewayServiceConfig {
   interval_ms?: number;
   startup_delay_ms?: number;
   restart?: 'permanent' | 'transient' | 'temporary';
+  restart_intensity?: {
+    max_restarts?: number;
+    within_ms?: number;
+  };
+  backoff_ms?: number;
+  max_backoff_ms?: number;
   max_fuel?: number;
   timeout_ms?: number;
   isolation?: 'inherit' | 'profile' | 'channel';

@@ -2,12 +2,15 @@ use std::io;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
-use snapdragon_gateway_core::{ActorId, GatewayEnvelope, ReceiveFilter, ServiceSpec, TableAccess};
+use serde_json::Value;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
 
-use crate::GatewayDaemon;
+use crate::{
+    GatewayDaemon,
+    ipc_core::{dispatch_envelopes, dispatch_registry, dispatch_services, dispatch_tables},
+    ipc_durable::{dispatch_events, dispatch_jobs, dispatch_logs},
+};
 
 #[derive(Debug, Deserialize)]
 struct IpcRequest {
@@ -25,70 +28,6 @@ struct IpcResponse {
     result: Option<Value>,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ServiceSpecParams {
-    spec: ServiceSpec,
-}
-
-#[derive(Debug, Deserialize)]
-struct ServiceNameParams {
-    name: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ServiceEnableParams {
-    name: String,
-    enabled: bool,
-}
-
-#[derive(Debug, Deserialize)]
-struct ServiceRunParams {
-    name: String,
-    at_ms: u64,
-    summary: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ServiceErrorParams {
-    name: String,
-    error: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct EnvelopeParams {
-    envelope: GatewayEnvelope,
-}
-
-#[derive(Debug, Deserialize)]
-struct ReceiveParams {
-    actor: ActorId,
-    #[serde(default)]
-    filter: ReceiveFilter,
-}
-
-#[derive(Debug, Deserialize)]
-struct CapabilityParams {
-    capability: String,
-    actor: ActorId,
-}
-
-#[derive(Debug, Deserialize)]
-struct CapabilityLookupParams {
-    capability: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct TableCreateParams {
-    name: String,
-    owner: ActorId,
-    access: TableAccess,
-}
-
-#[derive(Debug, Deserialize)]
-struct TableNameParams {
-    name: String,
 }
 
 pub async fn serve_unix_socket(daemon: GatewayDaemon, path: impl AsRef<Path>) -> io::Result<()> {
@@ -147,86 +86,29 @@ async fn handle_request(daemon: &GatewayDaemon, request: IpcRequest) -> IpcRespo
 }
 
 async fn dispatch(daemon: &GatewayDaemon, method: &str, params: Value) -> Result<Value, String> {
-    match method {
+    match namespace(method) {
         "status" => ok_json(daemon.status().await),
-        "services.list" => ok_json(daemon.list_services().await),
-        "services.register" => {
-            daemon
-                .register_service(parse::<ServiceSpecParams>(params)?.spec)
-                .await;
-            Ok(json!(true))
-        }
-        "services.run" => {
-            let params = parse::<ServiceNameParams>(params)?;
-            ok_json(daemon.run_service_now(&params.name).await)
-        }
-        "services.record_run" => {
-            let params = parse::<ServiceRunParams>(params)?;
-            daemon
-                .record_service_run(&params.name, params.at_ms, params.summary)
-                .await;
-            ok_json(daemon.service_status(&params.name).await)
-        }
-        "services.error" => {
-            let params = parse::<ServiceErrorParams>(params)?;
-            daemon
-                .record_service_error(&params.name, params.error)
-                .await;
-            ok_json(daemon.service_status(&params.name).await)
-        }
-        "services.status" => {
-            let params = parse::<ServiceNameParams>(params)?;
-            ok_json(daemon.service_status(&params.name).await)
-        }
-        "services.enable" => {
-            let params = parse::<ServiceEnableParams>(params)?;
-            ok_json(
-                daemon
-                    .set_service_enabled(&params.name, params.enabled)
-                    .await,
-            )
-        }
-        "envelope.send" => {
-            daemon.send(parse::<EnvelopeParams>(params)?.envelope).await;
-            Ok(json!(true))
-        }
-        "envelope.receive" => {
-            let params = parse::<ReceiveParams>(params)?;
-            ok_json(daemon.receive(&params.actor, &params.filter).await)
-        }
-        "registry.register_capability" => {
-            let params = parse::<CapabilityParams>(params)?;
-            daemon
-                .register_capability(params.capability, params.actor)
-                .await;
-            Ok(json!(true))
-        }
-        "registry.whereis_capability" => {
-            let params = parse::<CapabilityLookupParams>(params)?;
-            ok_json(daemon.capability_providers(&params.capability).await)
-        }
-        "registry.list" => ok_json(daemon.registry_snapshot().await),
-        "tables.create" => {
-            let params = parse::<TableCreateParams>(params)?;
-            ok_json(
-                daemon
-                    .create_table(params.name, params.owner, params.access)
-                    .await,
-            )
-        }
-        "tables.list" => ok_json(daemon.table_names().await),
-        "tables.show" => {
-            let params = parse::<TableNameParams>(params)?;
-            ok_json(daemon.table_snapshot(&params.name).await)
-        }
+        "services" => dispatch_services(daemon, method, params).await,
+        "envelope" => dispatch_envelopes(daemon, method, params).await,
+        "registry" => dispatch_registry(daemon, method, params).await,
+        "tables" => dispatch_tables(daemon, method, params).await,
+        "jobs" => dispatch_jobs(daemon, method, params).await,
+        "events" => dispatch_events(daemon, method, params).await,
+        "logs" => dispatch_logs(daemon, method, params).await,
         _ => Err(format!("unknown gateway method: {method}")),
     }
 }
 
-fn parse<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, String> {
+pub(crate) fn parse<T: for<'de> Deserialize<'de>>(value: Value) -> Result<T, String> {
     serde_json::from_value(value).map_err(|error| error.to_string())
 }
 
-fn ok_json(value: impl Serialize) -> Result<Value, String> {
+pub(crate) fn ok_json(value: impl Serialize) -> Result<Value, String> {
     serde_json::to_value(value).map_err(|error| error.to_string())
+}
+
+fn namespace(method: &str) -> &str {
+    method
+        .split_once('.')
+        .map_or(method, |(namespace, _)| namespace)
 }

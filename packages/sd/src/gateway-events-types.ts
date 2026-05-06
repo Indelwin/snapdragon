@@ -3,7 +3,7 @@ import { join, resolve } from 'node:path';
 import { DEFAULT_SD_DAEMON_ROOT, type SdConfig } from './config.js';
 
 export type SdGatewayChannelEventType = 'immediate' | 'one-shot' | 'periodic';
-export type SdGatewayChannelEventState = 'pending' | 'running' | 'done' | 'failed';
+export type SdGatewayChannelEventState = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
 
 export interface SdGatewayChannelEventInput {
   id?: string;

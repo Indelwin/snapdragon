@@ -16,5 +16,6 @@ path = "src/main.rs"
 [dependencies]
 serde = { workspace = true, features = ["std"] }
 serde_json = { workspace = true, features = ["std"] }
+rusqlite = { workspace = true }
 snapdragon-gateway-core = { path = "../gateway-core" }
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "time", "net", "io-util", "process", "signal"] }

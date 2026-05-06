@@ -12,6 +12,15 @@ Usage:
   sd gateway <command> [options]
   sd [options] "prompt"
 
+Gateway commands:
+  sd gateway jobs enqueue|list|show|cancel
+  sd gateway agents run|enqueue|status|cancel
+  sd gateway learn enqueue-eval <dataset.json> [--id <id>]
+  sd gateway logs tail [target] [limit]
+  sd gateway sandboxes list
+  sd gateway sandboxes lease [project] [--id <id>] [--ref <path>] [--ttl-ms <ms>]
+  sd gateway sandboxes release|destroy <lease-id>
+
 Options:
   --mode <mode>        Run mode (tui|repl|print)
   --repl               Start the readline REPL

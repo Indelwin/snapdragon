@@ -26,6 +26,9 @@ export type GatewaySupervisorStrategy = 'one_for_one' | 'one_for_all' | 'rest_fo
 export type GatewayChildRestart = 'permanent' | 'transient' | 'temporary';
 export type GatewayTableAccess = 'public' | 'protected' | 'private';
 export type GatewayServiceState = 'starting' | 'running' | 'stopped' | 'failed';
+export type GatewayJobState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type GatewayEventState = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
+export type GatewayWorkerProcessState = 'running' | 'exited' | 'timed_out' | 'failed';
 
 export interface GatewayBudgetConfig {
   maxFuel?: number;
@@ -46,6 +49,9 @@ export interface GatewayServiceSpec {
   startupDelayMs?: number;
   budget?: GatewayBudgetConfig;
   restart?: GatewayChildRestart;
+  restartIntensity?: { maxRestarts?: number; withinMs?: number };
+  backoffMs?: number;
+  maxBackoffMs?: number;
   worker?: GatewayServiceWorkerSpec;
 }
 
@@ -55,16 +61,46 @@ export interface GatewayServiceStatus {
   state: GatewayServiceState;
   runs: number;
   errors: number;
+  consecutiveErrors?: number;
   lastRunAtMs?: number;
   lastError?: string;
   lastSummary?: string;
+  restartSuppressed?: boolean;
+  nextRunAtMs?: number;
+  lastExitReason?: string;
 }
 
 export interface GatewayStatus {
   runtime: GatewayRuntime;
   services: GatewayServiceStatus[];
   processes: number;
+  workerProcesses?: GatewayWorkerProcess[];
   tables: string[];
+  serviceTasks?: string[];
+  jobsPending?: number;
+  jobsRunning?: number;
+  activeLeases?: GatewayLease[];
+  queueDepths?: GatewayQueueDepth[];
+  recentLogs?: GatewayLogRecord[];
+  recentFailures?: GatewayLogRecord[];
+  uptimeMs?: number;
+  pid?: number;
+}
+
+export interface GatewayWorkerProcess {
+  id: string;
+  service: string;
+  pid?: number;
+  command: string;
+  args: string[];
+  cwd?: string;
+  startedAtMs: number;
+  finishedAtMs?: number;
+  timeoutMs?: number;
+  state: GatewayWorkerProcessState;
+  exitCode?: number;
+  signal?: string;
+  lastError?: string;
 }
 
 export interface GatewayRegistrySnapshot {
@@ -80,19 +116,64 @@ export interface GatewayTableSnapshot {
   rows: number;
 }
 
-export interface GatewayExtensionContributions {
-  services?: GatewayServiceSpec[];
-  appliances?: GatewayApplianceDescriptor[];
-  capabilities?: string[];
+export interface GatewayJobSpec {
+  kind: string;
+  queue?: string;
+  payload?: unknown;
+  priority?: number;
+  maxAttempts?: number;
+  timeoutMs?: number;
 }
 
-export interface GatewayApplianceDescriptor {
+export interface GatewayJobStatus {
   id: string;
-  name: string;
-  version?: string;
-  root?: string;
-  capabilities?: string[];
-  resources?: string[];
+  spec: Required<Omit<GatewayJobSpec, 'timeoutMs'>> & Pick<GatewayJobSpec, 'timeoutMs'>;
+  state: GatewayJobState;
+  attempts: number;
+  createdAtMs: number;
+  updatedAtMs: number;
+  leaseId?: string;
+  leaseExpiresAtMs?: number;
+  lastError?: string;
+  result?: unknown;
+}
+
+export interface GatewayLease {
+  id: string;
+  jobId: string;
+  worker: string;
+  acquiredAtMs: number;
+  expiresAtMs: number;
+}
+
+export interface GatewayQueueDepth {
+  queue: string;
+  pending: number;
+  running: number;
+}
+
+export interface GatewayJobLease {
+  job: GatewayJobStatus;
+  lease: GatewayLease;
+}
+
+export interface GatewayEventRecord {
+  id: string;
+  kind: string;
+  target?: string;
+  state: GatewayEventState;
+  payload?: unknown;
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface GatewayLogRecord {
+  id: number;
+  atMs: number;
+  level: string;
+  target?: string;
+  message: string;
+  data?: unknown;
 }
 
 export interface GatewayTransport {
@@ -117,4 +198,29 @@ export interface GatewayClient extends GatewayTransport {
   createTable(name: string, owner: ActorId, access?: GatewayTableAccess): Promise<boolean>;
   tableNames(): Promise<string[]>;
   tableSnapshot(name: string): Promise<GatewayTableSnapshot | undefined>;
+  enqueueJob(spec: GatewayJobSpec, id?: string): Promise<GatewayJobStatus>;
+  listJobs(): Promise<GatewayJobStatus[]>;
+  showJob(id: string): Promise<GatewayJobStatus | undefined>;
+  cancelJob(id: string): Promise<GatewayJobStatus | undefined>;
+  acquireJob(queue: string, worker: string, leaseMs?: number): Promise<GatewayJobLease | undefined>;
+  completeJob(id: string, result?: unknown): Promise<GatewayJobStatus | undefined>;
+  failJob(id: string, error: string): Promise<GatewayJobStatus | undefined>;
+  appendEvent(input: {
+    id?: string;
+    kind: string;
+    target?: string;
+    payload?: unknown;
+  }): Promise<GatewayEventRecord>;
+  listEvents(): Promise<GatewayEventRecord[]>;
+  cancelEvent(id: string): Promise<GatewayEventRecord | undefined>;
+  tailLogs(options?: { target?: string; limit?: number }): Promise<GatewayLogRecord[]>;
 }
+
+export type {
+  GatewayAgentRunSpec,
+  GatewayApplianceDescriptor,
+  GatewayExtensionContributions,
+  GatewayProjectRef,
+  GatewaySandboxLease,
+  GatewaySandboxSpec,
+} from './types-runtime.js';

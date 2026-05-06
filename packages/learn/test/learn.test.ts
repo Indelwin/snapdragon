@@ -1,6 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { antiGamingRubric, type LearningDataset, primeBackend } from '../src/index.js';
+import {
+  antiGamingRubric,
+  evaluateDataset,
+  type LearningDataset,
+  learnEvalJobToGatewayJob,
+  learnJobToGatewayJob,
+  primeBackend,
+} from '../src/index.js';
 
 test('antiGamingRubric catches missing required tool use', async () => {
   const result = await antiGamingRubric().evaluate(
@@ -22,4 +29,32 @@ test('primeBackend creates a Prime-shaped training config', () => {
   assert.equal(config.max_steps, 1000);
   assert.equal(config.env?.[0]?.id, 'anarion/pi_agent_env');
   assert.equal(config.buffer?.online_difficulty_filtering, true);
+});
+
+test('evaluateDataset produces a local eval result and gateway job mapping', async () => {
+  const dataset: LearningDataset = {
+    id: 'evals/basic',
+    examples: [{ id: '1', prompt: 'read file', requiresTools: true }],
+  };
+  const result = await evaluateDataset(
+    { id: 'eval-1', kind: 'eval', dataset: dataset.id },
+    dataset,
+    antiGamingRubric(),
+    async (example) => ({
+      exampleId: example.id,
+      output: 'done',
+      toolCalls: [{ name: 'read_file', success: true }],
+    }),
+  );
+  assert.equal(result.examples, 1);
+  assert.equal(result.events.at(-1)?.type, 'completed');
+  assert.equal(
+    learnJobToGatewayJob({ id: 'eval-1', kind: 'eval', dataset: dataset.id }).kind,
+    'learn.eval',
+  );
+  assert.equal(
+    learnEvalJobToGatewayJob({ id: 'eval-1', kind: 'eval', dataset: dataset.id }, dataset).payload
+      .dataset.id,
+    dataset.id,
+  );
 });

@@ -54,13 +54,25 @@ sd gateway channels ensure local:demo
 sd gateway channels show local:demo
 sd gateway events enqueue local:demo "run the next queued task"
 sd gateway events list
+sd gateway events cancel 20260506_event
+sd gateway jobs enqueue agent.run '{"prompt":"check the repo"}'
+sd gateway jobs list
+sd gateway agents enqueue "run the release checks"
+sd gateway agents run "summarize the current workspace"
+sd gateway learn enqueue-eval ./eval-dataset.json
+sd gateway logs tail
+sd gateway sandboxes lease . --ref ../reference-repo --ttl-ms 3600000
+sd gateway sandboxes list
 sd gateway registry list
 sd gateway tables list
 ```
 
 Configured services are in `gateway.services`; background channel settings are
 in `background.channels`. First-party services currently include
-`memory-worker`, `skill-builder`, `channel-events`, and `session-index`.
+`memory-worker`, `skill-builder`, `channel-events`, `session-index`, and
+`agent-jobs`; `learn-jobs` is available but disabled by default. Service config supports `restart`, `restart_intensity`,
+`backoff_ms`, and `max_backoff_ms`; `sd gateway status` reports suppressed
+restarts, next scheduled runs, queue depth, active leases, and recent failures.
 
 When the Rust runtime is active, services are executed through an internal
 headless worker command. The worker rebuilds only the runtime pieces a service
@@ -68,10 +80,26 @@ needs: config, profile overlays, extensions, skills, memory, todos, channels,
 and the optional one-shot background chat helper. It does not load the Ink TUI
 or run the interactive `sd` controller.
 
+The Rust daemon stores durable jobs, events, service snapshots, leases, and logs
+in a SQLite WAL database under the gateway root. Agent jobs use the same
+headless runtime as service workers, so scheduled channel work can use tools,
+sessions, skills, memory, and TODOs without starting Ink.
+
+Learning eval jobs are gateway jobs on the `learn` queue. The first built-in
+runner is deliberately local and simple: `learn-jobs` consumes `learn.eval`
+payloads with inline datasets and scores rollout metadata through the
+anti-gaming rubric. GEPA/SFT/RL backends can build on that durable job shape.
+
 Channel homes live under the configured gateway channel root and contain
 sessions, skills, workspace, logs, and home directories for future stronger
 isolation. Authentication inheritance is still the default unless profile or
 config policy changes it.
+
+The built-in sandbox backend is local `git worktree` isolation. Leases record
+the project root, branch, backend, TTL, and optional reference roots; references
+are linked under `.snapdragon/references/` in the worktree. OpenShell, Docker,
+microVM, and remote backends are expected to plug into the same sandbox lease
+contract later.
 
 Interactive commands:
 

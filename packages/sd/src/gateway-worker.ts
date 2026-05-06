@@ -1,17 +1,16 @@
 import type { SdCliArgs } from './args-types.js';
+import type { SdBackgroundChat } from './background.js';
 import { loadSdConfig, loadSdEnvironment } from './config.js';
 import { activateSdExtensions } from './extension-runtime.js';
 import { createSdExtensionStore } from './extensions.js';
 import { ensureFirstPartyExtensionsForConfig, ensureFirstPartyProfile } from './first-party.js';
+import { gatewayAgentJobService } from './gateway-agent-job-service.js';
+import { runHeadlessGatewayAgent } from './gateway-headless-agent.js';
+import { gatewayLearnJobService } from './gateway-learn-job-service.js';
 import type { SdProfileInfo } from './profile.js';
 import { SdProfileStore } from './profile.js';
 import { resolveSdRuntimeConfig } from './profile-runtime.js';
-import { makeSdProvider } from './provider.js';
-import {
-  backgroundChatFromProvider,
-  configuredBackgroundServices,
-  defaultSdBackgroundServices,
-} from './runtime-background.js';
+import { configuredBackgroundServices, defaultSdBackgroundServices } from './runtime-background.js';
 import { normalizeRuntimeOptions } from './runtime-options.js';
 import { createIndexedRuntimeStores } from './runtime-stores.js';
 import {
@@ -69,7 +68,7 @@ export async function runGatewayWorkerService(
   try {
     const service = serviceByName(name, config, sessionIndex);
     if (!service) throw new Error(`Unknown gateway service: ${name}`);
-    const chat = tryBackgroundChat(config, env, extensionRuntime.providers);
+    const chat = tryBackgroundChat(config, args);
     const ctx = {
       config,
       memory: stores.memory,
@@ -111,7 +110,11 @@ function serviceByName(
   config: Awaited<ReturnType<typeof loadSdConfig>>,
   sessionIndex: SdSessionIndex | undefined,
 ) {
-  const services = defaultSdBackgroundServices();
+  const services = [
+    ...defaultSdBackgroundServices(),
+    gatewayAgentJobService(),
+    gatewayLearnJobService(),
+  ];
   if (sessionIndex) {
     services.push(
       sessionIndexService({ index: sessionIndex, rootFor: defaultSessionIndexRootFor() }),
@@ -122,12 +125,27 @@ function serviceByName(
 
 function tryBackgroundChat(
   config: Awaited<ReturnType<typeof loadSdConfig>>,
-  env: NodeJS.ProcessEnv,
-  providers: Parameters<typeof makeSdProvider>[3],
-) {
-  try {
-    return backgroundChatFromProvider(makeSdProvider(config, {}, env, providers));
-  } catch {
-    return undefined;
-  }
+  args: SdCliArgs,
+): SdBackgroundChat {
+  return async (messages) => {
+    const result = await runHeadlessGatewayAgent(
+      {
+        prompt: messages
+          .map(
+            (message) =>
+              `${message.role}: ${
+                typeof message.content === 'string'
+                  ? message.content
+                  : JSON.stringify(message.content)
+              }`,
+          )
+          .join('\n\n'),
+        provider: config.default_provider,
+        model: config.providers?.[config.default_provider ?? '']?.model,
+        session: 'new',
+      },
+      args,
+    );
+    return { content: result.content };
+  };
 }

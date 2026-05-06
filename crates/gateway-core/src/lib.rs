@@ -6,9 +6,11 @@
 //! supervision, ETS-like tables, and transport-neutral envelopes.
 
 pub mod envelope;
+pub mod jobs;
 pub mod links;
 pub mod mailbox;
 pub mod mesh;
+pub mod process;
 pub mod registry;
 pub mod service;
 pub mod supervisor;
@@ -16,9 +18,11 @@ pub mod tables;
 pub mod transport;
 
 pub use envelope::*;
+pub use jobs::*;
 pub use links::*;
 pub use mailbox::*;
 pub use mesh::*;
+pub use process::*;
 pub use registry::*;
 pub use service::*;
 pub use supervisor::*;
