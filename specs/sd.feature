@@ -100,15 +100,44 @@ Feature: sd batteries-included agent
   Scenario: sd runs due gateway channel events
     Given the daemon channel event service is enabled
     When an immediate or due scheduled event is present in the pending event queue
-    Then sd should claim the event, run it through the background chat gateway, and write channel-local logs
+    Then sd should claim the event, run it through a headless gateway agent, and write channel-local logs
     And one-shot events should move to done or failed
     And periodic events should be requeued with the next due timestamp
+
+  Scenario: sd persists durable gateway orchestration state
+    Given the Rust gateway runtime is enabled with a SQLite WAL store
+    When sd enqueues jobs, records events, leases work, and appends logs
+    Then gateway commands should list, show, cancel, and tail those records after restart
+
+  Scenario: sd runs lightweight gateway agent jobs
+    Given a durable agent.run job is queued
+    When the agent-jobs service claims the job
+    Then it should run a headless Snapdragon agent without loading Ink
+    And it should complete or fail the durable job with a visible log record
 
   Scenario: sd runs gateway services as headless workers
     Given the Rust gateway runtime is enabled
     When the daemon runs a configured sd service worker
     Then the worker should load config, profiles, extensions, stores, and optional background chat
     And it should not start the Ink TUI or interactive sd controller
+
+  Scenario: sd observes and budgets gateway workers
+    Given a configured gateway service worker is running
+    When the daemon status snapshot is requested
+    Then sd should report the worker pid, service, command, state, and timeout budget
+    And a timed-out worker should be killed and recorded as timed_out
+
+  Scenario: sd leases local worktree sandboxes
+    Given a git project and optional reference roots
+    When the user leases a gateway sandbox
+    Then sd should create a git worktree lease with project metadata
+    And reference roots should be linked into the sandbox home for local use
+
+  Scenario: sd queues local learning eval jobs
+    Given a learning eval dataset JSON file
+    When the user enqueues it through the gateway learn command
+    Then sd should create a learn.eval job on the durable learn queue
+    And the learn-jobs service should be able to score it without loading Ink
 
   Scenario: sd guards runtime transitions
     Given an agent run is active in the TUI

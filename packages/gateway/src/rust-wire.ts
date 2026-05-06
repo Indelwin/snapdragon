@@ -4,29 +4,9 @@ import type {
   GatewayReceiveFilter,
   GatewayRegistrySnapshot,
   GatewayServiceSpec,
-  GatewayServiceState,
-  GatewayServiceStatus,
-  GatewayStatus,
   GatewayTableAccess,
   GatewayTableSnapshot,
 } from './types.js';
-
-interface WireServiceStatus {
-  name: string;
-  enabled: boolean;
-  state: string;
-  runs: number;
-  errors: number;
-  last_run_at_ms?: number | null;
-  last_error?: string | null;
-  last_summary?: string | null;
-}
-
-interface WireStatus {
-  services?: WireServiceStatus[];
-  processes?: number;
-  tables?: string[];
-}
 
 interface WireTableSnapshot {
   name: string;
@@ -85,6 +65,15 @@ export function toWireServiceSpec(spec: GatewayServiceSpec): Record<string, unkn
     enabled: spec.enabled ?? true,
     interval_ms: spec.intervalMs ?? null,
     startup_delay_ms: spec.startupDelayMs ?? null,
+    restart: spec.restart ?? 'transient',
+    restart_intensity: spec.restartIntensity
+      ? {
+          max_restarts: spec.restartIntensity.maxRestarts ?? 3,
+          within_ms: spec.restartIntensity.withinMs ?? 60_000,
+        }
+      : undefined,
+    backoff_ms: spec.backoffMs ?? null,
+    max_backoff_ms: spec.maxBackoffMs ?? null,
     budget: spec.budget
       ? { max_fuel: spec.budget.maxFuel ?? null, timeout_ms: spec.budget.timeoutMs ?? null }
       : null,
@@ -96,28 +85,6 @@ export function toWireServiceSpec(spec: GatewayServiceSpec): Record<string, unkn
           env: spec.worker.env ?? {},
         }
       : null,
-  };
-}
-
-export function fromWireStatus(value: WireStatus): GatewayStatus {
-  return {
-    runtime: 'rust',
-    services: (value.services ?? []).map(fromWireServiceStatus),
-    processes: value.processes ?? 0,
-    tables: value.tables ?? [],
-  };
-}
-
-export function fromWireServiceStatus(value: WireServiceStatus): GatewayServiceStatus {
-  return {
-    name: value.name,
-    enabled: value.enabled,
-    state: fromWireServiceState(value.state),
-    runs: value.runs,
-    errors: value.errors,
-    lastRunAtMs: value.last_run_at_ms ?? undefined,
-    lastError: value.last_error ?? undefined,
-    lastSummary: value.last_summary ?? undefined,
   };
 }
 
@@ -165,12 +132,4 @@ function actorRecord(value: Record<string, unknown> | undefined): Record<string,
   return Object.fromEntries(
     Object.entries(value ?? {}).map(([name, actor]) => [name, fromWireActor(actor)]),
   );
-}
-
-function fromWireServiceState(value: string): GatewayServiceState {
-  const normalized = value.replace(/([a-z])([A-Z])/g, '$1_$2').toLowerCase();
-  if (normalized === 'starting') return 'starting';
-  if (normalized === 'stopped') return 'stopped';
-  if (normalized === 'failed') return 'failed';
-  return 'running';
 }

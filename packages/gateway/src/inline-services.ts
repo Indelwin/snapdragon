@@ -18,6 +18,8 @@ export class InlineServiceStore {
     service.spec = { ...service.spec, enabled };
     service.status.enabled = enabled;
     service.status.state = enabled ? 'running' : 'stopped';
+    service.status.nextRunAtMs = undefined;
+    service.status.restartSuppressed = false;
   }
 
   async run(name: string, signal?: AbortSignal): Promise<GatewayServiceStatus | undefined> {
@@ -50,6 +52,8 @@ function serviceState(spec: GatewayServiceSpec, runner?: GatewayServiceRunner): 
       state: enabled ? 'running' : 'stopped',
       runs: 0,
       errors: 0,
+      consecutiveErrors: 0,
+      restartSuppressed: false,
     },
   };
 }
@@ -58,12 +62,17 @@ async function runServiceState(service: ServiceState, signal?: AbortSignal): Pro
   try {
     const result = await service.runner?.run(signal);
     service.status.runs += 1;
+    service.status.consecutiveErrors = 0;
     service.status.lastRunAtMs = Date.now();
     service.status.lastSummary = result?.summary;
     service.status.state = 'running';
+    service.status.lastExitReason = 'ok';
   } catch (error) {
     service.status.errors += 1;
-    service.status.lastError = error instanceof Error ? error.message : String(error);
+    service.status.consecutiveErrors = (service.status.consecutiveErrors ?? 0) + 1;
+    const message = error instanceof Error ? error.message : String(error);
+    service.status.lastError = message;
+    service.status.lastExitReason = message;
     service.status.state = 'failed';
   }
 }

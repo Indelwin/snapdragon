@@ -1,25 +1,34 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use serde::{Deserialize, Serialize};
 use snapdragon_gateway_core::{
-    ActorId, GatewayEnvelope, GatewayExitReason, LinkGraph, Mailbox, ProcessRegistry,
-    ReceiveFilter, RegistrySnapshot, ServiceSpec, ServiceStatus, Supervisor, TableAccess,
-    TableRegistry, TableSnapshot,
+    ActorId, GatewayEnvelope, GatewayExitReason, GatewayJobSpec, GatewayJobStatus,
+    GatewayLogRecord, GatewayWorkerProcess, LinkGraph, Mailbox, ProcessRegistry, ReceiveFilter,
+    RegistrySnapshot, ServiceSpec, ServiceStatus, Supervisor, TableAccess, TableRegistry,
+    TableSnapshot,
 };
 use tokio::{sync::RwLock, task::JoinHandle};
 
 pub mod ipc;
+mod ipc_core;
+mod ipc_durable;
+mod ipc_params;
+mod process_tracking;
+mod service_supervision;
 mod service_tasks;
 mod service_worker;
 mod services;
+mod services_persistence;
+mod status;
+mod store;
+mod store_events;
+mod store_job_types;
+mod store_jobs;
+mod store_observability;
+mod store_services;
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct GatewayStatusSnapshot {
-    pub services: Vec<ServiceStatus>,
-    pub processes: usize,
-    pub tables: Vec<String>,
-}
+pub use status::GatewayStatusSnapshot;
+pub use store::GatewayStore;
 
 #[derive(Default)]
 struct GatewayDaemonInner {
@@ -29,6 +38,8 @@ struct GatewayDaemonInner {
     tables: TableRegistry,
     service_specs: BTreeMap<String, ServiceSpec>,
     services: BTreeMap<String, ServiceStatus>,
+    worker_processes: BTreeMap<String, GatewayWorkerProcess>,
+    service_restart_windows: BTreeMap<String, Vec<u64>>,
     supervisors: BTreeMap<String, Supervisor>,
 }
 
@@ -36,11 +47,26 @@ struct GatewayDaemonInner {
 pub struct GatewayDaemon {
     inner: Arc<RwLock<GatewayDaemonInner>>,
     service_tasks: Arc<RwLock<BTreeMap<String, JoinHandle<()>>>>,
+    store: Option<GatewayStore>,
+    started_at_ms: u64,
 }
 
 impl GatewayDaemon {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            started_at_ms: unix_time_ms(),
+            ..Self::default()
+        }
+    }
+
+    pub async fn with_store(store: GatewayStore) -> Result<Self, String> {
+        let daemon = Self {
+            store: Some(store),
+            started_at_ms: unix_time_ms(),
+            ..Self::default()
+        };
+        daemon.recover_store().await?;
+        Ok(daemon)
     }
 
     pub async fn register_process(&self, name: impl Into<String>, actor: ActorId) {
@@ -111,6 +137,44 @@ impl GatewayDaemon {
         let _ = inner.links.exit_effects(actor, reason);
     }
 
+    pub fn store(&self) -> Option<&GatewayStore> {
+        self.store.as_ref()
+    }
+
+    pub async fn enqueue_job(
+        &self,
+        id: String,
+        spec: GatewayJobSpec,
+        now_ms: u64,
+    ) -> Result<GatewayJobStatus, String> {
+        let store = self.require_store()?;
+        store.enqueue_job(id, spec, now_ms)
+    }
+
+    pub async fn list_jobs(&self) -> Result<Vec<GatewayJobStatus>, String> {
+        self.require_store()?.list_jobs()
+    }
+
+    pub async fn job(&self, id: &str) -> Result<Option<GatewayJobStatus>, String> {
+        self.require_store()?.job(id)
+    }
+
+    pub async fn cancel_job(
+        &self,
+        id: &str,
+        now_ms: u64,
+    ) -> Result<Option<GatewayJobStatus>, String> {
+        self.require_store()?.cancel_job(id, now_ms)
+    }
+
+    pub async fn tail_logs(
+        &self,
+        target: Option<&str>,
+        limit: u64,
+    ) -> Result<Vec<GatewayLogRecord>, String> {
+        self.require_store()?.tail_logs(target, limit)
+    }
+
     pub async fn attach_supervisor(&self, name: impl Into<String>, supervisor: Supervisor) {
         self.inner
             .write()
@@ -119,31 +183,41 @@ impl GatewayDaemon {
             .insert(name.into(), supervisor);
     }
 
-    pub async fn status(&self) -> GatewayStatusSnapshot {
-        let inner = self.inner.read().await;
-        GatewayStatusSnapshot {
-            services: inner.services.values().cloned().collect(),
-            processes: inner.mailboxes.len(),
-            tables: inner.tables.table_names(),
+    pub async fn run_watchdogs(&self) -> Result<u64, String> {
+        self.require_store()?.expire_leases(unix_time_ms())
+    }
+
+    async fn recover_store(&self) -> Result<(), String> {
+        let Some(store) = &self.store else {
+            return Ok(());
+        };
+        for (spec, mut status) in store.service_snapshots()? {
+            status.state = if spec.enabled {
+                snapdragon_gateway_core::ServiceState::Running
+            } else {
+                snapdragon_gateway_core::ServiceState::Stopped
+            };
+            {
+                let mut inner = self.inner.write().await;
+                inner.service_specs.insert(spec.name.clone(), spec.clone());
+                inner.services.insert(spec.name.clone(), status);
+            }
+            self.replace_service_task(spec).await;
         }
+        store.expire_leases(unix_time_ms())?;
+        Ok(())
+    }
+
+    fn require_store(&self) -> Result<&GatewayStore, String> {
+        self.store
+            .as_ref()
+            .ok_or_else(|| "gateway durable store is not configured".to_string())
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use snapdragon_gateway_core::SupervisorStrategy;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn daemon_accepts_supervisor_state() {
-        let daemon = GatewayDaemon::new();
-        daemon
-            .attach_supervisor(
-                "root",
-                Supervisor::new(SupervisorStrategy::OneForOne, 3, 1_000),
-            )
-            .await;
-        assert!(daemon.status().await.services.is_empty());
-    }
+fn unix_time_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
 }

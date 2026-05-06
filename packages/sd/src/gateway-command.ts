@@ -1,4 +1,5 @@
 import type { SdCliArgs } from './args-types.js';
+import { agentsCommand } from './gateway-command-agents.js';
 import { channelsCommand } from './gateway-command-channels.js';
 import {
   isGatewayDaemonAlias,
@@ -6,7 +7,11 @@ import {
   runGatewayDaemonAlias,
 } from './gateway-command-daemon.js';
 import { eventsCommand } from './gateway-command-events.js';
+import { jobsCommand } from './gateway-command-jobs.js';
+import { learnCommand } from './gateway-command-learn.js';
+import { logsCommand } from './gateway-command-logs.js';
 import { registryCommand } from './gateway-command-registry.js';
+import { sandboxesCommand } from './gateway-command-sandboxes.js';
 import { servicesCommand } from './gateway-command-services.js';
 import { tablesCommand } from './gateway-command-tables.js';
 
@@ -17,9 +22,14 @@ type GatewayTopicHandler = (
 ) => Promise<string>;
 
 const gatewayTopicHandlers: Record<string, GatewayTopicHandler> = {
+  agents: (action, rest, args) => agentsCommand(action ?? 'status', rest, args),
   channels: (action, rest, args) => channelsCommand(action ?? 'list', rest, args),
   events: (action, rest, args) => eventsCommand(action ?? 'list', rest, args),
+  jobs: (action, rest, args) => jobsCommand(action ?? 'list', rest, args),
+  learn: (action, rest, args) => learnCommand(action ?? 'enqueue-eval', rest, args),
+  logs: (action, rest, args) => logsCommand(action ?? 'tail', rest, args),
   registry: (action, rest, args) => registryCommand(action ?? 'list', rest, args),
+  sandboxes: (action, rest, args) => sandboxesCommand(action ?? 'list', rest, args),
   services: (action, rest, args) => servicesCommand(action ?? 'list', rest, args),
   tables: (action, rest, args) => tablesCommand(action ?? 'list', rest, args),
   async worker(action, rest, args) {
