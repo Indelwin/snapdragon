@@ -81,6 +81,70 @@ function defaultAgent(): SdConfig['agent'] {
   };
 }
 
+function defaultGateway(): SdConfig['gateway'] {
+  const restart = {
+    restart: 'transient' as const,
+    restart_intensity: { max_restarts: 3, within_ms: 60_000 },
+    backoff_ms: 1_000,
+    max_backoff_ms: 60_000,
+  };
+  return {
+    runtime: 'rust',
+    root: DEFAULT_SD_DAEMON_ROOT,
+    services: {
+      'memory-worker': { ...restart, enabled: false, interval_ms: 5 * 60 * 1000 },
+      'skill-builder': { ...restart, enabled: false, interval_ms: 10 * 60 * 1000 },
+      'channel-events': {
+        ...restart,
+        enabled: true,
+        interval_ms: 60_000,
+        startup_delay_ms: 2_000,
+      },
+      'session-index': {
+        ...restart,
+        enabled: true,
+        interval_ms: 60_000,
+        startup_delay_ms: 2_000,
+      },
+      'agent-jobs': {
+        ...restart,
+        enabled: true,
+        interval_ms: 30_000,
+        startup_delay_ms: 2_000,
+      },
+      'learn-jobs': {
+        ...restart,
+        enabled: false,
+        interval_ms: 60_000,
+        startup_delay_ms: 5_000,
+      },
+    },
+  };
+}
+
+function defaultBackground(): SdConfig['background'] {
+  return {
+    mode: 'daemon',
+    daemon: {
+      root: DEFAULT_SD_DAEMON_ROOT,
+      auto_start: false,
+    },
+    channels: {
+      enabled: true,
+      default_platform: 'local',
+      events: {
+        enabled: true,
+        interval_ms: 60_000,
+        startup_delay_ms: 2_000,
+        max_events_per_pass: 3,
+        max_prompt_chars: 50_000,
+        max_response_chars: 24_000,
+        max_tokens: 4_000,
+      },
+    },
+  };
+}
+
 export function defaultSdConfig(): SdConfig {
   return {
     version: 1,
@@ -114,46 +178,8 @@ export function defaultSdConfig(): SdConfig {
       hot_reload: true,
       builtins: true,
     },
-    gateway: {
-      runtime: 'rust',
-      root: DEFAULT_SD_DAEMON_ROOT,
-      services: {
-        'memory-worker': { enabled: false, restart: 'transient', interval_ms: 5 * 60 * 1000 },
-        'skill-builder': { enabled: false, restart: 'transient', interval_ms: 10 * 60 * 1000 },
-        'channel-events': {
-          enabled: true,
-          restart: 'transient',
-          interval_ms: 60_000,
-          startup_delay_ms: 2_000,
-        },
-        'session-index': {
-          enabled: true,
-          restart: 'transient',
-          interval_ms: 60_000,
-          startup_delay_ms: 2_000,
-        },
-      },
-    },
-    background: {
-      mode: 'daemon',
-      daemon: {
-        root: DEFAULT_SD_DAEMON_ROOT,
-        auto_start: false,
-      },
-      channels: {
-        enabled: true,
-        default_platform: 'local',
-        events: {
-          enabled: true,
-          interval_ms: 60_000,
-          startup_delay_ms: 2_000,
-          max_events_per_pass: 3,
-          max_prompt_chars: 50_000,
-          max_response_chars: 24_000,
-          max_tokens: 4_000,
-        },
-      },
-    },
+    gateway: defaultGateway(),
+    background: defaultBackground(),
     isolation: {
       home: 'profile',
       workspace: 'profile',

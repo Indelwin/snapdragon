@@ -17,7 +17,7 @@ export async function startRustGateway(args: SdCliArgs, config: SdConfig): Promi
   if (pid && isPidAlive(pid)) return `rust gateway already running (${pid})`;
 
   rmSync(paths.gatewaySocket, { force: true });
-  const child = spawnRustGatewayProcess(args, paths.gatewaySocket, paths.log);
+  const child = spawnRustGatewayProcess(args, paths.gatewaySocket, paths.gatewayDb, paths.log);
   writeFileSync(paths.pid, `${child.pid}\n`, 'utf8');
   await waitForRustGateway(paths.gatewaySocket);
   await registerConfiguredServices(paths.gatewaySocket, config, args.configPath);
@@ -69,14 +69,23 @@ export async function restartRustGateway(args: SdCliArgs, config: SdConfig): Pro
   return `${stopped}\n${started}`;
 }
 
-function spawnRustGatewayProcess(_args: SdCliArgs, socketPath: string, logPath: string) {
+function spawnRustGatewayProcess(
+  _args: SdCliArgs,
+  socketPath: string,
+  storePath: string,
+  logPath: string,
+) {
   const command = rustGatewayCommand();
   const log = openSync(logPath, 'a');
-  const child = spawn(command.bin, [...command.args, '--socket', socketPath], {
-    cwd: command.cwd,
-    detached: true,
-    stdio: ['ignore', log, log],
-  });
+  const child = spawn(
+    command.bin,
+    [...command.args, '--socket', socketPath, '--store', storePath],
+    {
+      cwd: command.cwd,
+      detached: true,
+      stdio: ['ignore', log, log],
+    },
+  );
   closeSync(log);
   if (!child.pid) throw new Error('failed to spawn rust gateway daemon');
   child.unref();

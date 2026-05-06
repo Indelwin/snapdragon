@@ -3,8 +3,6 @@ import {
   fromWireActor,
   fromWireEnvelope,
   fromWireRegistrySnapshot,
-  fromWireServiceStatus,
-  fromWireStatus,
   fromWireTableSnapshot,
   toWireActor,
   toWireEnvelope,
@@ -12,10 +10,23 @@ import {
   toWireServiceSpec,
   toWireTableAccess,
 } from './rust-wire.js';
+import {
+  fromWireEventRecord,
+  fromWireJobLease,
+  fromWireJobStatus,
+  fromWireLogRecord,
+  toWireJobSpec,
+} from './rust-wire-durable.js';
+import { fromWireServiceStatus, fromWireStatus } from './rust-wire-status.js';
 import type {
   ActorId,
   GatewayClient,
   GatewayEnvelope,
+  GatewayEventRecord,
+  GatewayJobLease,
+  GatewayJobSpec,
+  GatewayJobStatus,
+  GatewayLogRecord,
   GatewayReceiveFilter,
   GatewayRegistrySnapshot,
   GatewayServiceRunner,
@@ -139,6 +150,71 @@ export class RustGatewayClient implements GatewayClient {
 
   async tableSnapshot(name: string): Promise<GatewayTableSnapshot | undefined> {
     return fromWireTableSnapshot((await this.#call('tables.show', { name })) as any);
+  }
+
+  async enqueueJob(spec: GatewayJobSpec, id?: string): Promise<GatewayJobStatus> {
+    const job = fromWireJobStatus(
+      (await this.#call('jobs.enqueue', { id, spec: toWireJobSpec(spec) })) as any,
+    );
+    if (!job) throw new Error('Gateway returned no job for jobs.enqueue');
+    return job;
+  }
+
+  async listJobs(): Promise<GatewayJobStatus[]> {
+    return ((await this.#call('jobs.list')) as unknown[])
+      .map((job) => fromWireJobStatus(job as any))
+      .filter((job): job is GatewayJobStatus => job !== undefined);
+  }
+
+  async showJob(id: string): Promise<GatewayJobStatus | undefined> {
+    return fromWireJobStatus((await this.#call('jobs.show', { id })) as any);
+  }
+
+  async cancelJob(id: string): Promise<GatewayJobStatus | undefined> {
+    return fromWireJobStatus((await this.#call('jobs.cancel', { id })) as any);
+  }
+
+  async acquireJob(
+    queue: string,
+    worker: string,
+    leaseMs = 300_000,
+  ): Promise<GatewayJobLease | undefined> {
+    return fromWireJobLease(
+      (await this.#call('jobs.acquire', { queue, worker, lease_ms: leaseMs })) as any,
+    );
+  }
+
+  async completeJob(id: string, result?: unknown): Promise<GatewayJobStatus | undefined> {
+    return fromWireJobStatus((await this.#call('jobs.complete', { id, result })) as any);
+  }
+
+  async failJob(id: string, error: string): Promise<GatewayJobStatus | undefined> {
+    return fromWireJobStatus((await this.#call('jobs.fail', { id, error })) as any);
+  }
+
+  async appendEvent(input: {
+    id?: string;
+    kind: string;
+    target?: string;
+    payload?: unknown;
+  }): Promise<GatewayEventRecord> {
+    const event = fromWireEventRecord((await this.#call('events.append', input)) as any);
+    if (!event) throw new Error('Gateway returned no event for events.append');
+    return event;
+  }
+
+  async listEvents(): Promise<GatewayEventRecord[]> {
+    return ((await this.#call('events.list')) as unknown[])
+      .map((event) => fromWireEventRecord(event as any))
+      .filter((event): event is GatewayEventRecord => event !== undefined);
+  }
+
+  async cancelEvent(id: string): Promise<GatewayEventRecord | undefined> {
+    return fromWireEventRecord((await this.#call('events.cancel', { id })) as any);
+  }
+
+  async tailLogs(options: { target?: string; limit?: number } = {}): Promise<GatewayLogRecord[]> {
+    return ((await this.#call('logs.tail', options)) as any[]).map(fromWireLogRecord);
   }
 
   async #recordServiceRun(

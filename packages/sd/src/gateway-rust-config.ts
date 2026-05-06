@@ -13,6 +13,14 @@ export function configuredRustGatewayServices(
     intervalMs: service.interval_ms,
     startupDelayMs: service.startup_delay_ms,
     restart: service.restart,
+    restartIntensity: service.restart_intensity
+      ? {
+          maxRestarts: service.restart_intensity.max_restarts,
+          withinMs: service.restart_intensity.within_ms,
+        }
+      : undefined,
+    backoffMs: service.backoff_ms,
+    maxBackoffMs: service.max_backoff_ms,
     budget:
       service.max_fuel !== undefined || service.timeout_ms !== undefined
         ? { maxFuel: service.max_fuel, timeoutMs: service.timeout_ms }

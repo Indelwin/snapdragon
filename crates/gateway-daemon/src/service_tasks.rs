@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use snapdragon_gateway_core::ServiceSpec;
+use snapdragon_gateway_core::{ServiceSpec, ServiceState, ServiceStatus};
 
 use crate::GatewayDaemon;
 
@@ -29,16 +29,33 @@ impl GatewayDaemon {
         }
     }
 
+    pub(crate) async fn service_task_names(&self) -> Vec<String> {
+        self.service_tasks.read().await.keys().cloned().collect()
+    }
+
     async fn service_loop(&self, spec: ServiceSpec) {
         if let Some(delay) = spec.startup_delay_ms.filter(|delay| *delay > 0) {
             tokio::time::sleep(Duration::from_millis(delay)).await;
         }
         loop {
-            let _ = self.run_service_now(&spec.name).await;
-            let Some(interval) = spec.interval_ms.filter(|interval| *interval > 0) else {
+            let Some(status) = self.run_service_now(&spec.name).await else {
                 return;
             };
-            tokio::time::sleep(Duration::from_millis(interval)).await;
+            let Some(delay) = self.next_service_delay(&spec, &status).await else {
+                return;
+            };
+            self.record_service_schedule(&spec.name, delay).await;
+            tokio::time::sleep(Duration::from_millis(delay)).await;
         }
+    }
+
+    async fn next_service_delay(&self, spec: &ServiceSpec, status: &ServiceStatus) -> Option<u64> {
+        if !status.enabled || !spec.enabled {
+            return None;
+        }
+        if status.state == ServiceState::Failed {
+            return self.service_failure_delay(spec, status).await;
+        }
+        spec.interval_ms.filter(|interval| *interval > 0)
     }
 }

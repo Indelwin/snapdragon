@@ -56,6 +56,30 @@ export interface LearningJob {
   metadata?: Record<string, unknown>;
 }
 
+export interface LearnJobSpec extends LearningJob {
+  artifactRoot?: string;
+  rubric?: string;
+}
+
+export interface LearnEvalGatewayPayload {
+  job: LearnJobSpec;
+  dataset: LearningDataset;
+}
+
+export interface LearningArtifact {
+  path: string;
+  kind: 'dataset' | 'rollout' | 'metrics' | 'checkpoint';
+  metadata?: Record<string, unknown>;
+}
+
+export interface LearningJobResult {
+  jobId: string;
+  score: number;
+  examples: number;
+  artifacts: LearningArtifact[];
+  events: LearnRunEvent[];
+}
+
 export interface LearnRunEvent {
   jobId: string;
   type: 'started' | 'progress' | 'checkpoint' | 'completed' | 'failed';
@@ -109,6 +133,55 @@ export const primeBackend: TrainingBackend<PrimeTrainingConfig> = {
   },
 };
 
+export async function evaluateDataset(
+  job: LearningJob,
+  dataset: LearningDataset,
+  rubric: Rubric,
+  rollout: (example: TaskExample) => RolloutTrace | Promise<RolloutTrace>,
+): Promise<LearningJobResult> {
+  const events: LearnRunEvent[] = [runEvent(job.id, 'started')];
+  const scores: number[] = [];
+  for (const example of dataset.examples) {
+    const trace = await rollout(example);
+    scores.push((await rubric.evaluate(example, trace)).score);
+    events.push(runEvent(job.id, 'progress', { example: example.id }));
+  }
+  const score = scores.length ? scores.reduce((sum, value) => sum + value, 0) / scores.length : 0;
+  events.push(runEvent(job.id, 'completed', { score }));
+  return { jobId: job.id, score, examples: dataset.examples.length, artifacts: [], events };
+}
+
+export function learnJobToGatewayJob(job: LearnJobSpec): {
+  kind: string;
+  payload: LearnJobSpec;
+  queue: string;
+  maxAttempts: number;
+} {
+  return {
+    kind: `learn.${job.kind}`,
+    payload: job,
+    queue: 'learn',
+    maxAttempts: 1,
+  };
+}
+
+export function learnEvalJobToGatewayJob(
+  job: LearnJobSpec,
+  dataset: LearningDataset,
+): {
+  kind: string;
+  payload: LearnEvalGatewayPayload;
+  queue: string;
+  maxAttempts: number;
+} {
+  return {
+    kind: 'learn.eval',
+    payload: { job, dataset },
+    queue: 'learn',
+    maxAttempts: 1,
+  };
+}
+
 function toolUseRequiredSignal(example: TaskExample, rollout: RolloutTrace): RewardSignal {
   const ok = !example.requiresTools || rollout.toolCalls.length > 0;
   return {
@@ -157,4 +230,12 @@ function weightedAverage(signals: RewardSignal[]): RubricResult {
       ? 0
       : signals.reduce((sum, signal) => sum + signal.score * signal.weight, 0) / totalWeight;
   return { score, signals };
+}
+
+function runEvent(
+  jobId: string,
+  type: LearnRunEvent['type'],
+  data?: Record<string, unknown>,
+): LearnRunEvent {
+  return { jobId, type, at: new Date().toISOString(), data };
 }

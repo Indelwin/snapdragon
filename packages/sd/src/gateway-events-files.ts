@@ -45,6 +45,21 @@ export async function countPendingGatewayChannelEvents(root: string): Promise<nu
   return (await pendingEventPaths(root)).length;
 }
 
+export async function cancelGatewayChannelEvent(
+  root: string,
+  id: string,
+): Promise<string | undefined> {
+  await ensureEventDirs(root);
+  for (const state of ['pending', 'running'] as const) {
+    const from = eventPath(root, state, id);
+    if (!existsSync(from)) continue;
+    const to = eventPath(root, 'cancelled', id);
+    await rename(from, to);
+    return to;
+  }
+  return undefined;
+}
+
 async function tryClaim(
   root: string,
   pendingPath: string,
@@ -84,7 +99,7 @@ async function writeEvent(path: string, event: unknown): Promise<void> {
 
 async function ensureEventDirs(root: string): Promise<void> {
   await Promise.all(
-    (['pending', 'running', 'done', 'failed'] as const).map((state) =>
+    (['pending', 'running', 'done', 'failed', 'cancelled'] as const).map((state) =>
       mkdir(join(root, state), { recursive: true }),
     ),
   );

@@ -25,8 +25,8 @@ interactive `sd` TUI. It is Rust-first, with TypeScript contracts layered on top
 - `crates/gateway-core` contains actor ids, envelopes, mailboxes, selective
   receive filters, registry state, service specs, links, monitors, supervision
   types, transport traits, and ETS-like table primitives.
-- `crates/gateway-daemon` runs the Tokio daemon, local IPC server, service
-  scheduler, worker process launcher, and status surface.
+- `crates/gateway-daemon` runs the Tokio daemon, local IPC server, SQLite WAL
+  store, service scheduler, worker process launcher, and status surface.
 - `crates/gateway-wasm` is the Wasmtime budget boundary for future sandboxed
   kernels and extension work.
 - `packages/gateway` is the JavaScript facade used by `sd`, extensions, tests,
@@ -38,7 +38,12 @@ runtime pieces they need, instead of loading Ink or the full interactive CLI.
 This keeps command-only paths such as help, status, and service runs from
 accidentally paying the TUI/runtime cost.
 
-The local gateway already has enough structure for scheduled memory, skill,
-session-index, and channel-event services. Iroh clustering, appliance resource
-routing, richer supervision policies, and learn/RL process management are next
-layers on the same contracts, not responsibilities of `sd` itself.
+The local gateway now has durable jobs, events, leases, logs, service snapshots,
+and headless agent jobs. `sd` consumes those contracts for memory, skill,
+session-index, channel-event, and agent-job services. Service supervision now
+covers restart policy, restart intensity, backoff, stale lease expiry, queue
+depth reporting, active lease visibility, recent failure logs, worker process
+snapshots, and timeout-triggered child kills. The built-in sandbox backend is
+local git worktrees with reference-root links; Iroh clustering, appliance
+resource routing, richer sandbox backends, and learn/RL process management are
+next layers on the same contracts, not responsibilities of the interactive TUI.
