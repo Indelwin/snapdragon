@@ -10,6 +10,7 @@ export interface SdDaemonPaths {
   channels: string;
   events: string;
   gatewaySocket: string;
+  gatewayDb: string;
 }
 
 export function daemonPathsForConfig(config: SdConfig): SdDaemonPaths {
@@ -28,5 +29,6 @@ export function daemonPaths(root = DEFAULT_SD_DAEMON_ROOT): SdDaemonPaths {
     channels: join(root, 'channels'),
     events: join(root, 'events'),
     gatewaySocket: join(root, 'gateway.sock'),
+    gatewayDb: join(root, 'gateway.sqlite'),
   };
 }

@@ -8,6 +8,7 @@ import { stringify as stringifyYaml } from 'yaml';
 import { parseArgs } from '../src/args.ts';
 import { runGatewayCommand } from '../src/gateway-command.ts';
 import { configuredRustGatewayServices } from '../src/gateway-rust-config.ts';
+import { formatRustGatewayStatus } from '../src/gateway-rust-status.ts';
 
 test('gateway commands inspect live Rust services, registry, and tables', async () => {
   const root = await mkGatewayRoot();
@@ -36,6 +37,35 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
     assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['tables', 'show', 'state'] }),
       /owner: worker/,
+    );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'enqueue', 'agent.run', 'test'] }),
+      /enqueued job_1/,
+    );
+    assert.match(await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'list'] }), /agent\.run/);
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'cancel', 'job_1'] }),
+      /cancelled job_1/,
+    );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['agents', 'enqueue', 'test agent'] }),
+      /enqueued agent job job_1/,
+    );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['logs', 'tail'] }),
+      /gateway logs/,
+    );
+    const datasetPath = join(root, 'dataset.json');
+    await writeFile(
+      datasetPath,
+      JSON.stringify({ id: 'evals/basic', examples: [{ id: '1', prompt: 'test' }] }),
+    );
+    assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['learn', 'enqueue-eval', datasetPath, '--id', 'eval-1'],
+      }),
+      /enqueued learn eval job_1/,
     );
   } finally {
     await server.close();
@@ -77,6 +107,69 @@ test('gateway worker command is parsed as gateway args while preserving config',
   assert.equal(parsed.mode, 'gateway');
   assert.deepEqual(parsed.gatewayArgs, ['worker', 'run', 'memory-worker']);
   assert.match(parsed.configPath, /sd\.yaml$/);
+});
+
+test('rust gateway status shows leases, queues, service scheduling, and failures', () => {
+  const text = formatRustGatewayStatus(
+    {
+      root: '/tmp/sd-gateway',
+      pid: '/tmp/sd-gateway/daemon.pid',
+      status: '/tmp/sd-gateway/status.json',
+      log: '/tmp/sd-gateway/daemon.log',
+      channels: '/tmp/sd-gateway/channels',
+      events: '/tmp/sd-gateway/events',
+      gatewaySocket: '/tmp/sd-gateway/gateway.sock',
+      gatewayDb: '/tmp/sd-gateway/gateway.sqlite',
+    },
+    42,
+    true,
+    {
+      runtime: 'rust',
+      pid: 43,
+      uptimeMs: 65_000,
+      processes: 2,
+      workerProcesses: [
+        {
+          id: 'worker_1',
+          service: 'memory-worker',
+          pid: 123,
+          command: 'node',
+          args: ['worker.js'],
+          startedAtMs: 1,
+          timeoutMs: 500,
+          state: 'timed_out',
+          lastError: 'worker timed out after 500ms',
+        },
+      ],
+      serviceTasks: ['memory-worker'],
+      tables: ['state'],
+      jobsPending: 2,
+      jobsRunning: 1,
+      activeLeases: [
+        { id: 'lease_1', jobId: 'job_1', worker: 'worker', acquiredAtMs: 1, expiresAtMs: 2 },
+      ],
+      queueDepths: [{ queue: 'default', pending: 2, running: 1 }],
+      recentFailures: [{ id: 1, atMs: 1, level: 'error', target: 'svc', message: 'boom' }],
+      services: [
+        {
+          name: 'memory-worker',
+          enabled: true,
+          state: 'failed',
+          runs: 1,
+          errors: 1,
+          consecutiveErrors: 1,
+          restartSuppressed: true,
+          nextRunAtMs: 1,
+        },
+      ],
+    },
+  );
+  assert.match(text, /service tasks: memory-worker/);
+  assert.match(text, /workers: memory-worker:timed_out pid=123 worker timed out/);
+  assert.match(text, /queues: default p=2 r=1/);
+  assert.match(text, /leases: 1/);
+  assert.match(text, /restart=suppressed/);
+  assert.match(text, /recent failures:/);
 });
 
 async function mkGatewayRoot(): Promise<string> {
@@ -142,6 +235,22 @@ function responseFor(request: any): unknown {
       result: { name: request.params.name, owner: 'worker', access: 'Protected', rows: 2 },
     };
   }
+  if (request.method === 'jobs.enqueue') {
+    return { id: request.id, ok: true, result: wireJob('job_1', 'Pending') };
+  }
+  if (request.method === 'jobs.list') {
+    return { id: request.id, ok: true, result: [wireJob('job_1', 'Pending')] };
+  }
+  if (request.method === 'jobs.cancel') {
+    return { id: request.id, ok: true, result: wireJob(request.params.id, 'Cancelled') };
+  }
+  if (request.method === 'logs.tail') {
+    return {
+      id: request.id,
+      ok: true,
+      result: [{ id: 1, at_ms: 10, level: 'info', message: 'ready' }],
+    };
+  }
   return { id: request.id, ok: true, result: true };
 }
 
@@ -155,5 +264,23 @@ function wireService(name: string, runs: number): unknown {
     last_run_at_ms: null,
     last_error: null,
     last_summary: null,
+  };
+}
+
+function wireJob(id: string, state: string): unknown {
+  return {
+    id,
+    spec: {
+      kind: 'agent.run',
+      queue: 'default',
+      payload: { prompt: 'test' },
+      priority: 0,
+      max_attempts: 1,
+      timeout_ms: null,
+    },
+    state,
+    attempts: 0,
+    created_at_ms: 10,
+    updated_at_ms: 10,
   };
 }

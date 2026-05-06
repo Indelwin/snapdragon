@@ -70,6 +70,28 @@ test('parseArgs handles background and daemon controls', () => {
   const gateway = parseArgs(['gateway', 'services', 'run', 'memory-worker']);
   assert.equal(gateway.mode, 'gateway');
   assert.deepEqual(gateway.gatewayArgs, ['services', 'run', 'memory-worker']);
+  const gatewayFlags = parseArgs([
+    'gateway',
+    'sandboxes',
+    'lease',
+    '.',
+    '--id',
+    'work',
+    '--ref',
+    '../reference',
+    '--config',
+    './sd.yaml',
+  ]);
+  assert.deepEqual(gatewayFlags.gatewayArgs, [
+    'sandboxes',
+    'lease',
+    '.',
+    '--id',
+    'work',
+    '--ref',
+    '../reference',
+  ]);
+  assert.match(gatewayFlags.configPath, /sd\.yaml$/);
   assert.throws(() => parseArgs(['--background', 'wat']), /Invalid --background/);
 });
 

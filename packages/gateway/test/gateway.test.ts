@@ -54,6 +54,27 @@ test('inline gateway tracks service runs and errors', async () => {
   assert.equal(bad?.lastError, 'boom');
 });
 
+test('inline gateway leases, completes, and logs jobs', async () => {
+  const gateway = new InlineGatewayClient();
+  const job = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'ship it' } });
+  assert.equal(job.state, 'pending');
+  const lease = await gateway.acquireJob('default', 'worker-1');
+  assert.equal(lease?.job.id, job.id);
+  assert.equal(lease?.lease.worker, 'worker-1');
+  const leasedStatus = await gateway.status();
+  assert.equal(leasedStatus.activeLeases?.[0]?.jobId, job.id);
+  assert.deepEqual(leasedStatus.queueDepths, [{ queue: 'default', pending: 0, running: 1 }]);
+  assert.equal((await gateway.completeJob(job.id, { ok: true }))?.state, 'completed');
+  const failed = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'fail it' } });
+  await gateway.acquireJob('default', 'worker-1');
+  assert.equal((await gateway.failJob(failed.id, 'nope'))?.state, 'failed');
+  assert.match(
+    (await gateway.status()).recentFailures?.map((log) => log.message).join('\n') ?? '',
+    /nope/,
+  );
+  assert.match((await gateway.tailLogs({ limit: 5 })).map((log) => log.message).join('\n'), /job/);
+});
+
 test('rust gateway client speaks the JSONL IPC protocol', async () => {
   const socketPath = join(tmpdir(), `snapdragon-gateway-${process.pid}-${Date.now()}.sock`);
   const seen: string[] = [];
@@ -84,7 +105,17 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       payload: { ok: true },
       insertedAtMs: 10,
     });
-    assert.equal((await gateway.status()).services[0]?.state, 'running');
+    const status = await gateway.status();
+    assert.equal(status.pid, 42);
+    assert.deepEqual(status.serviceTasks, ['memory-worker']);
+    assert.equal(status.workerProcesses?.[0]?.pid, 123);
+    assert.equal(status.workerProcesses?.[0]?.state, 'running');
+    assert.equal(status.activeLeases?.[0]?.jobId, 'job_1');
+    assert.deepEqual(status.queueDepths, [{ queue: 'default', pending: 2, running: 1 }]);
+    assert.equal(status.recentFailures?.[0]?.message, 'worker failed');
+    assert.equal(status.services[0]?.state, 'running');
+    assert.equal(status.services[0]?.consecutiveErrors, 2);
+    assert.equal(status.services[0]?.restartSuppressed, true);
     assert.equal((await gateway.receive({ id: 'worker' }))?.target.id, 'worker');
     assert.deepEqual(await gateway.whereisCapability('memory.read'), [{ id: 'worker' }]);
     assert.deepEqual(await gateway.registrySnapshot(), {
@@ -100,6 +131,13 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       access: 'private',
       rows: 0,
     });
+    const job = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'test' } });
+    assert.equal(job.id, 'job_1');
+    assert.equal((await gateway.acquireJob('default', 'worker'))?.lease.worker, 'worker');
+    assert.equal((await gateway.completeJob('job_1', { ok: true }))?.state, 'completed');
+    assert.equal((await gateway.appendEvent({ kind: 'channel.run' })).state, 'pending');
+    assert.equal((await gateway.cancelEvent('event_1'))?.state, 'cancelled');
+    assert.equal((await gateway.tailLogs()).length, 1);
     assert.deepEqual(requests[0].params.spec.worker, {
       command: 'node',
       args: ['worker.js'],
@@ -116,6 +154,12 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'tables.create',
       'tables.list',
       'tables.show',
+      'jobs.enqueue',
+      'jobs.acquire',
+      'jobs.complete',
+      'events.append',
+      'events.cancel',
+      'logs.tail',
     ]);
   } finally {
     server.close();
@@ -165,7 +209,40 @@ function responseFor(request: any): unknown {
       result: {
         services: [wireServiceStatus('memory-worker')],
         processes: 1,
+        worker_processes: [
+          {
+            id: 'worker_1',
+            service: 'memory-worker',
+            pid: 123,
+            command: 'node',
+            args: ['worker.js'],
+            cwd: '/tmp/sd',
+            started_at_ms: 10,
+            finished_at_ms: null,
+            timeout_ms: 1000,
+            state: 'Running',
+            exit_code: null,
+            signal: null,
+            last_error: null,
+          },
+        ],
         tables: [],
+        service_tasks: ['memory-worker'],
+        jobs_pending: 2,
+        jobs_running: 1,
+        active_leases: [
+          {
+            id: 'lease_1',
+            job_id: 'job_1',
+            worker: 'worker',
+            acquired_at_ms: 10,
+            expires_at_ms: 20,
+          },
+        ],
+        queue_depths: [{ queue: 'default', pending: 2, running: 1 }],
+        recent_failures: [{ id: 1, at_ms: 10, level: 'error', message: 'worker failed' }],
+        uptime_ms: 5000,
+        pid: 42,
       },
     };
   }
@@ -211,6 +288,55 @@ function responseFor(request: any): unknown {
       },
     };
   }
+  if (request.method === 'jobs.enqueue') {
+    return { id: request.id, ok: true, result: wireJobStatus('job_1', request.params.spec) };
+  }
+  if (request.method === 'jobs.acquire') {
+    return {
+      id: request.id,
+      ok: true,
+      result: {
+        job: wireJobStatus('job_1', {
+          kind: 'agent.run',
+          queue: 'default',
+          payload: {},
+          priority: 0,
+          max_attempts: 1,
+        }),
+        lease: {
+          id: 'lease_1',
+          job_id: 'job_1',
+          worker: request.params.worker,
+          acquired_at_ms: 10,
+          expires_at_ms: 20,
+        },
+      },
+    };
+  }
+  if (request.method === 'jobs.complete') {
+    return {
+      id: request.id,
+      ok: true,
+      result: {
+        ...wireJobStatus(request.params.id),
+        state: 'Completed',
+        result: request.params.result,
+      },
+    };
+  }
+  if (request.method === 'events.append') {
+    return { id: request.id, ok: true, result: wireEvent('event_1', 'Pending') };
+  }
+  if (request.method === 'events.cancel') {
+    return { id: request.id, ok: true, result: wireEvent(request.params.id, 'Cancelled') };
+  }
+  if (request.method === 'logs.tail') {
+    return {
+      id: request.id,
+      ok: true,
+      result: [{ id: 1, at_ms: 10, level: 'info', message: 'ok' }],
+    };
+  }
   return { id: request.id, ok: true, result: true };
 }
 
@@ -221,8 +347,42 @@ function wireServiceStatus(name: string): unknown {
     state: 'Running',
     runs: 0,
     errors: 0,
+    consecutive_errors: 2,
     last_run_at_ms: null,
     last_error: null,
     last_summary: null,
+    restart_suppressed: true,
+    next_run_at_ms: 20,
+    last_exit_reason: 'error',
+  };
+}
+
+function wireJobStatus(id: string, spec: any = {}): unknown {
+  return {
+    id,
+    spec: {
+      kind: spec.kind ?? 'agent.run',
+      queue: spec.queue ?? 'default',
+      payload: spec.payload ?? {},
+      priority: spec.priority ?? 0,
+      max_attempts: spec.max_attempts ?? 1,
+      timeout_ms: spec.timeout_ms ?? null,
+    },
+    state: 'Pending',
+    attempts: 0,
+    created_at_ms: 10,
+    updated_at_ms: 10,
+  };
+}
+
+function wireEvent(id: string, state: string): unknown {
+  return {
+    id,
+    kind: 'channel.run',
+    target: null,
+    state,
+    payload: {},
+    created_at_ms: 10,
+    updated_at_ms: 10,
   };
 }

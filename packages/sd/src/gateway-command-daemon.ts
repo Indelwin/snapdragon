@@ -35,12 +35,14 @@ export async function runGatewayDaemonAlias(
 export async function restartGateway(args: SdCliArgs): Promise<string> {
   const config = await loadSdConfig(args.configPath);
   if (config.gateway?.runtime !== 'inline-ts') {
-    return `${gatewayRuntimeHeader(config)}${await restartRustGateway(args, config)}`;
+    return `${gatewayRuntimeHeader(config)}${withTrailingNewline(
+      await restartRustGateway(args, config),
+    )}`;
   }
   const { startSdDaemon, stopSdDaemon } = await import('./daemon.js');
   const stopped = await stopSdDaemon(args);
   const started = await startSdDaemon(args);
-  return `${gatewayRuntimeHeader(config)}${stopped}\n${started}`;
+  return `${gatewayRuntimeHeader(config)}${withTrailingNewline(`${stopped}\n${started}`)}`;
 }
 
 async function runRustGatewayAlias(
@@ -54,10 +56,14 @@ async function runRustGatewayAlias(
     status: () => rustGatewayStatus(config),
     'run-once': () => runRustGatewayOnce(config, args.configPath),
   };
-  return `${gatewayRuntimeHeader(config)}${await handlers[action]()}`;
+  return `${gatewayRuntimeHeader(config)}${withTrailingNewline(await handlers[action]())}`;
 }
 
 function gatewayRuntimeHeader(config: Awaited<ReturnType<typeof loadSdConfig>>): string {
   const runtime = config.gateway?.runtime ?? 'rust';
   return `gateway runtime=${runtime}\n`;
+}
+
+function withTrailingNewline(value: string): string {
+  return value.endsWith('\n') ? value : `${value}\n`;
 }
