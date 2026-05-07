@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLI="$ROOT/packages/sd/dist/cli.js"
+
+if [[ ! -f "$CLI" ]]; then
+  echo "sd build not found at $CLI" >&2
+  echo "Run: npm run build --workspace @snapdragon-ai/sd" >&2
+  exit 1
+fi
+
+exec node "$CLI" "$@"
