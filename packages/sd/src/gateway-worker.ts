@@ -15,8 +15,9 @@ import { normalizeRuntimeOptions } from './runtime-options.js';
 import { createIndexedRuntimeStores } from './runtime-stores.js';
 import {
   defaultSessionIndexRootFor,
-  openSdSessionIndex,
-  type SdSessionIndex,
+  resolveSdSessionIndexPath,
+  SdSessionIndex,
+  sessionIndexEnabled,
   sessionIndexService,
 } from './session-index.js';
 
@@ -63,8 +64,13 @@ export async function runGatewayWorkerService(
     env,
   });
   const stores = createIndexedRuntimeStores(config, profile, extensionRuntime);
-  const sessionIndex = openSdSessionIndex(config);
   const logs: string[] = [];
+
+  const sessionIndexResolution = resolveSessionIndexForWorker(name, config);
+  if (sessionIndexResolution.disabled) {
+    return { service: name, summary: `${name} disabled`, metrics: {}, logs };
+  }
+  const sessionIndex = sessionIndexResolution.index;
   try {
     const service = serviceByName(name, config, sessionIndex);
     if (!service) throw new Error(`Unknown gateway service: ${name}`);
@@ -103,6 +109,23 @@ function resolveGatewayWorkerProfile(
   if (!name) return undefined;
   ensureFirstPartyProfile(store.root, name);
   return store.load(name);
+}
+
+/**
+ * Decide whether a worker run for `name` needs a live session index, and open
+ * it strictly when so. Returning `{ disabled: true }` lets the caller emit a
+ * clean "disabled" result instead of falling through to an "unknown service"
+ * error. A SQLite open failure here propagates as a real error rather than
+ * being swallowed into `undefined` (which is what the previous best-effort
+ * `openSdSessionIndex` did, masking real faults as "Unknown gateway service").
+ */
+export function resolveSessionIndexForWorker(
+  name: string,
+  config: Awaited<ReturnType<typeof loadSdConfig>>,
+): { disabled: false; index: SdSessionIndex | undefined } | { disabled: true; index?: never } {
+  if (name !== 'session-index') return { disabled: false, index: undefined };
+  if (!sessionIndexEnabled(config)) return { disabled: true };
+  return { disabled: false, index: SdSessionIndex.open(resolveSdSessionIndexPath(config)) };
 }
 
 function serviceByName(
