@@ -1,4 +1,5 @@
-import { stdout } from 'node:process';
+import { basename } from 'node:path';
+import { argv, stdout } from 'node:process';
 import { writeExitSummary } from './exit-summary.js';
 import { runInteractive, runOneShot } from './repl.js';
 import type { SdRuntime } from './runtime.js';
@@ -23,7 +24,13 @@ export async function runSelectedMode(
     const { runTui } = await import('./tui/index.js');
     await runTui(runtime);
   }
-  await writeExitSummary(runtime, stdout);
+  await writeExitSummary(runtime, stdout, { command: invokedCommand() });
+}
+
+function invokedCommand(): string {
+  const entrypoint = argv[1];
+  if (!entrypoint) return 'sd';
+  return basename(entrypoint) === 'sd' ? entrypoint : 'sd';
 }
 
 function writeRuntimeWarnings(runtime: SdRuntime): void {
