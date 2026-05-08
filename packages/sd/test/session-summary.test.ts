@@ -173,6 +173,22 @@ test('renderExitSummary formats the resume command and duration', () => {
   assert.match(rendered, /Duration\s+1m 4s/);
 });
 
+test('renderExitSummary can show the local launcher in resume instructions', () => {
+  const rendered = renderExitSummary(
+    {
+      id: 'alpha',
+      title: 'Local launcher session',
+      durationSeconds: 5,
+      messages: 2,
+      userMessages: 1,
+      toolCalls: 0,
+    },
+    { command: './sd' },
+  );
+
+  assert.match(rendered, /\.\/sd --session alpha --resume/);
+});
+
 test('printSessionList includes automatic session titles when available', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-session-list-'));
   try {
