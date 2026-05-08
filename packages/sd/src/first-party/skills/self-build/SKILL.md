@@ -16,4 +16,6 @@ If the current directory is inside a git repository:
 
 Use `sd gateway sandboxes lease <repo> --ref <path>` when a gateway worktree sandbox is available. Avoid changing global auth, HOME, or project config unless the user explicitly asks.
 
+The repository-root `./sd` launcher is only a local dogfooding stopgap until Snapdragon is production-ready as a global install. If a push or gateway dogfood run says the launch script is missing, check for the root `sd` shell script before hunting deeper: it should exec `packages/sd/dist/cli.js`, preserve arguments, and give a clear build hint when `dist` is absent. Prefer `./sd ...` in this repo unless a global `sd` binary is explicitly installed.
+
 Design changes so the worktree step can later be mounted into OpenShell, Docker, or another sandbox backend without changing the skill contract.
