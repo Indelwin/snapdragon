@@ -5,6 +5,9 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from './args.js';
 import { runPreRuntimeCommand } from './cli-commands.js';
 import { isRunMode } from './modes.js';
+import { suppressKnownNodeWarnings } from './node-warnings.js';
+
+suppressKnownNodeWarnings();
 
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   const args = parseArgs(argv);
