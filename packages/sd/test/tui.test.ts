@@ -373,6 +373,27 @@ test('loadRuntimeTranscript bounds resumed history and large tool output', async
   }
 });
 
+test('SdUiController loads a bounded session transcript without hydrating agent messages', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-session-transcript-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    assert.ok(runtime.session);
+    for (let index = 0; index < 12; index += 1) {
+      runtime.session.appendMessage({ role: 'user', content: `session ${index}` });
+    }
+
+    const controller = new SdUiController(runtime, undefined, { maxEntries: 5 });
+    const entries = chatEntries(controller.world.componentState(SD_UI_IDS.chat));
+
+    assert.equal(runtime.agent.messages.length, 0);
+    assert.equal(entries.length, 5);
+    assert.match(entries[0]?.content ?? '', /earlier message/);
+    assert.equal(entries.at(-1)?.content, 'session 11');
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
 test('tool transcript summaries avoid full-line keys for huge output', () => {
   const rows = transcriptRows([
     {

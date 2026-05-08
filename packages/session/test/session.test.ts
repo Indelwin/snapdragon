@@ -105,6 +105,25 @@ test('JSONL session stats avoid full record parsing on open', () => {
   assert.equal(reopened.messageCount(), 2);
 });
 
+test('JSONL sessions read bounded recent messages without loading all records', () => {
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-session-')) });
+  const session = store.create('session_recent');
+  for (let index = 0; index < 20; index += 1) {
+    session.appendMessage({ role: 'user', content: `message ${index}` });
+  }
+  appendFileSync(session.jsonlPath, '{"type": "message"\n', 'utf8');
+
+  const reopened = store.open('session_recent');
+  const recent = reopened.recentMessages(5);
+
+  assert.equal(recent.omitted, 15);
+  assert.deepEqual(
+    recent.messages.map((message) => message.content),
+    ['message 15', 'message 16', 'message 17', 'message 18', 'message 19'],
+  );
+  assert.equal(reopened.recentMessages(0).messages.length, 0);
+});
+
 test('message preview reader skips large tool payloads without dropping adjacent messages', async () => {
   const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-session-')) });
   const session = store.create('session_preview');

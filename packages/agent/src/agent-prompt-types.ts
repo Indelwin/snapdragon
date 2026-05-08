@@ -27,4 +27,5 @@ export interface AgentPromptState {
 export interface AgentMessageState {
   messages: Message[];
   session?: AgentSession;
+  maxInMemoryMessages?: number;
 }

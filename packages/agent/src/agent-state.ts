@@ -6,6 +6,7 @@ export async function appendAgentMessage(
   args: AgentMessageState & { message: Message },
 ): Promise<void> {
   args.messages.push(args.message);
+  pruneInMemoryMessages(args.messages, args.maxInMemoryMessages);
   await args.session?.appendMessage(args.message);
 }
 
@@ -20,4 +21,9 @@ export async function emitAgentEvent(args: {
   event: AgentEvent;
 }): Promise<void> {
   for (const listener of args.listeners) listener(args.event);
+}
+
+function pruneInMemoryMessages(messages: Message[], max: number | undefined): void {
+  if (max === undefined || messages.length <= max) return;
+  messages.splice(0, messages.length - max);
 }

@@ -4,6 +4,7 @@ import type { ContextWindowOptions } from './context-options.js';
 import type { ContextChunkInput } from './context-summary.js';
 import { assembleContextWindow, recordToMessage } from './context-window.js';
 import { type SessionMetadata, sessionMetadata } from './metadata.js';
+import { readRecentMessageRecords } from './recent-records.js';
 import {
   appendRecord,
   readRecordStats,
@@ -108,6 +109,16 @@ export class JsonlSession {
     return this.messageRecords().map(recordToMessage);
   }
 
+  recentMessages(limit: number): { messages: Message[]; omitted: number } {
+    const bounded = Math.max(0, Math.floor(limit));
+    if (this.#records) return recentCachedMessages(this.#records, bounded);
+    const recent = readRecentMessageRecords(this.jsonlPath, bounded);
+    return {
+      messages: recent.records.map(recordToMessage),
+      omitted: Math.max(0, recent.totalMessages - recent.records.length),
+    };
+  }
+
   messageCount(): number {
     return this.#messageCount;
   }
@@ -183,4 +194,16 @@ export function openSessionFile(options: JsonlSessionOptions): JsonlSession {
     throw new Error(`session does not exist at ${options.jsonlPath}`);
   }
   return new JsonlSession(options);
+}
+
+function recentCachedMessages(
+  records: SessionRecord[],
+  limit: number,
+): { messages: Message[]; omitted: number } {
+  const all = messageRecords(records);
+  const visible = limit > 0 ? all.slice(-limit) : [];
+  return {
+    messages: visible.map(recordToMessage),
+    omitted: Math.max(0, all.length - visible.length),
+  };
 }

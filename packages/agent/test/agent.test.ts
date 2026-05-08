@@ -130,6 +130,31 @@ test('agent persists user, assistant, and tool messages into a session', async (
   );
 });
 
+test('agent uses compacted session context without hydrating live memory on resume', async () => {
+  const mock = mockProvider();
+  mock.enqueue('done');
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-agent-')) });
+  const session = store.create('agent_resume');
+  session.appendMessage({ role: 'user', content: 'old request' });
+  session.appendMessage({ role: 'assistant', content: 'old answer' });
+
+  const agent = await createAgent({
+    provider: mock.handler,
+    cwd: process.cwd(),
+    systemPrompt: '',
+    session,
+    context: { enabled: true, freshTailCount: 8, maxRequestTokens: 20_000 },
+  });
+  assert.deepEqual(agent.messages, []);
+
+  await agent.prompt('new request');
+
+  assert.deepEqual(
+    mock.history()[0].messages.map((message) => message.content),
+    ['old request', 'old answer', 'new request'],
+  );
+});
+
 test('agent persists run lifecycle metadata into a session', async () => {
   const mock = mockProvider();
   mock.enqueue('done');

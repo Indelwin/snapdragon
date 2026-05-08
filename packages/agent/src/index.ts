@@ -42,6 +42,7 @@ export class SnapdragonAgent {
   #profile?: Profile;
   #maxTurns: number;
   #maxToolResultBytes: number;
+  #maxInMemoryMessages: number | undefined;
   #context?: AgentContextOptions;
   #temperature?: number;
   #maxTokens?: number;
@@ -61,6 +62,7 @@ export class SnapdragonAgent {
     this.#profile = args.profile;
     this.#maxTurns = args.maxTurns;
     this.#maxToolResultBytes = args.maxToolResultBytes;
+    this.#maxInMemoryMessages = defaultInMemoryLimit(args.session, args.context);
     this.#context = args.context;
     this.#temperature = args.temperature;
     this.#maxTokens = args.maxTokens;
@@ -98,7 +100,10 @@ export class SnapdragonAgent {
   setProvider(provider: StreamingChatHandler, options: RuntimeOptions = {}): void {
     this.#provider = provider;
     if ('reasoning' in options) this.#reasoning = options.reasoning;
-    if ('context' in options) this.#context = options.context;
+    if ('context' in options) {
+      this.#context = options.context;
+      this.#maxInMemoryMessages = defaultInMemoryLimit(this.#session, this.#context);
+    }
     if ('maxTokens' in options) this.#maxTokens = options.maxTokens;
   }
 
@@ -140,7 +145,12 @@ export class SnapdragonAgent {
   ) => sendProviderRequest(this.#providerRequestState(), replacement, tools, runId);
 
   readonly #appendMessage: AgentPromptState['appendMessage'] = (message) =>
-    appendAgentMessage({ messages: this.messages, session: this.#session, message });
+    appendAgentMessage({
+      maxInMemoryMessages: this.#maxInMemoryMessages,
+      messages: this.messages,
+      session: this.#session,
+      message,
+    });
 
   readonly #emit: AgentPromptState['emit'] = (event) =>
     emitAgentEvent({ listeners: this.#listeners, event });
@@ -162,4 +172,12 @@ export async function createCodingReplAgent(options: CodingOptions): Promise<Sna
 
 function codingSession(options: CodingAgentOptions): Map<string, unknown> | undefined {
   return options.codingTools ? options.codingTools.session : undefined;
+}
+
+function defaultInMemoryLimit(
+  session: AgentSession | undefined,
+  context: AgentContextOptions | undefined,
+): number | undefined {
+  if (!session || !context?.enabled) return undefined;
+  return Math.max(64, (context.freshTailCount ?? 32) * 2);
 }
