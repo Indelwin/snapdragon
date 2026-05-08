@@ -9,12 +9,15 @@ Use this skill when asked to inspect, start, stop, or debug Snapdragon backgroun
 The gateway is the background services host. In normal interactive `sd` runs it is daemon-backed by default; `--background inline` keeps services in-process for focused debugging, and `--background off` disables them.
 
 Useful commands:
-- `sd daemon status` shows whether the daemon is alive, the daemon root, service run/error counts, and channel root/count.
-- `sd daemon start` starts the daemon using the resolved `sd` config.
-- `sd daemon stop` stops the daemon.
-- `sd daemon run-once` runs each configured service once in a short-lived runtime.
+- `sd gateway status` shows Rust gateway daemon status, socket/store paths, worker state, service counters, and queue depth.
+- `sd gateway daemon start|stop|run-once` controls the Rust gateway daemon explicitly.
+- `sd gateway jobs enqueue|list|show|cancel` exercises the durable job queue.
+- `sd gateway sandboxes lease|list|release` exercises gateway-managed worktrees for isolated repo work.
+- Legacy `sd daemon status|start|stop|run-once` commands still cover the older daemon path where configured.
 - `sd --background inline ...` is best for reproducing a service bug locally.
 - `sd --no-background ...` is best when foreground agent behavior must be isolated.
+
+Inside the Snapdragon repo, use `./sd ...` unless a global binary is known to be installed. The root launcher is a temporary dogfooding convenience and should not be treated as the production install path.
 
 Useful files:
 - Daemon root defaults to `~/.snapdragon/sd/daemon`.
