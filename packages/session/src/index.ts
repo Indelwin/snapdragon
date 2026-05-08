@@ -17,6 +17,7 @@ export {
   type SessionMessagePreview,
 } from './message-preview.js';
 export { type SessionMetadata, sessionMetadata } from './metadata.js';
+export { type RecentMessageRecords, readRecentMessageRecords } from './recent-records.js';
 export {
   appendRecord,
   readRecordStats,

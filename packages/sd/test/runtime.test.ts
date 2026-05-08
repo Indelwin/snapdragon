@@ -62,7 +62,7 @@ test('createSdRuntime resumes an existing JSONL session and appends to it', asyn
     });
 
     assert.equal(resumed.session?.sessionId, 'alpha');
-    assert.equal(resumed.agent.messages.length, 0, 'resume must not eagerly hydrate agent memory');
+    assert.deepEqual(resumed.agent.messages, []);
     assert.deepEqual(
       resumed.session?.messages().map((message) => message.role),
       ['user', 'assistant'],

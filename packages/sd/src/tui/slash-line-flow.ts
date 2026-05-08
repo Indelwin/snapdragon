@@ -36,7 +36,7 @@ async function applySlashCommandResult(
   args.controller.bindRuntimeAgent();
   args.setAttachments(result.attachments);
   if (args.line === '/clear') args.controller.clearChat();
-  if (isTranscriptResetCommand(args.line)) args.controller.loadRuntimeTranscript();
+  if (isTranscriptResetCommand(args.line)) args.controller.loadSessionTranscript();
   args.controller.appendCommandOutput(capture.output());
   args.controller.appendCommandOutput(capture.error(), 'error');
   if (result.prompt) {
