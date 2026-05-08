@@ -11,9 +11,11 @@ import { runtimeWarningChatEntries } from './runtime-warnings.js';
 import { resolveSplashImagePath } from './splash-art.js';
 import { chatEntries, type EventEntry, eventEntries, toolEntries } from './state-readers.js';
 import {
+  initialTranscriptEntries,
   messageToEntry,
   runtimeTranscriptEntries,
   sessionMessageCount,
+  sessionTranscriptEntries,
 } from './transcript-entry.js';
 import { messageContentSummary } from './transcript-entry-content.js';
 import type { ChatEntry, ToolEntry } from './ui-entry.js';
@@ -80,7 +82,7 @@ export class SdUiController {
     this.#maxLogEntries = options.maxLogEntries ?? 80;
     this.world.applyMany(initialSdUiEvents(runtime));
     this.#syncCachedState();
-    if (runtime.agent.messages.length > 0) this.loadRuntimeTranscript();
+    this.#loadTranscript(initialTranscriptEntries(runtime, this.#maxEntries));
   }
 
   get activeRunId(): string | undefined {
@@ -216,12 +218,6 @@ export class SdUiController {
     this.world.apply(patch(id, { open: this.world.componentState(id).open === false }));
   }
 
-  /**
-   * Show the running spinner + shimmering label for a long-running slash
-   * command (e.g. `/reload sync`). Reuses the same prompt UI machinery the
-   * agent loop drives, just with a free-form `phase: 'task'` so the
-   * renderer prints `phaseLabel` verbatim. Pair with `endTask()`.
-   */
   beginTask(label: string): void {
     this.world.apply(patch(SD_UI_IDS.prompt, { running: true, phase: 'task', phaseLabel: label }));
   }
@@ -254,14 +250,19 @@ export class SdUiController {
   }
 
   loadRuntimeTranscript(): void {
-    const entries = trimChatEntries(
-      runtimeTranscriptEntries(this.runtime.agent.messages, this.#maxEntries),
-      this.#maxEntries,
-    );
-    this.#chatEntries = entries;
+    this.#loadTranscript(runtimeTranscriptEntries(this.runtime.agent.messages, this.#maxEntries));
+  }
+
+  loadSessionTranscript(): void {
+    this.#loadTranscript(sessionTranscriptEntries(this.runtime.session, this.#maxEntries));
+  }
+
+  #loadTranscript(entries: ChatEntry[]): void {
+    const trimmed = trimChatEntries(entries, this.#maxEntries);
+    this.#chatEntries = trimmed;
     this.world.applyMany([
-      patch(SD_UI_IDS.chat, { entries: chatEntriesToJson(entries) }),
-      patch(SD_UI_IDS.splash, { visible: entries.length === 0 }),
+      patch(SD_UI_IDS.chat, { entries: chatEntriesToJson(trimmed) }),
+      patch(SD_UI_IDS.splash, { visible: trimmed.length === 0 }),
       patch(SD_UI_IDS.sessionStatus, sessionState(this.runtime)),
     ]);
   }
@@ -280,9 +281,7 @@ export class SdUiController {
   }
 
   /**
-   * Register the AbortController for the in-flight `agent.prompt()` so the
-   * TUI can cancel the run on Esc without exiting the process. Cleared
-   * automatically when the run ends (success or error).
+   * Register the AbortController for Esc cancellation of an in-flight prompt.
    */
   setActiveAbortController(controller: AbortController | undefined): void {
     this.#activeAbort = controller;
