@@ -167,6 +167,32 @@ test('search with touch=true increments access counters on hits', () => {
   }
 });
 
+test('search ranking uses access count and recency as a retrieval boost', () => {
+  const idx = SdSearchIndex.open(':memory:');
+  try {
+    idx.sync('skill', [
+      skillEntry('alpha', 'shared routing workflow'),
+      skillEntry('bravo', 'shared routing workflow'),
+      skillEntry('charlie', 'shared routing workflow'),
+    ]);
+    idx.touch('skill', ['bravo']);
+    idx.touch('skill', ['bravo']);
+    idx.touch('skill', ['charlie']);
+
+    const now = Date.parse('2026-01-15T00:00:00Z');
+    const hits = idx.search('shared routing', 'skill', { now });
+
+    assert.deepEqual(
+      hits.map((hit) => hit.id),
+      ['bravo', 'charlie', 'alpha'],
+    );
+    assert.ok((hits[0]?.score ?? 0) > (hits[1]?.score ?? 0));
+    assert.ok((hits[1]?.score ?? 0) > (hits[2]?.score ?? 0));
+  } finally {
+    idx.close();
+  }
+});
+
 test('search without touch leaves counters at zero', () => {
   const idx = SdSearchIndex.open(':memory:');
   try {
