@@ -6,8 +6,8 @@ import type { SdRuntime } from '../runtime.js';
 import type { PromptCompletionState } from './input-completion.js';
 import { promptCompletionJson } from './prompt-completion-json.js';
 import { ProviderEventBuffer } from './provider-event-buffer.js';
+import { startupChatEntries } from './resume-summary-entry.js';
 import { runtimeStats } from './runtime-stats.js';
-import { runtimeWarningChatEntries } from './runtime-warnings.js';
 import { resolveSplashImagePath } from './splash-art.js';
 import { chatEntries, type EventEntry, eventEntries, toolEntries } from './state-readers.js';
 import {
@@ -637,7 +637,7 @@ export function initialSdUiEvents(runtime: SdRuntime): UiEvent[] {
       stats: runtimeStats(runtime),
     }),
     register(SD_UI_IDS.chat, 'chat.transcript', 'main', 0, {
-      entries: runtimeWarningChatEntries(runtime),
+      entries: startupChatEntries(runtime),
     }),
     register(SD_UI_IDS.toolPanel, 'tool.panel', 'panel', 0, { tools: [], open: true }),
     register(SD_UI_IDS.eventLog, 'event.log', 'panel', 1, { entries: [], open: false }),
