@@ -39,6 +39,7 @@ export type SdSearchHit = {
 export type SdSearchOptions = Partial<{
   limit: number;
   touch: boolean;
+  now: number;
 }>;
 
 export type SdDbRow = {
