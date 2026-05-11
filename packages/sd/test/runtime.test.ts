@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import test from 'node:test';
 import { parseArgs } from '../src/args.ts';
-import { handleCommand, replHeader, runOneShot, type SdIo } from '../src/repl.ts';
+import { handleCommand, replHeader, runInteractive, runOneShot, type SdIo } from '../src/repl.ts';
 import { createSdRuntime } from '../src/runtime.ts';
 import { runtimeSessionStore } from '../src/runtime-session.ts';
 
@@ -79,7 +79,7 @@ test('createSdRuntime resumes an existing JSONL session and appends to it', asyn
   }
 });
 
-test('repl header surfaces a resumed session startup summary', async () => {
+test('repl startup surfaces a resumed session summary', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-resume-summary-'));
   try {
     const configPath = await writeMockConfig(workspace);
@@ -93,8 +93,13 @@ test('repl header surfaces a resumed session startup summary', async () => {
       sessionId: 'alpha',
       resume: true,
     });
+    const io = memoryIo('/quit\n');
 
     assert.match(replHeader(resumed), /Resumed alpha: .*\(2 messages\)/);
+
+    await runInteractive(resumed, io.io);
+
+    assert.match(io.output(), /Resumed alpha: .*\(2 messages\)/);
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
@@ -389,12 +394,12 @@ async function writeProfile(root: string, name: string, lines: string[]): Promis
   await writeFile(join(dir, 'profile.yaml'), lines.join('\n'), 'utf8');
 }
 
-function memoryIo(): { io: SdIo; output(): string; error(): string } {
+function memoryIo(input = ''): { io: SdIo; output(): string; error(): string } {
   let output = '';
   let error = '';
   return {
     io: {
-      input: Readable.from([]),
+      input: Readable.from([input]),
       output: new Writable({
         write(chunk, _encoding, callback) {
           output += chunk.toString();
