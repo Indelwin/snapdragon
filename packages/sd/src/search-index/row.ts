@@ -1,6 +1,10 @@
+import { usageRecencyBoost } from './ranking.js';
 import type { SdDbRow, SdSearchHit } from './types.js';
 
-export function rowToHit(row: SdDbRow): SdSearchHit {
+export function rowToHit(row: SdDbRow, now?: number): SdSearchHit {
+  const accessCount = row.access_count;
+  const lastAccessedAt = undefinedNumberIfNull(row.last_accessed_at);
+  const lexicalScore = -row.rank;
   return {
     kind: row.kind,
     id: row.id,
@@ -10,9 +14,9 @@ export function rowToHit(row: SdDbRow): SdSearchHit {
     tags: parseTagText(row.tags),
     source: undefinedIfNull(row.source),
     path: row.path,
-    score: -row.rank,
-    accessCount: row.access_count,
-    lastAccessedAt: undefinedNumberIfNull(row.last_accessed_at),
+    score: lexicalScore + usageRecencyBoost({ accessCount, lastAccessedAt, now }),
+    accessCount,
+    lastAccessedAt,
   };
 }
 
