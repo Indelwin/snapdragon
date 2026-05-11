@@ -177,6 +177,7 @@ export { makeSdProvider, type SdProviderRuntime } from './provider.js';
 export {
   defaultIo,
   handleCommand,
+  replHeader,
   runInteractive,
   runInteractive as runRepl,
   runOneShot,

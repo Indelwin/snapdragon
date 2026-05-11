@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import test from 'node:test';
 import { parseArgs } from '../src/args.ts';
-import { handleCommand, runOneShot, type SdIo } from '../src/repl.ts';
+import { handleCommand, replHeader, runOneShot, type SdIo } from '../src/repl.ts';
 import { createSdRuntime } from '../src/runtime.ts';
 import { runtimeSessionStore } from '../src/runtime-session.ts';
 
@@ -74,6 +74,27 @@ test('createSdRuntime resumes an existing JSONL session and appends to it', asyn
       resumed.session?.messages().map((message) => message.role),
       ['user', 'assistant', 'user', 'assistant'],
     );
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('repl header surfaces a resumed session startup summary', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-resume-summary-'));
+  try {
+    const configPath = await writeMockConfig(workspace);
+    const first = await createSdRuntime({ cwd: workspace, configPath, sessionId: 'alpha' });
+
+    await runOneShot(first, 'hello', [], memoryIo().io);
+
+    const resumed = await createSdRuntime({
+      cwd: workspace,
+      configPath,
+      sessionId: 'alpha',
+      resume: true,
+    });
+
+    assert.match(replHeader(resumed), /Resumed alpha: .*\(2 messages\)/);
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
