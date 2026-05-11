@@ -5,6 +5,7 @@ import { contentWithAttachments, type PendingAttachment } from './attachments.js
 import { type CommandResult, handleCommand } from './commands.js';
 import { maybeAutoCaptureMemory, requestInputWithMemory } from './memory.js';
 import { RunRenderer } from './renderer.js';
+import { resumeStartupSummary } from './resume-summary.js';
 import type { SdRuntime } from './runtime.js';
 import { runtimeWarningLines } from './runtime-warnings.js';
 
@@ -51,7 +52,7 @@ export async function runOneShot(
 export async function runInteractive(runtime: SdRuntime, io: SdIo = defaultIo): Promise<void> {
   const rl = createInterface({ input: io.input, output: io.output });
   let attachments: PendingAttachment[] = [];
-  io.output.write(header(runtime));
+  io.output.write(replHeader(runtime));
   try {
     while (true) {
       const line = await rl.question('sd> ');
@@ -100,12 +101,14 @@ async function tryCommand(
   }
 }
 
-function header(runtime: SdRuntime): string {
+export function replHeader(runtime: SdRuntime): string {
   const session = runtime.session ? `session ${runtime.session.sessionId}` : 'no session';
   const profile = runtime.profile ? `profile ${runtime.profile.name}` : 'no profile';
+  const resumed = resumeStartupSummary(runtime);
   return [
     `sd ${runtime.provider.id}/${runtime.provider.model} (${session}, ${profile})`,
     ...runtimeWarningLines(runtime),
+    ...(resumed ? [resumed] : []),
     'Type /help for commands.',
     '',
   ].join('\n');
