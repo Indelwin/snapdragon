@@ -163,6 +163,7 @@ export function defaultSdConfig(): SdConfig {
       },
     },
     todo: { enabled: true, file: DEFAULT_SD_TODO_PATH },
+    webtools: { enabled: true },
     skills: {
       authoring: true,
       builtins: true,

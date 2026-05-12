@@ -2,6 +2,7 @@ import type { SnapdragonAgent } from '@snapdragon-ai/agent';
 import { normalizeToolsetsConfig } from '@snapdragon-ai/config';
 import type { SdSessionIndex } from '@snapdragon-ai/session';
 import { memoryToolset, skillToolset } from '@snapdragon-ai/tools';
+import { webtoolsToolset } from '@snapdragon-ai/webtools';
 import type { SdConfig } from './config.js';
 import type { SdExtensionRuntime } from './extension-runtime.js';
 import type { SdMemoryProvider } from './memory.js';
@@ -26,6 +27,7 @@ export async function registerRuntimeToolsets(args: {
     memoryToolset({ provider: args.memory, authoring: args.config.memory?.authoring ?? true }),
   );
   await registerTodoToolset(args);
+  await registerWebtoolsToolset(args);
   if (args.sessionIndex) {
     await args.agent.registry.register(searchMessagesToolset(args.sessionIndex));
   }
@@ -39,6 +41,19 @@ async function registerTodoToolset(args: {
   todo: SdTodoStore;
 }): Promise<void> {
   if (args.config.todo?.enabled ?? true) await args.agent.registry.register(todoToolset(args.todo));
+}
+
+async function registerWebtoolsToolset(args: {
+  agent: SnapdragonAgent;
+  config: SdConfig;
+}): Promise<void> {
+  if (!(args.config.webtools?.enabled ?? true)) return;
+  await args.agent.registry.register(
+    webtoolsToolset({
+      defaultUserAgent: args.config.webtools?.default_user_agent,
+      defaultTimeoutMs: args.config.webtools?.default_timeout_ms,
+    }),
+  );
 }
 
 function applyToolsetFilters(agent: SnapdragonAgent, config: SdConfig): void {
