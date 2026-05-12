@@ -118,12 +118,19 @@ export interface SdTodoConfig {
   file?: string;
 }
 
+export interface SdWebtoolsConfig {
+  enabled?: boolean;
+  default_user_agent?: string;
+  default_timeout_ms?: number;
+}
+
 export interface SdConfig {
   version: 1;
   default_provider: string;
   providers: Record<string, SdProviderConfig>;
   sessions?: SdSessionConfig;
   todo?: SdTodoConfig;
+  webtools?: SdWebtoolsConfig;
   skills?: SdSkillsConfig;
   memory?: SdMemoryConfig;
   extensions?: SdExtensionsConfig;

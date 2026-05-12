@@ -36,6 +36,7 @@
     "@snapdragon-ai/host": "0.1.1",
     "@snapdragon-ai/session": "0.1.1",
     "@snapdragon-ai/tools": "0.1.1",
+    "@snapdragon-ai/webtools": "0.1.0",
     "@snapdragon-ai/ui": "0.1.1",
     "@types/figlet": "^1.7.0",
     "@zenobius/ink-mouse": "^1.0.3",
