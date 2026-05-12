@@ -13,6 +13,7 @@ export interface SdAgentContextConfig {
 export interface SdAgentConfig {
   max_turns?: number;
   max_tool_result_bytes?: number;
+  max_tool_call_args_bytes?: number;
   context?: SdAgentContextConfig;
   temperature?: number;
   max_tokens?: number;

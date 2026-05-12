@@ -5,7 +5,13 @@ members = [
     "crates/gateway-core",
     "crates/gateway-daemon",
     "crates/gateway-wasm",
+    "crates/webtools",
 ]
+# `webtools` is intentionally excluded from default-members so a bare
+# `cargo build` from the repo root stays on the lean WASI/native path used by
+# the rest of the workspace. It's built explicitly via
+# `scripts/build-webtools-wasm.sh` (wasm32-unknown-unknown) and tested via
+# `cargo test -p snapdragon-webtools` for the native-rlib unit tests.
 default-members = [
     "crates/core",
     "crates/gateway-core",

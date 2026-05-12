@@ -3,6 +3,7 @@ import type { AgentPromptState } from './agent-prompt-types.js';
 import { emitProviderEvent } from './events.js';
 import { emptyResponseMessage, isEmptyContent } from './response-content.js';
 import { parseToolArgs } from './tool-args.js';
+import { clampToolCallsForHistory } from './tool-call-history.js';
 import { clampToolResult } from './tool-result.js';
 
 export async function appendAssistantResponse(
@@ -13,7 +14,7 @@ export async function appendAssistantResponse(
   const assistantMessage: Message = {
     role: 'assistant',
     content: response.content,
-    tool_calls: response.tool_calls,
+    tool_calls: clampToolCallsForHistory(response.tool_calls, state.maxToolCallArgsBytes),
     thinking: response.thinking,
   };
   await state.appendMessage(assistantMessage);

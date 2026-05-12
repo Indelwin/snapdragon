@@ -26,6 +26,8 @@
       "@snapdragon-ai/config": ["packages/config/src/index.ts"],
       "@snapdragon-ai/tools": ["packages/tools/src/index.ts"],
       "@snapdragon-ai/tools/*": ["packages/tools/src/*"],
+      "@snapdragon-ai/webtools": ["packages/webtools/src/index.ts"],
+      "@snapdragon-ai/webtools/*": ["packages/webtools/src/*"],
       "@snapdragon-ai/checkpoint": ["packages/checkpoint/src/index.ts"],
       "@snapdragon-ai/agent": ["packages/agent/src/index.ts"],
       "@snapdragon-ai/sd": ["packages/sd/src/index.ts"],

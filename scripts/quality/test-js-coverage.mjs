@@ -23,7 +23,10 @@ async function testWorkspaces() {
     const packagePath = join(root, workspace, 'package.json');
     const packageJson = await readPackage(packagePath);
     if (packageJson?.scripts?.test)
-      out.push({ dir: join(root, workspace), script: packageJson.scripts.test });
+      out.push({
+        dir: join(root, workspace),
+        prepareScript: packageJson.scripts['test:coverage:prepare'],
+      });
   }
   return out;
 }
@@ -39,6 +42,10 @@ async function readPackage(file) {
 async function runWorkspaceTests(workspace) {
   const testFiles = await workspaceTestFiles(workspace.dir);
   if (testFiles.length === 0) return;
+  if (workspace.prepareScript) {
+    const prepareCode = await spawnCommand('npm', ['run', 'test:coverage:prepare'], workspace.dir);
+    if (prepareCode !== 0) process.exit(prepareCode);
+  }
   const args = ['--test', '--experimental-test-coverage', '--import', 'tsx', ...testFiles];
   const code = await spawnNode(args, workspace.dir);
   if (code !== 0) process.exit(code);
@@ -51,10 +58,14 @@ async function workspaceTestFiles(dir) {
 }
 
 function spawnNode(args, cwd) {
+  return spawnCommand(process.execPath, args, cwd, { NODE_V8_COVERAGE: rawCoverageDir });
+}
+
+function spawnCommand(command, args, cwd, env = {}) {
   return new Promise((resolveCode) => {
-    const child = spawn(process.execPath, args, {
+    const child = spawn(command, args, {
       cwd,
-      env: { ...process.env, NODE_V8_COVERAGE: rawCoverageDir },
+      env: { ...process.env, ...env },
       stdio: 'inherit',
     });
     child.on('close', resolveCode);
