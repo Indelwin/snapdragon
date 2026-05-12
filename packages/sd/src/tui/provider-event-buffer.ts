@@ -8,10 +8,12 @@ type BufferedProviderEvent = Extract<
 
 const STREAM_PATCH_INTERVAL_MS = 33;
 const BUFFERED_EVENT_KINDS = new Set(['text', 'thinking', 'input_json_delta']);
+export const MAX_PROVIDER_EVENT_BUFFER_CHARS = 64_000;
 
 export class ProviderEventBuffer {
   readonly #flushEvents: (events: readonly BufferedProviderEvent[]) => void;
   #events: BufferedProviderEvent[] = [];
+  #bufferedChars = 0;
   #timer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(flushEvents: (events: readonly BufferedProviderEvent[]) => void) {
@@ -29,6 +31,8 @@ export class ProviderEventBuffer {
     this.#clearTimer();
     const events = this.#events;
     this.#events = [];
+    this.#bufferedChars = 0;
+    if (events.length === 0) return;
     this.#flushEvents(events);
   }
 
@@ -39,6 +43,11 @@ export class ProviderEventBuffer {
       this.#events[index] = { ...last, delta: last.delta + event.delta };
     } else {
       this.#events.push(event);
+    }
+    this.#bufferedChars += event.delta.length;
+    if (this.#bufferedChars >= MAX_PROVIDER_EVENT_BUFFER_CHARS) {
+      this.flush();
+      return;
     }
     if (this.#timer === undefined) {
       this.#timer = setTimeout(() => this.flush(), STREAM_PATCH_INTERVAL_MS);

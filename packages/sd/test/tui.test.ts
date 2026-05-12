@@ -17,6 +17,10 @@ import {
   type PromptCompletionState,
 } from '../src/tui/input-completion.ts';
 import { handleGlobalInput, handlePromptInput } from '../src/tui/input-keymap.ts';
+import {
+  MAX_PROVIDER_EVENT_BUFFER_CHARS,
+  ProviderEventBuffer,
+} from '../src/tui/provider-event-buffer.ts';
 import { chatEntries } from '../src/tui/state-readers.ts';
 import { visibleWrappedTranscriptRows } from '../src/tui/transcript-viewport.ts';
 import {
@@ -136,6 +140,22 @@ test('SdUiController bounds long streaming text in live UI state', async () => {
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
+});
+
+test('ProviderEventBuffer flushes large synchronous stream bursts', () => {
+  const batches: Array<readonly unknown[]> = [];
+  const buffer = new ProviderEventBuffer((events) => batches.push(events));
+  const delta = 'x'.repeat(8_000);
+
+  while (batches.length === 0) {
+    buffer.accept({
+      type: 'provider_event',
+      event: { kind: 'text', run_id: 'run_1', provider: 'mock', delta },
+    });
+  }
+
+  const flushedChars = JSON.stringify(batches[0]).length;
+  assert.ok(flushedChars < MAX_PROVIDER_EVENT_BUFFER_CHARS + delta.length + 500);
 });
 
 test('SdUiController keeps tool-loop assistant output to one visible response', async () => {
