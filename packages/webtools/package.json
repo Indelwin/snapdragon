@@ -25,12 +25,20 @@
     "./crawl": {
       "types": "./dist/crawl.d.ts",
       "import": "./dist/crawl.js"
+    },
+    "./toolset": {
+      "types": "./dist/toolset.d.ts",
+      "import": "./dist/toolset.js"
     }
   },
   "files": [
     "dist",
     "README.md"
   ],
+  "dependencies": {
+    "@snapdragon-ai/core": "0.1.1",
+    "@snapdragon-ai/tools": "0.1.1"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "build:wasm": "bash ../../scripts/build-webtools-wasm.sh",
