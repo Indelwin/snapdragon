@@ -16,6 +16,8 @@ export type { RobotsCheck } from './robots.js';
 export { Robots, robots } from './robots.js';
 export type { SearchOptions, SearchResult } from './search.js';
 export { webSearch } from './search.js';
+export type { WebtoolsToolsetOptions } from './toolset.js';
+export { webtoolsToolset } from './toolset.js';
 export type { UrlUtilRequest } from './url.js';
 export { UrlUtils, urlUtils } from './url.js';
 export type { WebtoolsCore, WebtoolsOp } from './wasm.js';

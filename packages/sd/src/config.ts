@@ -55,6 +55,7 @@ export type {
   SdSkillsConfig,
   SdTodoConfig,
   SdToolsetsConfig,
+  SdWebtoolsConfig,
 } from './config-schema.js';
 export type { SdTuiConfig, SdTuiMouseConfig } from './tui-config.js';
 
@@ -92,6 +93,7 @@ export function withDefaults(input: Partial<SdConfig>): SdConfig {
     providers,
     sessions: mergeSessionConfig(defaults.sessions, input.sessions),
     todo: { ...defaults.todo, ...(input.todo ?? {}) },
+    webtools: { ...defaults.webtools, ...(input.webtools ?? {}) },
     skills: mergeSkillsConfig(defaults.skills, input.skills),
     memory: mergeMemoryConfig(defaults.memory, input.memory),
     extensions: mergeExtensionsConfig(defaults.extensions, input.extensions),

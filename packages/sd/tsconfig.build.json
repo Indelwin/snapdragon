@@ -15,7 +15,8 @@
     { "path": "../host/tsconfig.build.json" },
     { "path": "../session/tsconfig.build.json" },
     { "path": "../tools/tsconfig.build.json" },
-    { "path": "../ui/tsconfig.build.json" }
+    { "path": "../ui/tsconfig.build.json" },
+    { "path": "../webtools/tsconfig.build.json" }
   ],
   "include": ["src/**/*.ts", "src/**/*.tsx"]
 }
