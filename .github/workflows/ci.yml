@@ -36,7 +36,7 @@ jobs:
 
       - name: Setup Rust
         run: |
-          rustup toolchain install stable --profile minimal --component rustfmt --target wasm32-wasip2
+          rustup toolchain install stable --profile minimal --component rustfmt --target wasm32-wasip2 --target wasm32-unknown-unknown
           rustup default stable
 
       - name: Cache Cargo

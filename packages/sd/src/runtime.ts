@@ -160,6 +160,7 @@ export async function createSdAgent(
     systemPrompt,
     maxTurns: config.agent?.max_turns,
     maxToolResultBytes: config.agent?.max_tool_result_bytes,
+    maxToolCallArgsBytes: config.agent?.max_tool_call_args_bytes,
     context: contextOptions(config, provider),
     temperature: config.agent?.temperature,
     maxTokens: config.agent?.max_tokens,

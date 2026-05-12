@@ -64,6 +64,7 @@ function defaultMemory(): SdMemoryConfig {
 
 function defaultAgent(): SdConfig['agent'] {
   return {
+    max_tool_call_args_bytes: 64_000,
     // Output budget counts thinking + final text. With reasoning enabled by
     // default the model can burn a chunk of this before visible output.
     max_tokens: 32_000,

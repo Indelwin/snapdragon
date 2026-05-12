@@ -270,6 +270,44 @@ test('agent truncates oversized tool results before they enter provider history'
   assert.ok(Buffer.byteLength(String(toolMessage?.content ?? ''), 'utf8') < 100);
 });
 
+test('agent keeps oversized tool call arguments executable but bounded in history', async () => {
+  const mock = mockProvider();
+  const largeValue = 'x'.repeat(5_000);
+  mock.enqueueResponse({
+    content: '',
+    tool_calls: [
+      {
+        id: 'call_1',
+        name: 'repl_eval',
+        args_json: JSON.stringify({ code: JSON.stringify(largeValue) }),
+      },
+    ],
+  });
+  mock.enqueue('done');
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-agent-')) });
+  const session = store.create('agent_tool_arg_history');
+
+  const agent = await createCodingReplAgent({
+    provider: mock.handler,
+    cwd: process.cwd(),
+    session,
+    maxToolCallArgsBytes: 512,
+  });
+  await agent.prompt('write a huge arg');
+
+  const assistant = agent.messages.find((message) => message.role === 'assistant');
+  const argsJson = assistant?.tool_calls?.[0]?.args_json ?? '';
+  assert.ok(Buffer.byteLength(argsJson, 'utf8') <= 512);
+  assert.doesNotThrow(() => JSON.parse(argsJson));
+  assert.match(argsJson, /tool call argument truncated for history|_snapdragon_args_truncated/);
+  assert.ok(
+    session
+      .messageRecords()
+      .some((message) => message.tool_calls?.some((call) => call.args_json === argsJson)),
+  );
+  assert.match(String(agent.messages.find((message) => message.role === 'tool')?.content), /xxx/);
+});
+
 test('agent sends compacted session context when context windowing is enabled', async () => {
   const mock = mockProvider();
   mock.enqueue('done');

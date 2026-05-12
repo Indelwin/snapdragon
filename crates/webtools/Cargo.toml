@@ -1,0 +1,30 @@
+[package]
+name        = "snapdragon-webtools"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Snapdragon web crawling primitives: URL normalisation, robots.txt, HTML→markdown extraction, BM25 chunking, sitemap parsing. Targets wasm32-unknown-unknown for in-process use from the @snapdragon-ai/webtools npm package."
+
+[lib]
+# `cdylib` so we can build to wasm32-unknown-unknown and load it from Node.
+# `rlib` so native `cargo test` still works for the pure-Rust unit tests.
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+url            = { version = "2", default-features = false }
+serde          = { workspace = true, features = ["std", "derive"] }
+serde_json     = { workspace = true, features = ["std"] }
+regex          = "1"
+scraper        = "0.24"
+lazy_static    = "1"
+
+# Native-only optional parser dependency is avoided here: the wasm core only
+# parses robots bodies supplied by the TS host; fetching/caching stays in TS.
+
+[dev-dependencies]
+serde_json     = { workspace = true, features = ["std"] }
+
+# Keep the wasm binary lean. Inherits workspace `[profile.release]` (opt-level
+# = "z", LTO fat, panic = abort, strip), which is what we want for the
+# in-process webtools artefact.
