@@ -124,6 +124,29 @@ test('JSONL sessions read bounded recent messages without loading all records', 
   assert.equal(reopened.recentMessages(0).messages.length, 0);
 });
 
+test('JSONL session full-record reads do not retain stale in-memory history', () => {
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-session-')) });
+  const session = store.create('session_fresh_reads');
+  session.appendMessage({ role: 'user', content: 'first' });
+
+  assert.equal(session.records().filter((record) => record.type === 'message').length, 1);
+
+  appendFileSync(
+    session.jsonlPath,
+    `${JSON.stringify({
+      type: 'message',
+      store_id: 2,
+      role: 'assistant',
+      content: 'second',
+      created_at: 2,
+    })}\n`,
+    'utf8',
+  );
+
+  assert.equal(session.records().filter((record) => record.type === 'message').length, 2);
+  assert.equal(session.messageCount(), 2);
+});
+
 test('message preview reader skips large tool payloads without dropping adjacent messages', async () => {
   const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-session-')) });
   const session = store.create('session_preview');

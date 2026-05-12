@@ -1,6 +1,6 @@
 import { DEFAULT_SD_SESSION_TITLE_MODEL } from './config.js';
 import type { SdRuntime } from './runtime.js';
-import { fallbackTitleFromMessages, sessionTitle } from './session-summary.js';
+import { fallbackTitleFromMessages } from './session-summary.js';
 import { tryGenerateProviderTitle } from './session-title-provider.js';
 
 export const DEFAULT_SESSION_TITLE_MODEL = DEFAULT_SD_SESSION_TITLE_MODEL;
@@ -23,10 +23,10 @@ export async function ensureSessionTitle(
 ): Promise<string | undefined> {
   const session = runtime.session;
   if (!session) return undefined;
-  const existing = sessionTitle(session.records());
+  const existing = metadataTitle(session.metadata());
   if (existing) return existing;
 
-  const fallback = fallbackTitleFromMessages(session.messages());
+  const fallback = fallbackTitleFromMessages(session.recentMessages(20).messages);
   if (!fallback) return undefined;
   if (runtime.config.sessions?.title?.enabled === false) return fallback;
 
@@ -39,6 +39,11 @@ export async function ensureSessionTitle(
     title_model: cleanGenerated ? generated?.model : undefined,
   });
   return title;
+}
+
+function metadataTitle(metadata: Record<string, unknown>): string | undefined {
+  const title = metadata.title;
+  return typeof title === 'string' && title.trim() ? title.trim() : undefined;
 }
 
 function cleanTitle(title: string | undefined): string | undefined {
