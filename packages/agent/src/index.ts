@@ -29,6 +29,7 @@ type CodingOptions = CodingAgentOptions & ReasoningOptions;
 type AgentArgsPlus = SnapdragonAgentArgs & ReasoningOptions;
 
 const DEFAULT_MAX_TOOL_RESULT_BYTES = 64_000;
+const DEFAULT_MAX_TOOL_CALL_ARGS_BYTES = 64_000;
 
 export { defaultCodingSystemPrompt, defaultSystemPrompt } from './prompts.js';
 export type * from './types.js';
@@ -42,6 +43,7 @@ export class SnapdragonAgent {
   #profile?: Profile;
   #maxTurns: number;
   #maxToolResultBytes: number;
+  #maxToolCallArgsBytes: number;
   #maxInMemoryMessages: number | undefined;
   #context?: AgentContextOptions;
   #temperature?: number;
@@ -62,6 +64,7 @@ export class SnapdragonAgent {
     this.#profile = args.profile;
     this.#maxTurns = args.maxTurns;
     this.#maxToolResultBytes = args.maxToolResultBytes;
+    this.#maxToolCallArgsBytes = args.maxToolCallArgsBytes;
     this.#maxInMemoryMessages = defaultInMemoryLimit(args.session, args.context);
     this.#context = args.context;
     this.#temperature = args.temperature;
@@ -84,6 +87,7 @@ export class SnapdragonAgent {
       profile: options.profile,
       maxTurns: options.maxTurns ?? Number.POSITIVE_INFINITY,
       maxToolResultBytes: options.maxToolResultBytes ?? DEFAULT_MAX_TOOL_RESULT_BYTES,
+      maxToolCallArgsBytes: options.maxToolCallArgsBytes ?? DEFAULT_MAX_TOOL_CALL_ARGS_BYTES,
       context: options.context,
       temperature: options.temperature,
       maxTokens: options.maxTokens,
@@ -116,6 +120,7 @@ export class SnapdragonAgent {
       agent: this,
       maxTurns: this.#maxTurns,
       maxToolResultBytes: this.#maxToolResultBytes,
+      maxToolCallArgsBytes: this.#maxToolCallArgsBytes,
       appendMessage: this.#appendMessage,
       appendMeta: (meta) => appendAgentMeta({ session: this.#session, meta }),
       emit: this.#emit,
