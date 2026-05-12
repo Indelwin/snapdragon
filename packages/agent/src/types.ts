@@ -16,6 +16,7 @@ export interface AgentOptions {
   profile?: Profile;
   maxTurns?: number;
   maxToolResultBytes?: number;
+  maxToolCallArgsBytes?: number;
   context?: AgentContextOptions;
   temperature?: number;
   maxTokens?: number;
@@ -39,6 +40,7 @@ export interface SnapdragonAgentArgs {
   profile?: Profile;
   maxTurns: number;
   maxToolResultBytes: number;
+  maxToolCallArgsBytes: number;
   context?: AgentContextOptions;
   temperature?: number;
   maxTokens?: number;

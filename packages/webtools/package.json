@@ -1,0 +1,43 @@
+{
+  "name": "@snapdragon-ai/webtools",
+  "version": "0.1.0",
+  "description": "Web crawling and extraction toolset for Snapdragon: Rust/WASM compute core (URL, robots, extract, BM25) + TypeScript I/O (fetch, Camofox, BFS).",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./url": {
+      "types": "./dist/url.d.ts",
+      "import": "./dist/url.js"
+    },
+    "./extract": {
+      "types": "./dist/extract-page.d.ts",
+      "import": "./dist/extract-page.js"
+    },
+    "./search": {
+      "types": "./dist/search.d.ts",
+      "import": "./dist/search.js"
+    },
+    "./crawl": {
+      "types": "./dist/crawl.d.ts",
+      "import": "./dist/crawl.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "build:wasm": "bash ../../scripts/build-webtools-wasm.sh",
+    "clean": "rm -rf dist/*.js dist/*.d.ts dist/*.map dist/*.tsbuildinfo",
+    "test": "npm run build:wasm && node --test --import tsx test/*.test.ts",
+    "test:coverage:prepare": "npm run build:wasm",
+    "typecheck": "tsc -b tsconfig.build.json --pretty false"
+  },
+  "license": "MIT"
+}
