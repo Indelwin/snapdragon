@@ -55,7 +55,7 @@ function generatedTitle(
 }
 
 function titlePrompt(session: JsonlSession | undefined): string | undefined {
-  const messages = session?.messages() ?? [];
+  const messages = session?.recentMessages(20).messages ?? [];
   const user = messages.find((message) => message.role === 'user');
   if (!user) return undefined;
   const assistant = messages.find((message) => message.role === 'assistant');

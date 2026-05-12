@@ -4,6 +4,7 @@ import type { ContextWindowOptions } from './context-options.js';
 import type { ContextChunkInput } from './context-summary.js';
 import { assembleContextWindow, recordToMessage } from './context-window.js';
 import { type SessionMetadata, sessionMetadata } from './metadata.js';
+import { readMetadataRecords } from './metadata-records.js';
 import { readRecentMessageRecords } from './recent-records.js';
 import {
   appendRecord,
@@ -36,7 +37,6 @@ export class JsonlSession {
   #nextStoreId = 1;
   #nextChunkId = 1;
   #messageCount = 0;
-  #records: SessionRecord[] | undefined;
 
   constructor(options: JsonlSessionOptions) {
     this.sessionId = options.sessionId;
@@ -92,15 +92,15 @@ export class JsonlSession {
   }
 
   records(): SessionRecord[] {
-    return this.#loadRecords().slice();
+    return this.#readRecords();
   }
 
   metadata(): SessionMetadata {
-    return sessionMetadata(this.#loadRecords());
+    return sessionMetadata(readMetadataRecords(this.jsonlPath));
   }
 
   messageRecords(): SessionMessageRecord[] {
-    return this.#loadRecords().filter(
+    return this.#readRecords().filter(
       (record): record is SessionMessageRecord => record.type === 'message',
     );
   }
@@ -111,7 +111,6 @@ export class JsonlSession {
 
   recentMessages(limit: number): { messages: Message[]; omitted: number } {
     const bounded = Math.max(0, Math.floor(limit));
-    if (this.#records) return recentCachedMessages(this.#records, bounded);
     const recent = readRecentMessageRecords(this.jsonlPath, bounded);
     return {
       messages: recent.records.map(recordToMessage),
@@ -124,13 +123,13 @@ export class JsonlSession {
   }
 
   contextChunks(): SessionContextChunkRecord[] {
-    return this.#loadRecords().filter(
+    return this.#readRecords().filter(
       (record): record is SessionContextChunkRecord => record.type === 'context_chunk',
     );
   }
 
   assembleContext(options: ContextWindowOptions = {}): Message[] {
-    const records = this.#loadRecords();
+    const records = this.#readRecords();
     return assembleContextWindow(
       { messages: messageRecords(records), chunks: contextChunks(records) },
       options,
@@ -138,7 +137,7 @@ export class JsonlSession {
   }
 
   compactContext(options: ContextWindowOptions = {}): ContextCompactionResult {
-    const records = this.#loadRecords();
+    const records = this.#readRecords();
     return compactSessionContext({
       messages: messageRecords(records),
       chunks: contextChunks(records),
@@ -158,15 +157,14 @@ export class JsonlSession {
   #appendRecord(record: SessionRecord): void {
     appendRecord(this.jsonlPath, record);
     if (record.type === 'message') this.#messageCount += 1;
-    this.#records?.push(record);
   }
 
-  #loadRecords(): SessionRecord[] {
-    this.#records ??= readRecords(this.jsonlPath);
-    this.#nextStoreId = nextStoreId(this.#records);
-    this.#nextChunkId = nextChunkId(this.#records);
-    this.#messageCount = messageRecords(this.#records).length;
-    return this.#records;
+  #readRecords(): SessionRecord[] {
+    const records = readRecords(this.jsonlPath);
+    this.#nextStoreId = nextStoreId(records);
+    this.#nextChunkId = nextChunkId(records);
+    this.#messageCount = messageRecords(records).length;
+    return records;
   }
 }
 
@@ -194,16 +192,4 @@ export function openSessionFile(options: JsonlSessionOptions): JsonlSession {
     throw new Error(`session does not exist at ${options.jsonlPath}`);
   }
   return new JsonlSession(options);
-}
-
-function recentCachedMessages(
-  records: SessionRecord[],
-  limit: number,
-): { messages: Message[]; omitted: number } {
-  const all = messageRecords(records);
-  const visible = limit > 0 ? all.slice(-limit) : [];
-  return {
-    messages: visible.map(recordToMessage),
-    omitted: Math.max(0, all.length - visible.length),
-  };
 }

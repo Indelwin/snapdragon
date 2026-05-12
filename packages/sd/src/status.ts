@@ -98,7 +98,7 @@ export function gatherSdStatus(runtime: SdRuntime, now = Date.now): SdStatusRepo
     cwd: runtime.agent.cwd,
     git: collectGitInfo(runtime.agent.cwd),
     session: runtime.session
-      ? { id: runtime.session.sessionId, messages: runtime.session.messages().length }
+      ? { id: runtime.session.sessionId, messages: runtime.session.messageCount() }
       : undefined,
     profile: runtime.profile?.name,
     services: runtime.background.list(),
