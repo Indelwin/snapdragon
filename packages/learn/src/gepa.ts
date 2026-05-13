@@ -3,32 +3,30 @@
 // `optimizeGepa(...)` runs a Pareto-front-driven prompt/skill/target search:
 //
 //   1. Evaluate the seed candidate on a minibatch from the TaskSource.
-//   2. Until budget or early-stop hits:
-//        a. Sample a parent from the current Pareto front.
-//        b. Pick one target to edit (round-robin for now).
-//        c. Ask the adapter to evaluate the parent on a fresh minibatch
-//           (this gives reflective evidence: trace + rubric per task).
-//        d. Ask the adapter to propose new text for the target.
-//        e. Validate; build a child candidate; evaluate it on the same batch.
-//        f. Accept (add to history + Pareto re-computation) if the child
-//           improves on the parent's batch mean by at least `minImprovement`.
+//   2. Until budget or early-stop hits, each iteration either:
+//        Mutation step (default):
+//          a. Sample a parent from the current Pareto front.
+//          b. Pick one target to edit (round-robin for now).
+//          c. Ask the adapter to evaluate the parent on a fresh minibatch
+//             (gives reflective evidence: trace + rubric per task).
+//          d. Record the evidence into per-target feedback memory.
+//          e. Ask the adapter to propose new text for the target, passing
+//             both the current batch's evidence and the cumulative memory.
+//          f. Validate; build a child; evaluate on the same batch.
+//          g. Accept if child >= parent batch mean + minImprovement.
+//        Merge step (with probability `mergeProbability`):
+//          a. Pick two distinct Pareto parents.
+//          b. Find target ids where their components differ; pick from
+//             {a, b} per disjoint target.
+//          c. Evaluate child; accept on improvement over the better parent.
+//          d. Falls back to mutation when no merge pair is available.
 //   3. Return the best candidate, Pareto front, and full event log.
-//
-// Merge/crossover and feedback-memory rollups (the "GEPA-Merge" line in the
-// ax-llm reference) are intentionally deferred — this commit lands the
-// mutation-only core.
 
 import type { GepaAdapter } from './gepa-adapter.js';
-import {
-  drawMinibatch,
-  emit,
-  evaluateCandidate,
-  type LoopContext,
-  nowIso,
-  pickTarget,
-  proposeChild,
-} from './gepa-loop.js';
-import { paretoFront, seededRng, selectParent } from './gepa-selection.js';
+import { pickBest, runMutationIteration, tryMergeIteration } from './gepa-iterations.js';
+import { drawMinibatch, emit, evaluateCandidate, type LoopContext, nowIso } from './gepa-loop.js';
+import { gepaFeedbackMemory } from './gepa-memory.js';
+import { paretoFront, seededRng } from './gepa-selection.js';
 import type { GepaTarget } from './gepa-target.js';
 import type { GepaCandidate, GepaEvent, GepaOptions, GepaReport } from './gepa-types.js';
 import type { TaskSource } from './task-source.js';
@@ -105,47 +103,25 @@ async function runIteration(
   minImprovement: number,
 ): Promise<boolean> {
   const front = paretoFront(history);
-  const parent = selectParent(front, { rng: ctx.rng });
-  const target = pickTarget(ctx, iteration - 1);
   const minibatch = await drawMinibatch(ctx, minibatchSize);
-  const feedback = await ctx.adapter.evaluate({
-    candidate: parent,
-    targets: ctx.targets,
-    tasks: minibatch,
-    signal: ctx.options.signal,
-  });
-  ctx.evals.count += 1;
-  const parentBatchMean = average(feedback.scores);
-  const child = await proposeChild(ctx, parent, target, feedback, iteration);
-  if (child.error) {
-    await emit(ctx, {
-      type: 'rejected',
-      at: nowIso(),
-      candidateId: child.candidate.id,
-      reason: child.error,
-    });
-    return false;
+  if (shouldMerge(ctx) && front.length >= 2) {
+    const merged = await tryMergeIteration(
+      ctx,
+      history,
+      front,
+      minibatch,
+      iteration,
+      minImprovement,
+    );
+    if (merged !== 'fallback') return merged;
   }
-  await evaluateCandidate(ctx, child.candidate, minibatch);
-  const accepted = child.candidate.meanScore >= parentBatchMean + minImprovement;
-  if (accepted) history.push(child.candidate);
-  await emit(ctx, {
-    type: 'candidate',
-    at: nowIso(),
-    candidateId: child.candidate.id,
-    parentId: parent.id,
-    target: target.id,
-    minibatchScore: child.candidate.meanScore,
-    accepted,
-  });
-  await emit(ctx, {
-    type: 'iteration',
-    at: nowIso(),
-    iteration,
-    bestScore: pickBest(history).meanScore,
-    paretoSize: paretoFront(history).length,
-  });
-  return accepted;
+  return runMutationIteration(ctx, history, front, minibatch, iteration, minImprovement);
+}
+
+function shouldMerge(ctx: LoopContext): boolean {
+  const probability = ctx.options.mergeProbability ?? 0;
+  if (probability <= 0) return false;
+  return ctx.rng() < probability;
 }
 
 function buildContext(args: OptimizeGepaArgs): LoopContext {
@@ -161,6 +137,7 @@ function buildContext(args: OptimizeGepaArgs): LoopContext {
     rng,
     nextId,
     evals: { count: 0 },
+    memory: gepaFeedbackMemory({ topK: args.options.memoryTopK }),
   };
 }
 
@@ -172,15 +149,4 @@ function buildSeed(ctx: LoopContext, args: OptimizeGepaArgs): GepaCandidate {
     meanScore: Number.NaN,
     generation: 0,
   };
-}
-
-function pickBest(history: readonly GepaCandidate[]): GepaCandidate {
-  return history.reduce((best, candidate) =>
-    candidate.meanScore > best.meanScore ? candidate : best,
-  );
-}
-
-function average(values: readonly number[]): number {
-  if (values.length === 0) return 0;
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
