@@ -18,6 +18,7 @@
 // by `evaluateSource`), so callers rarely write the adapter from scratch.
 
 import type { TaskExample } from './dataset.js';
+import type { GepaTargetMemory } from './gepa-memory.js';
 import type { GepaTarget } from './gepa-target.js';
 import type { GepaCandidate, GepaReflectiveDatum } from './gepa-types.js';
 import type { RolloutTrace } from './rollout.js';
@@ -38,7 +39,10 @@ export interface GepaEvaluateResult {
 export interface GepaProposeArgs {
   target: GepaTarget;
   current: string;
+  /** Reflective evidence from the most recent parent evaluation. */
   feedback: readonly GepaReflectiveDatum[];
+  /** Cumulative best/worst rollup for this target across the whole run. */
+  memory?: GepaTargetMemory;
   signal?: AbortSignal;
 }
 
