@@ -1,4 +1,10 @@
 import type { TaskExample } from './dataset.js';
+import {
+  type EvaluateExampleContext,
+  emitEvent,
+  evaluateExample,
+  runEvent,
+} from './evaluate-example.js';
 import type {
   EvaluateDatasetOptions,
   ExampleEvalResult,
@@ -7,133 +13,105 @@ import type {
   LearnRunEvent,
   RolloutRunner,
 } from './job-types.js';
-import type { RolloutTrace } from './rollout.js';
 import type { Rubric } from './rubric-types.js';
-import { evaluateVerifiers } from './verifier-eval.js';
+import type { TaskSource } from './task-source.js';
+import { datasetTaskSource } from './task-source-dataset.js';
 
-export async function evaluateDataset(
+export interface EvaluateSourceOptions extends EvaluateDatasetOptions {
+  /**
+   * How many tasks to draw from the source. Required when source.size is
+   * undefined; otherwise defaults to source.size.
+   */
+  count?: number;
+  seed?: number;
+  signal?: AbortSignal;
+}
+
+/**
+ * Evaluate a TaskSource (the general path). Datasets, process sandboxes,
+ * HTTP gym envs, procedural generators, and mixed sources all flow through
+ * here.
+ */
+export async function evaluateSource(
   job: LearningJob,
-  dataset: { examples: TaskExample[] },
+  source: TaskSource,
   rubric: Rubric,
   rollout: RolloutRunner,
-  options: EvaluateDatasetOptions = {},
+  options: EvaluateSourceOptions = {},
 ): Promise<LearningJobResult> {
+  const count = resolveCount(source, options);
   const events: LearnRunEvent[] = [];
   await emitEvent(events, runEvent(job.id, 'started'), options);
 
   const scores: number[] = [];
   const exampleResults: ExampleEvalResult[] = [];
-  for (const example of dataset.examples) {
-    await evaluateExample(job, example, rubric, rollout, options, events, scores, exampleResults);
-  }
+  const ctx: EvaluateExampleContext = {
+    job,
+    rubric,
+    rollout,
+    options,
+    events,
+    scores,
+    exampleResults,
+  };
+  const processed = await drainSource(source, ctx, count, options);
 
   const score = average(scores);
   await emitEvent(events, runEvent(job.id, 'completed', { score }), options);
   return {
     jobId: job.id,
     score,
-    examples: dataset.examples.length,
+    examples: processed,
     exampleResults: options.includeExampleResults === false ? undefined : exampleResults,
     artifacts: [],
     events,
   };
 }
 
-async function evaluateExample(
+/** Backward-compatible dataset wrapper around evaluateSource. */
+export async function evaluateDataset(
   job: LearningJob,
-  example: TaskExample,
+  dataset: { id?: string; examples: TaskExample[] },
   rubric: Rubric,
   rollout: RolloutRunner,
-  options: EvaluateDatasetOptions,
-  events: LearnRunEvent[],
-  scores: number[],
-  exampleResults: ExampleEvalResult[],
-): Promise<void> {
-  try {
-    const trace = await rollout(example);
-    const result = await scoredExample(job, example, rubric, trace, options, events);
-    scores.push(result.score);
-    if (options.includeExampleResults ?? true) exampleResults.push(result);
-  } catch (error) {
-    await handleExampleError(job, example, error, options, events, scores, exampleResults);
+  options: EvaluateDatasetOptions = {},
+): Promise<LearningJobResult> {
+  const source = datasetTaskSource({
+    id: dataset.id ?? job.dataset,
+    examples: dataset.examples,
+  });
+  return evaluateSource(job, source, rubric, rollout, {
+    ...options,
+    count: dataset.examples.length,
+  });
+}
+
+async function drainSource(
+  source: TaskSource,
+  ctx: EvaluateExampleContext,
+  count: number,
+  options: EvaluateSourceOptions,
+): Promise<number> {
+  let processed = 0;
+  for await (const example of source.sample({
+    count,
+    seed: options.seed,
+    signal: options.signal,
+  })) {
+    if (options.signal?.aborted) break;
+    await evaluateExample(ctx, example);
+    processed += 1;
+    if (processed >= count) break;
   }
+  return processed;
 }
 
-async function scoredExample(
-  job: LearningJob,
-  example: TaskExample,
-  rubric: Rubric,
-  trace: RolloutTrace,
-  options: EvaluateDatasetOptions,
-  events: LearnRunEvent[],
-): Promise<ExampleEvalResult> {
-  const rubricResult = await rubric.evaluate(example, trace);
-  const verifierSummary = options.verifiers
-    ? await evaluateVerifiers(options.verifiers, example, trace, options.verifierAggregation)
-    : undefined;
-  if (options.failOnVerifierError && verifierSummary && !verifierSummary.passed) {
-    throw new Error(`verifier failure for example ${example.id}`);
-  }
-  await emitEvent(
-    events,
-    runEvent(job.id, 'progress', { example: example.id, score: rubricResult.score }),
-    options,
+function resolveCount(source: TaskSource, options: EvaluateSourceOptions): number {
+  if (typeof options.count === 'number') return options.count;
+  if (typeof source.size === 'number') return source.size;
+  throw new Error(
+    `evaluateSource(${source.id}): source is streaming (size=undefined); options.count is required`,
   );
-  return {
-    exampleId: example.id,
-    score: rubricResult.score,
-    rubric: rubricResult,
-    verifierResults: verifierSummary?.results,
-    verifierSummary,
-    rollout: trace,
-  };
-}
-
-async function handleExampleError(
-  job: LearningJob,
-  example: TaskExample,
-  error: unknown,
-  options: EvaluateDatasetOptions,
-  events: LearnRunEvent[],
-  scores: number[],
-  exampleResults: ExampleEvalResult[],
-): Promise<void> {
-  const message = error instanceof Error ? error.message : String(error);
-  await emitEvent(
-    events,
-    runEvent(job.id, 'failed', { example: example.id, error: message }),
-    options,
-  );
-  if (options.includeExampleResults ?? true) exampleResults.push(errorResult(example, message));
-  if (!options.continueOnError) throw error;
-  scores.push(0);
-}
-
-function errorResult(example: TaskExample, error: string): ExampleEvalResult {
-  return {
-    exampleId: example.id,
-    score: 0,
-    rubric: { score: 0, signals: [] },
-    rollout: { exampleId: example.id, output: '', toolCalls: [] },
-    error,
-  };
-}
-
-async function emitEvent(
-  events: LearnRunEvent[],
-  event: LearnRunEvent,
-  options: EvaluateDatasetOptions,
-): Promise<void> {
-  events.push(event);
-  await options.onEvent?.(event);
-}
-
-function runEvent(
-  jobId: string,
-  type: LearnRunEvent['type'],
-  data?: Record<string, unknown>,
-): LearnRunEvent {
-  return { jobId, type, at: new Date().toISOString(), data };
 }
 
 function average(values: number[]): number {
