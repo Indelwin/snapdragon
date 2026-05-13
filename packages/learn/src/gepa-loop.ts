@@ -3,6 +3,7 @@
 
 import type { TaskExample } from './dataset.js';
 import type { GepaAdapter, GepaEvaluateResult } from './gepa-adapter.js';
+import type { GepaFeedbackMemory } from './gepa-memory.js';
 import type { GepaTarget } from './gepa-target.js';
 import { validateTargetValue } from './gepa-target.js';
 import type { GepaCandidate, GepaEvent, GepaOptions } from './gepa-types.js';
@@ -17,6 +18,7 @@ export interface LoopContext {
   rng: () => number;
   nextId: () => string;
   evals: { count: number };
+  memory: GepaFeedbackMemory;
 }
 
 export async function evaluateCandidate(
@@ -66,6 +68,7 @@ export async function proposeChild(
     target,
     current,
     feedback: feedback.data,
+    memory: ctx.memory.summarize(target.id),
     signal: ctx.options.signal,
   });
   const validation = validateTargetValue(target, proposed);
@@ -104,6 +107,22 @@ function emptyChild(
     generation,
     parents: [parent.id],
     editedTarget: target.id,
+  };
+}
+
+export function buildChildFromComponents(
+  ctx: LoopContext,
+  components: Record<string, string>,
+  parents: readonly string[],
+  generation: number,
+): GepaCandidate {
+  return {
+    id: ctx.nextId(),
+    components: { ...components },
+    scores: [],
+    meanScore: Number.NaN,
+    generation,
+    parents,
   };
 }
 
