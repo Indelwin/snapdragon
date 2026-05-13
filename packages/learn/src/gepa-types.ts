@@ -51,6 +51,15 @@ export type GepaEvent =
       accepted: boolean;
       reason?: string;
     }
+  | {
+      type: 'merge';
+      at: string;
+      candidateId: string;
+      parentIds: readonly string[];
+      mergedTargets: readonly string[];
+      minibatchScore: number;
+      accepted: boolean;
+    }
   | { type: 'rejected'; at: string; candidateId: string; reason: string }
   | { type: 'completed'; at: string; bestScore: number; iterations: number; evals: number };
 
@@ -63,6 +72,10 @@ export interface GepaOptions {
   earlyStoppingPatience?: number;
   /** Minimum improvement (delta on minibatch mean) to count as progress. */
   minImprovement?: number;
+  /** Probability of running a merge step instead of a mutation (default 0). */
+  mergeProbability?: number;
+  /** Top-K best/worst entries retained per target in feedback memory. */
+  memoryTopK?: number;
   /** Deterministic RNG seed. */
   seed?: number;
   signal?: AbortSignal;
