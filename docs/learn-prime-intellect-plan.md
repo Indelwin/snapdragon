@@ -20,6 +20,15 @@ Core rule:
 
 > Prime Intellect is an adapter target, not the core abstraction.
 
+Second core rule (added once we started building):
+
+> Datasets are one shape of task source, not the abstraction. Live envs are
+> first-class. RL, GEPA, evals, and SFT generation all consume a `TaskSource`
+> — datasets, procedural generators, child-process envs, and HTTP gym envs
+> are all peers, and none of them require pregenerating gigabytes of replay.
+> See `packages/learn/README.md` ("TaskSource") for the surface; the dataset
+> path is the back-compat wrapper around `datasetTaskSource(...)`.
+
 ## Prime Intellect concepts to model
 
 Prime's docs describe an RL training run as three decoupled components:
