@@ -4,7 +4,8 @@ Embeddable TypeScript facade for the Rust-first Snapdragon gateway.
 
 The Rust crates own actor scheduling, mailboxes, supervision, budgets, and
 state-machine semantics. This package provides the host-facing contracts and a
-small inline harness for tests and lightweight embedding.
+small inline harness for tests and lightweight embedding. It is designed to
+stay npm-installable while the daemon remains the durable orchestration engine.
 
 ## Runtime Shape
 
@@ -16,15 +17,43 @@ The public TypeScript API is intentionally small and serializable:
 - `GatewayServiceSpec` for scheduled or manually-run services.
 - `GatewayServiceWorkerSpec` for native worker commands managed by the Rust
   daemon.
+- `GatewayAgentRuntimeDescriptor` for external runtimes such as `sd`, Codex,
+  Hermes Agent, Pi Agent, and custom workers.
 - `GatewayJobSpec`, `GatewayJobStatus`, and `GatewayLease` for durable work
   queues.
 - `GatewayEventRecord` and `GatewayLogRecord` for inspectable orchestration
   history.
+- `GatewayWorldSnapshot` for dashboard, REST, and agent-facing inspection.
 - Registry, capability, channel, and ETS-like table snapshots.
 
 The inline client is useful for package tests and applications that want the
 contracts without a native daemon. The Rust client talks to the local daemon over
 IPC and is the intended runtime for long-lived background work.
+
+## Gateway ECS World
+
+The public API uses concrete gateway nouns even though the internal model is
+ECS-shaped. Agents, workers, services, jobs, channels, sessions, capabilities,
+sandboxes, approvals, and projects are the entities operators and agents care
+about. Systems such as schedulers, supervisors, dispatchers, policy evaluators,
+and log projectors act on those entities through the daemon.
+
+```ts
+import { InlineGatewayClient } from '@snapdragon-ai/gateway';
+
+const gateway = new InlineGatewayClient();
+await gateway.registerAgentRuntime({
+  id: 'codex',
+  kind: 'codex',
+  protocol: 'command',
+  supportedJobKinds: ['agent.run'],
+  capabilities: ['tools.shell', 'repo.edit'],
+  isolation: 'sandbox',
+});
+
+const snapshot = await gateway.worldSnapshot();
+console.log(snapshot.agentRuntimes.map((runtime) => runtime.id));
+```
 
 ## Service Workers
 
@@ -62,7 +91,11 @@ jobs, events, service state, leases, and logs under the gateway root:
 ```ts
 const job = await gateway.enqueueJob({
   kind: 'agent.run',
-  payload: { prompt: 'run the release checks' },
+  payload: {
+    prompt: 'run the release checks',
+    targetRuntimeId: 'codex',
+    correlationId: 'release-2026-05-29',
+  },
 });
 const lease = await gateway.acquireJob('default', 'worker-1');
 if (lease) await gateway.completeJob(lease.job.id, { ok: true });
@@ -70,6 +103,37 @@ if (lease) await gateway.completeJob(lease.job.id, { ok: true });
 
 The inline client implements the same lifecycle in memory for tests and small
 embedders.
+
+## REST and SSE Facade
+
+`createGatewayRestServer()` wraps any `GatewayClient` with a dependency-free
+local HTTP surface. It does not replace Rust IPC; it sits above the client so
+the same route contracts work with inline tests or the Rust daemon.
+
+```ts
+import { createGatewayRestServer, RustGatewayClient } from '@snapdragon-ai/gateway';
+
+const gateway = new RustGatewayClient({ socketPath: '/tmp/snapdragon-gateway.sock' });
+const rest = createGatewayRestServer(gateway);
+const baseUrl = await rest.listen();
+console.log(baseUrl); // http://127.0.0.1:<port>/v1
+```
+
+Initial routes cover:
+
+- `GET /v1/health`, `GET /v1/status`, and `GET /v1/world`.
+- `GET /v1/stream` for Server-Sent Events world snapshots.
+- `GET /v1/services`, `POST /v1/services/:name/run`, and
+  `POST /v1/services/:name/enable`.
+- `GET /v1/agents`, `POST /v1/agents/register`, and `GET /v1/agents/:id`.
+- `GET /v1/workers`, `GET /v1/jobs`, `POST /v1/jobs`,
+  `GET /v1/jobs/:id`, and `POST /v1/jobs/:id/cancel`.
+- `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
+  `GET /v1/logs`, `GET /v1/registry`, `GET /v1/capabilities`, and
+  `GET /v1/sandboxes`.
+
+The default listener binds to `127.0.0.1`. Authentication, policy enforcement,
+and remote exposure are later layers on the same route shape.
 
 ## Sandbox Contracts
 

@@ -1,11 +1,49 @@
+import type {
+  GatewayAgentRuntimeDescriptor,
+  GatewayClient,
+  GatewayEventRecord,
+  GatewayJobStatus,
+  GatewayLease,
+  GatewayLogRecord,
+  GatewayQueueDepth,
+  GatewayRegistrySnapshot,
+  GatewayServiceSpec,
+  GatewayServiceStatus,
+  GatewayStatus,
+  GatewayTableSnapshot,
+  GatewayWorkerProcess,
+} from './types.js';
+
+export type {
+  GatewayAgentRuntimeDescriptor,
+  GatewayAgentRuntimeHealth,
+  GatewayAgentRuntimeIsolation,
+  GatewayAgentRuntimeKind,
+  GatewayAgentRuntimeProtocol,
+} from './types.js';
+
+export interface GatewayPolicyHints {
+  approvalRequired?: boolean;
+  scopes?: string[];
+  maxToolCalls?: number;
+  maxRuntimeMs?: number;
+}
+
 export interface GatewayAgentRunSpec {
   prompt: string;
+  parentJobId?: string;
+  correlationId?: string;
+  targetRuntimeId?: string;
   provider?: string;
   model?: string;
   configPath?: string;
   profile?: string;
   channel?: string;
   cwd?: string;
+  project?: GatewayProjectRef;
+  sandboxLease?: GatewaySandboxLease;
+  policyHints?: GatewayPolicyHints;
+  priority?: number;
   toolsets?: string[];
   session?: 'new' | 'resume' | 'none';
   sessionId?: string;
@@ -39,9 +77,10 @@ export interface GatewaySandboxLease {
 }
 
 export interface GatewayExtensionContributions {
-  services?: import('./types.js').GatewayServiceSpec[];
+  services?: GatewayServiceSpec[];
   appliances?: GatewayApplianceDescriptor[];
   capabilities?: string[];
+  agentRuntimes?: GatewayAgentRuntimeDescriptor[];
 }
 
 export interface GatewayApplianceDescriptor {
@@ -51,4 +90,25 @@ export interface GatewayApplianceDescriptor {
   root?: string;
   capabilities?: string[];
   resources?: string[];
+}
+
+export interface GatewayWorldSnapshot {
+  capturedAtMs: number;
+  runtime: GatewayStatus['runtime'];
+  status: GatewayStatus;
+  services: GatewayServiceStatus[];
+  agentRuntimes: GatewayAgentRuntimeDescriptor[];
+  workers: GatewayWorkerProcess[];
+  jobs: GatewayJobStatus[];
+  events: GatewayEventRecord[];
+  logs: GatewayLogRecord[];
+  registry: GatewayRegistrySnapshot;
+  leases: GatewayLease[];
+  queueDepths: GatewayQueueDepth[];
+  tables: GatewayTableSnapshot[];
+  sandboxes: GatewaySandboxLease[];
+}
+
+export interface GatewayOrchestrationClient extends GatewayClient {
+  worldSnapshot(): Promise<GatewayWorldSnapshot>;
 }

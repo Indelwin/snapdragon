@@ -1,10 +1,26 @@
 # Snapdragon
 
-Inspired by the simplicity, versatility and self modification capabilities of [pi](https://github.com/badlogic/pi-mono) and the power, self-learning and memory of [hermes-agent](https://github.com/nousresearch/hermes-agent), among many other great agents, I wanted to make my own to learn about how they work and try some ideas out
+Snapdragon is a local-first agent orchestration runtime. It started as an
+experiment in applying an ECS (Entity Component System) pattern to a single
+agent loop, and that pattern remains the core idea: state is held in components,
+behavior is applied by systems, and a small reducer keeps mutation explicit.
 
-Instead of the normal agent loop, the ehart of Snapdragon is most similar to an ECS (Entity Component System) commonly used in games. Everything from tools, to memory, to context - everything is a Component and/or System. There's really only 1 Entity, and instead of the normal tick driving everything, the cadence is set by tools and calls to providers to get model responses (yes, providers are also registered the same way!) I think this will make it extremely versatile, and with dynamic registration, agents will be able to hot reload themselves with new tools and plugins constantly
+The architecture now has two ECS layers:
 
-The core is in Rust, so I can work on optimising the ECS system as much as possible, and support things like in-process agent delegation easily (for things like RLM with a lot of recursion - no heavy subprocesses if I can avoid it). Right now it's compiled to WASM, so it's extremely portable, and will make it easy to run anywhere. The idea is, any host that can run WASM, can provide whatever components and systems are needed. So it should work on edge devices, in the browser, embedded in other languages, whatever. I'll add examples of this as I get to it!
+- The single-agent ECS loop powers embedded workers. Memory, context, provider
+  calls, tool execution, sessions, and run events follow the same component and
+  system pattern inside one focused agent run.
+- The gateway ECS world powers orchestration. Agents, workers, services, jobs,
+  channels, sessions, capabilities, sandboxes, approvals, and projects are
+  durable runtime entities driven by schedulers, supervisors, dispatchers,
+  policy systems, and executive agents.
+
+Rust owns the durable gateway runtime: queues, leases, service supervision,
+worker processes, local IPC, SQLite-backed state, and future WASM isolation. The
+TypeScript/JavaScript packages remain npm-installable facades for apps,
+adapters, plugins, tests, web UI surfaces, and embedded use. `sd` is the
+batteries-included Snapdragon client and built-in worker, not the boundary of
+the system.
 
 ## Packages
 
@@ -14,7 +30,7 @@ The core is in Rust, so I can work on optimising the ECS system as much as possi
 | `@snapdragon-ai/host` | Capability registry and streaming provider adapters. |
 | `@snapdragon-ai/ui` | Renderer-neutral UI ECS descriptors and state. |
 | `@snapdragon-ai/content` | Side-effect-free contracts for skills, memory, profiles, and extensions. |
-| `@snapdragon-ai/gateway` | Gateway service contracts, Rust client, and inline harness. |
+| `@snapdragon-ai/gateway` | Gateway contracts, Rust client, inline harness, world snapshots, and REST/SSE facade. |
 | `@snapdragon-ai/learn` | Learning, eval, rollout, rubric, and training job contracts. |
 | `@snapdragon-ai/session` | Portable append-only JSONL sessions. |
 | `@snapdragon-ai/config` | Side-effect-free resolved config contracts. |
@@ -25,16 +41,17 @@ The core is in Rust, so I can work on optimising the ECS system as much as possi
 
 ## Gateway
 
-Snapdragon's gateway is the lightweight runtime substrate for background work,
-service scheduling, channels, and future appliance-style extensions. The default
-runtime is Rust (`crates/gateway-daemon`) with a TypeScript facade in
-`@snapdragon-ai/gateway`; tests and embedded hosts can still use the inline
-TypeScript harness.
+Snapdragon's gateway is the main orchestration substrate for background work,
+service scheduling, multi-agent jobs, channels, external agent runtimes, and
+future appliance-style extensions. The default runtime is Rust
+(`crates/gateway-daemon`) with a TypeScript facade in `@snapdragon-ai/gateway`;
+tests and embedded hosts can still use the inline TypeScript harness.
 
-`sd` is only one consumer of the gateway. Its background services run as
-headless worker processes, so scheduled memory, skill, session-index, and
-channel-event work can reuse `sd` config, profiles, extensions, stores, and
-providers without starting the Ink TUI or the interactive agent shell.
+`sd` is only one consumer of the gateway. Its background services and agent-job
+workers run as headless worker processes, so scheduled memory, skill,
+session-index, channel-event, learn, and agent work can reuse `sd` config,
+profiles, extensions, stores, and providers without starting the Ink TUI or the
+interactive agent shell.
 
 ```bash
 sd gateway start
@@ -48,8 +65,12 @@ sd gateway stop
 
 Current gateway state is local-first. The Rust crates already model mailboxes,
 registry entries, service specs, ETS-like tables, links, monitors, supervision
-types, and Wasmtime budget exits, while distributed clustering and Iroh
-transport are intentionally deferred until local semantics are solid.
+types, agent runtime descriptors, durable jobs, leases, logs, and Wasmtime
+budget exits. The npm facade can register external runtimes such as `sd`,
+Codex, Hermes Agent, Pi Agent, or custom workers; it also exposes world
+snapshots and a dependency-free local REST/SSE facade for integration and UI
+work. Distributed clustering and Iroh transport are intentionally deferred until
+local semantics are solid.
 
 ## sd Extensions
 
