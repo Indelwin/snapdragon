@@ -1138,6 +1138,25 @@ test('inline shell command returns stdout and error status', async () => {
   }
 });
 
+test('inline shell command keeps a bounded tail for noisy commands', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-shell-'));
+  try {
+    const result = await runInlineShellCommand(
+      "printf 'first\\n'; i=0; while [ $i -lt 200 ]; do printf x; i=$((i + 1)); done; printf '\\nlast\\n'",
+      {
+        cwd: workspace,
+        timeoutMs: 5_000,
+        maxOutputBytes: 32,
+      },
+    );
+    assert.doesNotMatch(result.content, /first/);
+    assert.match(result.content, /last/);
+    assert.match(result.content, /truncated/);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
 async function createMockRuntime(workspace: string) {
   const configPath = join(workspace, 'sd.yaml');
   await writeFile(

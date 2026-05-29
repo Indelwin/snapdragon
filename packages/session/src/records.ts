@@ -1,6 +1,7 @@
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Message } from '@snapdragon-ai/host';
+import { forEachRecordLine } from './record-line-reader.js';
 
 export const SESSION_SCHEMA_VERSION = 1;
 
@@ -76,24 +77,11 @@ export function readRecords(path: string): SessionRecord[] {
   return out;
 }
 
-function parseRecord(line: string): SessionRecord | undefined {
+export function parseRecord(line: string): SessionRecord | undefined {
   try {
     return JSON.parse(line) as SessionRecord;
   } catch {
     return undefined;
-  }
-}
-
-function forEachRecordLine(path: string, visit: (line: string) => void): void {
-  if (!existsSync(path)) return;
-  const text = readFileSync(path, 'utf8');
-  let start = 0;
-  while (start < text.length) {
-    const newline = text.indexOf('\n', start);
-    const end = newline === -1 ? text.length : newline;
-    const line = text.slice(start, end).trim();
-    if (line) visit(line);
-    start = end + 1;
   }
 }
 
@@ -106,11 +94,11 @@ function updateStats(stats: SessionRecordStats, line: string): void {
   }
 }
 
-function isMessageLine(line: string): boolean {
+export function isMessageLine(line: string): boolean {
   return line.includes('"type":"message"') || line.includes('"type": "message"');
 }
 
-function numberField(line: string, field: string): number {
+export function numberField(line: string, field: string): number {
   const compact = new RegExp(`"${field}":(\\d+)`).exec(line);
   if (compact) return Number(compact[1]);
   const spaced = new RegExp(`"${field}"\\s*:\\s*(\\d+)`).exec(line);
