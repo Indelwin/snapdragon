@@ -75,11 +75,14 @@ function runCommand(
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '';
+    let truncated = false;
     let timedOut = false;
     let settled = false;
     const append = (chunk: Buffer) => {
-      output += chunk.toString('utf8');
-      if (output.length > maxOutputBytes) output = output.slice(0, maxOutputBytes);
+      const text = chunk.toString('utf8');
+      const next = text.length >= maxOutputBytes ? text.slice(-maxOutputBytes) : output + text;
+      truncated ||= output.length + text.length > maxOutputBytes;
+      output = next.length > maxOutputBytes ? next.slice(-maxOutputBytes) : next;
     };
     const killGroup = (sig: NodeJS.Signals) => {
       if (child.pid == null) return;
@@ -114,20 +117,35 @@ function runCommand(
       clearTimeout(timer);
       if (killTimer) clearTimeout(killTimer);
       signal?.removeEventListener('abort', abort);
-      const suffix = timedOut
-        ? `\n[timeout after ${timeoutMs}ms]`
-        : output.length >= maxOutputBytes
-          ? '\n[truncated]'
-          : '';
       resolve({
-        content: `${output}${suffix}` || `(exit ${code ?? 'unknown'}, no output)`,
-        isError: timedOut || (code ?? 0) !== 0,
+        content: shellOutputContent(output, code, { timedOut, timeoutMs, truncated }),
+        isError: shellResultIsError(code, timedOut),
         data: { exit_code: code, timed_out: timedOut },
       });
     };
     child.on('close', finish);
     child.on('error', () => finish(null));
   });
+}
+
+interface ShellOutputState {
+  timedOut: boolean;
+  timeoutMs: number;
+  truncated: boolean;
+}
+
+function shellOutputContent(output: string, code: number | null, state: ShellOutputState): string {
+  return `${output}${shellOutputSuffix(state)}` || `(exit ${code ?? 'unknown'}, no output)`;
+}
+
+function shellOutputSuffix(state: ShellOutputState): string {
+  if (state.timedOut) return `\n[timeout after ${state.timeoutMs}ms]`;
+  if (state.truncated) return '\n[truncated]';
+  return '';
+}
+
+function shellResultIsError(code: number | null, timedOut: boolean): boolean {
+  return timedOut || (code ?? 0) !== 0;
 }
 
 function schema(properties: Record<string, JsonObject>, required: string[]): JsonObject {

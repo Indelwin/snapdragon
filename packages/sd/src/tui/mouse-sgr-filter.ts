@@ -16,9 +16,12 @@
  * digits, terminating `M` or `m`. Exported separately so it's trivially
  * unit-testable without spinning up Ink.
  */
-const SGR_MOUSE_RE = /^\[<\d+;\d+;\d+[Mm]$/;
+const MAX_MOUSE_INPUT_CHARS = 4096;
+const INT = String.raw`\d{1,4}`;
+const SGR_MOUSE_RE = new RegExp(`^(?:\\x1b?\\[<${INT};${INT};${INT}[Mm])+$`);
+const SGR_MOUSE_FRAGMENT_RE = new RegExp(`^(?:${INT};${INT};${INT}[Mm])+$`);
 
 export function isMouseSgrSequence(input: string): boolean {
-  if (input.length < 6 || input.length > 24) return false;
-  return SGR_MOUSE_RE.test(input);
+  if (input.length < 4 || input.length > MAX_MOUSE_INPUT_CHARS) return false;
+  return SGR_MOUSE_RE.test(input) || SGR_MOUSE_FRAGMENT_RE.test(input);
 }

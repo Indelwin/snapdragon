@@ -2,11 +2,17 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { shellToolset } from '../src/toolsets/shell.js';
 
-function runShell(opts: { command: string; timeout_ms?: number; defaultTimeoutMs?: number }) {
+function runShell(opts: {
+  command: string;
+  timeout_ms?: number;
+  defaultTimeoutMs?: number;
+  maxOutputBytes?: number;
+}) {
   const ts = shellToolset({
     cwd: process.cwd(),
     defaultTimeoutMs: opts.defaultTimeoutMs ?? 30_000,
     maxTimeoutMs: 120_000,
+    maxOutputBytes: opts.maxOutputBytes,
   });
   const tool = ts.tools.find((t) => t.name === 'run_shell');
   assert.ok(tool, 'run_shell tool exists');
@@ -50,4 +56,16 @@ test('run_shell unblocks even when a backgrounded grandchild keeps stdout open',
   // got reaped — either way it must not hang. Output should at least show
   // the "started" line we printed before backgrounding.
   assert.match(String(result.content), /started/);
+});
+
+test('run_shell keeps a bounded tail for noisy commands', async () => {
+  const result = await runShell({
+    command:
+      "printf 'first\\n'; i=0; while [ $i -lt 200 ]; do printf x; i=$((i + 1)); done; printf '\\nlast\\n'",
+    maxOutputBytes: 32,
+  });
+  const content = String(result.content);
+  assert.doesNotMatch(content, /first/);
+  assert.match(content, /last/);
+  assert.match(content, /truncated/);
 });
