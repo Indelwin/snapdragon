@@ -4,7 +4,7 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { InlineGatewayClient, RustGatewayClient } from '../src/index.js';
+import { createGatewayRestServer, InlineGatewayClient, RustGatewayClient } from '../src/index.js';
 
 test('inline gateway supports selective receive without reordering other messages', async () => {
   const gateway = new InlineGatewayClient();
@@ -75,6 +75,65 @@ test('inline gateway leases, completes, and logs jobs', async () => {
   assert.match((await gateway.tailLogs({ limit: 5 })).map((log) => log.message).join('\n'), /job/);
 });
 
+test('inline gateway registers agent runtimes and snapshots the world', async () => {
+  const gateway = new InlineGatewayClient();
+  await gateway.registerAgentRuntime({
+    id: 'sd',
+    kind: 'sd',
+    protocol: 'embedded',
+    supportedJobKinds: ['agent.run'],
+    capabilities: ['tools.shell'],
+    isolation: 'profile',
+  });
+  await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'map the world' } });
+  const snapshot = await gateway.worldSnapshot();
+  assert.equal(snapshot.agentRuntimes[0]?.id, 'sd');
+  assert.equal(snapshot.jobs[0]?.spec.kind, 'agent.run');
+  assert.equal(snapshot.status.agentRuntimes?.[0]?.protocol, 'embedded');
+  assert.deepEqual(snapshot.sandboxes, []);
+});
+
+test('gateway REST server exposes local orchestration routes', async () => {
+  const gateway = new InlineGatewayClient();
+  const rest = createGatewayRestServer(gateway, { streamIntervalMs: 20 });
+  const baseUrl = await rest.listen();
+  try {
+    assert.equal((await getJson(`${baseUrl}/health`)).runtime, 'inline-ts');
+    const runtime = await postJson(`${baseUrl}/agents/register`, {
+      descriptor: { id: 'codex', kind: 'codex', protocol: 'command' },
+    });
+    assert.equal(runtime.id, 'codex');
+    assert.equal((await getJson(`${baseUrl}/agents/codex`)).protocol, 'command');
+
+    const service = await postJson(`${baseUrl}/services`, { spec: { name: 'pulse' } });
+    assert.equal(service.name, 'pulse');
+    assert.equal((await postJson(`${baseUrl}/services/pulse/run`, {})).runs, 1);
+    const services = await postJson(`${baseUrl}/services/pulse/enable`, { enabled: false });
+    assert.equal(services.find((status: any) => status.name === 'pulse')?.enabled, false);
+
+    const event = await postJson(`${baseUrl}/events`, {
+      kind: 'channel.run',
+      payload: { source: 'rest' },
+    });
+    assert.equal(event.state, 'pending');
+    assert.equal((await getJson(`${baseUrl}/events`))[0]?.id, event.id);
+    assert.equal((await postJson(`${baseUrl}/events/${event.id}/cancel`, {})).state, 'cancelled');
+
+    const job = await postJson(`${baseUrl}/jobs`, {
+      spec: { kind: 'agent.run', payload: { prompt: 'from REST' } },
+    });
+    assert.equal(job.state, 'pending');
+    assert.equal((await getJson(`${baseUrl}/jobs/${job.id}`)).id, job.id);
+    assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/cancel`, {})).state, 'cancelled');
+
+    const world = await getJson(`${baseUrl}/world`);
+    assert.equal(world.agentRuntimes[0]?.id, 'codex');
+    assert.equal(Array.isArray(world.logs), true);
+  } finally {
+    await rest.close();
+  }
+});
+
 test('rust gateway client speaks the JSONL IPC protocol', async () => {
   const socketPath = join(tmpdir(), `snapdragon-gateway-${process.pid}-${Date.now()}.sock`);
   const seen: string[] = [];
@@ -123,6 +182,20 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       capabilities: { 'memory.read': [{ id: 'worker' }] },
       channels: {},
     });
+    assert.equal(status.agentRuntimes?.[0]?.id, 'sd');
+    assert.equal(
+      (
+        await gateway.registerAgentRuntime({
+          id: 'codex',
+          kind: 'codex',
+          protocol: 'command',
+          supportedJobKinds: ['agent.run'],
+        })
+      ).kind,
+      'codex',
+    );
+    assert.equal((await gateway.listAgentRuntimes())[0]?.id, 'sd');
+    assert.equal((await gateway.showAgentRuntime('sd'))?.protocol, 'embedded');
     assert.equal(await gateway.createTable('state', { id: 'worker' }, 'private'), true);
     assert.deepEqual(await gateway.tableNames(), ['state']);
     assert.deepEqual(await gateway.tableSnapshot('state'), {
@@ -151,6 +224,9 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'envelope.receive',
       'registry.whereis_capability',
       'registry.list',
+      'agents.register',
+      'agents.list',
+      'agents.show',
       'tables.create',
       'tables.list',
       'tables.show',
@@ -228,6 +304,7 @@ function responseFor(request: any): unknown {
         ],
         tables: [],
         service_tasks: ['memory-worker'],
+        agent_runtimes: [wireAgentRuntime()],
         jobs_pending: 2,
         jobs_running: 1,
         active_leases: [
@@ -268,6 +345,15 @@ function responseFor(request: any): unknown {
       ok: true,
       result: { names: {}, capabilities: { 'memory.read': ['worker'] }, channels: {} },
     };
+  }
+  if (request.method === 'agents.register') {
+    return { id: request.id, ok: true, result: request.params.descriptor };
+  }
+  if (request.method === 'agents.list') {
+    return { id: request.id, ok: true, result: [wireAgentRuntime()] };
+  }
+  if (request.method === 'agents.show') {
+    return { id: request.id, ok: true, result: wireAgentRuntime(request.params.id) };
   }
   if (request.method === 'tables.list') return { id: request.id, ok: true, result: ['state'] };
   if (request.method === 'tables.show') {
@@ -340,6 +426,22 @@ function responseFor(request: any): unknown {
   return { id: request.id, ok: true, result: true };
 }
 
+async function getJson(url: string): Promise<any> {
+  const response = await fetch(url);
+  assert.equal(response.ok, true);
+  return response.json();
+}
+
+async function postJson(url: string, body: unknown): Promise<any> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  assert.equal(response.ok, true);
+  return response.json();
+}
+
 function wireServiceStatus(name: string): unknown {
   return {
     name,
@@ -384,5 +486,20 @@ function wireEvent(id: string, state: string): unknown {
     payload: {},
     created_at_ms: 10,
     updated_at_ms: 10,
+  };
+}
+
+function wireAgentRuntime(id = 'sd'): unknown {
+  return {
+    id,
+    kind: id === 'sd' ? 'sd' : 'custom',
+    protocol: id === 'sd' ? 'embedded' : 'command',
+    label: null,
+    command: null,
+    supported_job_kinds: ['agent.run'],
+    capabilities: [],
+    isolation: null,
+    health: null,
+    metadata: null,
   };
 }

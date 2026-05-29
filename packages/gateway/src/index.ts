@@ -1,29 +1,30 @@
 export { InlineGatewayClient } from './inline.js';
+export type { GatewayRestServer, GatewayRestServerOptions } from './rest.js';
+export { createGatewayRestServer } from './rest.js';
 export { RustGatewayClient, type RustGatewayClientOptions } from './rust.js';
 export type {
   ActorId,
-  GatewayAgentRunSpec,
-  GatewayApplianceDescriptor,
+  GatewayAgentRuntimeDescriptor,
+  GatewayAgentRuntimeHealth,
+  GatewayAgentRuntimeIsolation,
+  GatewayAgentRuntimeKind,
+  GatewayAgentRuntimeProtocol,
   GatewayBudgetConfig,
   GatewayChildRestart,
   GatewayClient,
   GatewayEnvelope,
   GatewayEventRecord,
   GatewayEventState,
-  GatewayExtensionContributions,
   GatewayJobLease,
   GatewayJobSpec,
   GatewayJobState,
   GatewayJobStatus,
   GatewayLease,
   GatewayLogRecord,
-  GatewayProjectRef,
   GatewayQueueDepth,
   GatewayReceiveFilter,
   GatewayRegistrySnapshot,
   GatewayRuntime,
-  GatewaySandboxLease,
-  GatewaySandboxSpec,
   GatewayServiceRunner,
   GatewayServiceSpec,
   GatewayServiceState,
@@ -36,3 +37,15 @@ export type {
   GatewayWorkerProcess,
   GatewayWorkerProcessState,
 } from './types.js';
+export type {
+  GatewayAgentRunSpec,
+  GatewayApplianceDescriptor,
+  GatewayExtensionContributions,
+  GatewayOrchestrationClient,
+  GatewayPolicyHints,
+  GatewayProjectRef,
+  GatewaySandboxLease,
+  GatewaySandboxSpec,
+  GatewayWorldSnapshot,
+} from './types-runtime.js';
+export { buildGatewayWorldSnapshot } from './world.js';

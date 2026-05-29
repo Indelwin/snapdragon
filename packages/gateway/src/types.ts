@@ -29,6 +29,28 @@ export type GatewayServiceState = 'starting' | 'running' | 'stopped' | 'failed';
 export type GatewayJobState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type GatewayEventState = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
 export type GatewayWorkerProcessState = 'running' | 'exited' | 'timed_out' | 'failed';
+export type GatewayAgentRuntimeKind = 'sd' | 'codex' | 'hermes' | 'pi' | 'custom';
+export type GatewayAgentRuntimeProtocol = 'embedded' | 'command' | 'jsonl' | 'http' | 'stdio';
+export type GatewayAgentRuntimeIsolation = 'inherit' | 'profile' | 'channel' | 'sandbox';
+
+export interface GatewayAgentRuntimeHealth {
+  state: string;
+  checkedAtMs: number;
+  message?: string;
+}
+
+export interface GatewayAgentRuntimeDescriptor {
+  id: string;
+  kind: GatewayAgentRuntimeKind;
+  protocol: GatewayAgentRuntimeProtocol;
+  label?: string;
+  command?: GatewayServiceSpec['worker'];
+  supportedJobKinds?: string[];
+  capabilities?: string[];
+  isolation?: GatewayAgentRuntimeIsolation;
+  health?: GatewayAgentRuntimeHealth;
+  metadata?: Record<string, unknown>;
+}
 
 export interface GatewayBudgetConfig {
   maxFuel?: number;
@@ -73,6 +95,7 @@ export interface GatewayServiceStatus {
 export interface GatewayStatus {
   runtime: GatewayRuntime;
   services: GatewayServiceStatus[];
+  agentRuntimes?: GatewayAgentRuntimeDescriptor[];
   processes: number;
   workerProcesses?: GatewayWorkerProcess[];
   tables: string[];
@@ -192,6 +215,11 @@ export interface GatewayClient extends GatewayTransport {
   enableService(name: string, enabled: boolean): Promise<void>;
   runService(name: string, signal?: AbortSignal): Promise<GatewayServiceStatus | undefined>;
   listServices(): Promise<GatewayServiceStatus[]>;
+  registerAgentRuntime(
+    descriptor: GatewayAgentRuntimeDescriptor,
+  ): Promise<GatewayAgentRuntimeDescriptor>;
+  listAgentRuntimes(): Promise<GatewayAgentRuntimeDescriptor[]>;
+  showAgentRuntime(id: string): Promise<GatewayAgentRuntimeDescriptor | undefined>;
   registerCapability(capability: string, actor: ActorId): Promise<void>;
   whereisCapability(capability: string): Promise<ActorId[]>;
   registrySnapshot(): Promise<GatewayRegistrySnapshot>;
@@ -215,12 +243,3 @@ export interface GatewayClient extends GatewayTransport {
   cancelEvent(id: string): Promise<GatewayEventRecord | undefined>;
   tailLogs(options?: { target?: string; limit?: number }): Promise<GatewayLogRecord[]>;
 }
-
-export type {
-  GatewayAgentRunSpec,
-  GatewayApplianceDescriptor,
-  GatewayExtensionContributions,
-  GatewayProjectRef,
-  GatewaySandboxLease,
-  GatewaySandboxSpec,
-} from './types-runtime.js';

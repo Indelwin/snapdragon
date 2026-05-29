@@ -4,9 +4,9 @@ use crate::{
     GatewayDaemon,
     ipc::{ok_json, parse},
     ipc_params::{
-        CapabilityLookupParams, CapabilityParams, EnvelopeParams, ReceiveParams,
-        ServiceEnableParams, ServiceErrorParams, ServiceNameParams, ServiceRunParams,
-        ServiceSpecParams, TableCreateParams, TableNameParams,
+        AgentRuntimeIdParams, AgentRuntimeParams, CapabilityLookupParams, CapabilityParams,
+        EnvelopeParams, ReceiveParams, ServiceEnableParams, ServiceErrorParams, ServiceNameParams,
+        ServiceRunParams, ServiceSpecParams, TableCreateParams, TableNameParams,
     },
 };
 
@@ -93,6 +93,25 @@ pub(crate) async fn dispatch_registry(
             ok_json(daemon.capability_providers(&params.capability).await)
         }
         "registry.list" => ok_json(daemon.registry_snapshot().await),
+        _ => Err(format!("unknown gateway method: {method}")),
+    }
+}
+
+pub(crate) async fn dispatch_agents(
+    daemon: &GatewayDaemon,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
+    match method {
+        "agents.register" => {
+            let params = parse::<AgentRuntimeParams>(params)?;
+            ok_json(daemon.register_agent_runtime(params.descriptor).await)
+        }
+        "agents.list" => ok_json(daemon.list_agent_runtimes().await),
+        "agents.show" => {
+            let params = parse::<AgentRuntimeIdParams>(params)?;
+            ok_json(daemon.agent_runtime(&params.id).await)
+        }
         _ => Err(format!("unknown gateway method: {method}")),
     }
 }

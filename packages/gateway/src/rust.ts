@@ -1,4 +1,5 @@
-import { createConnection } from 'node:net';
+import { request } from './rust-ipc.js';
+import type { RustGatewayClientOptions } from './rust-options.js';
 import {
   fromWireActor,
   fromWireEnvelope,
@@ -17,10 +18,14 @@ import {
   fromWireLogRecord,
   toWireJobSpec,
 } from './rust-wire-durable.js';
+import {
+  fromWireAgentRuntimeDescriptor,
+  toWireAgentRuntimeDescriptor,
+} from './rust-wire-runtime.js';
 import { fromWireServiceStatus, fromWireStatus } from './rust-wire-status.js';
 import type {
   ActorId,
-  GatewayClient,
+  GatewayAgentRuntimeDescriptor,
   GatewayEnvelope,
   GatewayEventRecord,
   GatewayJobLease,
@@ -36,21 +41,12 @@ import type {
   GatewayTableAccess,
   GatewayTableSnapshot,
 } from './types.js';
+import type { GatewayOrchestrationClient, GatewayWorldSnapshot } from './types-runtime.js';
+import { buildGatewayWorldSnapshot } from './world.js';
 
-export interface RustGatewayClientOptions {
-  socketPath: string;
-  timeoutMs?: number;
-  serviceRunTimeoutMs?: number;
-}
+export type { RustGatewayClientOptions } from './rust-options.js';
 
-interface IpcResponse {
-  id: number;
-  ok: boolean;
-  result?: unknown;
-  error?: string;
-}
-
-export class RustGatewayClient implements GatewayClient {
+export class RustGatewayClient implements GatewayOrchestrationClient {
   readonly runtime = 'rust' as const;
   #socketPath: string;
   #timeoutMs: number;
@@ -128,6 +124,28 @@ export class RustGatewayClient implements GatewayClient {
 
   async registrySnapshot(): Promise<GatewayRegistrySnapshot> {
     return fromWireRegistrySnapshot(await this.#call('registry.list'));
+  }
+
+  async registerAgentRuntime(
+    descriptor: GatewayAgentRuntimeDescriptor,
+  ): Promise<GatewayAgentRuntimeDescriptor> {
+    const runtime = fromWireAgentRuntimeDescriptor(
+      (await this.#call('agents.register', {
+        descriptor: toWireAgentRuntimeDescriptor(descriptor),
+      })) as any,
+    );
+    if (!runtime) throw new Error('Gateway returned no runtime for agents.register');
+    return runtime;
+  }
+
+  async listAgentRuntimes(): Promise<GatewayAgentRuntimeDescriptor[]> {
+    return ((await this.#call('agents.list')) as unknown[])
+      .map((runtime) => fromWireAgentRuntimeDescriptor(runtime as any))
+      .filter((runtime): runtime is GatewayAgentRuntimeDescriptor => runtime !== undefined);
+  }
+
+  async showAgentRuntime(id: string): Promise<GatewayAgentRuntimeDescriptor | undefined> {
+    return fromWireAgentRuntimeDescriptor((await this.#call('agents.show', { id })) as any);
   }
 
   async createTable(
@@ -217,6 +235,10 @@ export class RustGatewayClient implements GatewayClient {
     return ((await this.#call('logs.tail', options)) as any[]).map(fromWireLogRecord);
   }
 
+  async worldSnapshot(): Promise<GatewayWorldSnapshot> {
+    return buildGatewayWorldSnapshot(this);
+  }
+
   async #recordServiceRun(
     name: string,
     summary?: string,
@@ -231,28 +253,4 @@ export class RustGatewayClient implements GatewayClient {
     if (!response.ok) throw new Error(response.error ?? `Gateway IPC ${method} failed`);
     return response.result;
   }
-}
-
-function request(socketPath: string, payload: unknown, timeoutMs: number): Promise<IpcResponse> {
-  return new Promise((resolve, reject) => {
-    const socket = createConnection({ path: socketPath });
-    const timer = setTimeout(() => {
-      socket.destroy();
-      reject(new Error(`Gateway IPC timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    let buffer = '';
-    socket.on('connect', () => socket.write(`${JSON.stringify(payload)}\n`));
-    socket.on('data', (chunk) => {
-      buffer += chunk.toString('utf8');
-      const lineEnd = buffer.indexOf('\n');
-      if (lineEnd < 0) return;
-      clearTimeout(timer);
-      socket.end();
-      resolve(JSON.parse(buffer.slice(0, lineEnd)) as IpcResponse);
-    });
-    socket.on('error', (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-  });
 }
