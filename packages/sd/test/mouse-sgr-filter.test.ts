@@ -12,6 +12,9 @@ test('isMouseSgrSequence matches xterm SGR mouse press/release/wheel sequences',
   assert.equal(isMouseSgrSequence('[<64;10;5M'), true, 'wheel up');
   assert.equal(isMouseSgrSequence('[<65;10;5M'), true, 'wheel down');
   assert.equal(isMouseSgrSequence('[<35;200;200M'), true, 'large coords');
+  assert.equal(isMouseSgrSequence('\u001b[<64;10;5M'), true, 'raw escape prefix');
+  assert.equal(isMouseSgrSequence('[<64;10;5M[<65;10;5M'), true, 'batched stripped');
+  assert.equal(isMouseSgrSequence('35;75;54M35;76;54M'), true, 'batched fragment');
 });
 
 test('isMouseSgrSequence rejects ordinary input and near-misses', () => {

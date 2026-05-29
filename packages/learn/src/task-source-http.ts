@@ -69,7 +69,14 @@ export function httpTaskSource(opts: HttpTaskSourceOptions): TaskSource {
 }
 
 function defaultBuildRequest(args: TaskSourceSampleArgs & { sourceId: string }): unknown {
-  return { sourceId: args.sourceId, count: args.count, seed: args.seed };
+  // `requestId` is a per-call idempotency key; servers can use it to dedupe
+  // retried requests or to attach traces. It's deterministic when `seed` is
+  // supplied so reproducible runs produce the same id.
+  const requestId =
+    args.seed === undefined
+      ? `${args.sourceId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+      : `${args.sourceId}-${args.seed}-${args.count}`;
+  return { sourceId: args.sourceId, requestId, count: args.count, seed: args.seed };
 }
 
 function defaultParseResponse(payload: unknown): readonly TaskExample[] {

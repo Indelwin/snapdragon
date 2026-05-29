@@ -43,12 +43,15 @@ test('validateTargetValue invokes user validate hook last', () => {
 });
 
 test('dominates and paretoFront identify non-dominated candidates', () => {
-  const candidates: GepaCandidate[] = [
-    { id: 'a', components: {}, scores: [1, 0], meanScore: 0.5, generation: 0 },
-    { id: 'b', components: {}, scores: [0, 1], meanScore: 0.5, generation: 0 },
-    { id: 'c', components: {}, scores: [0.5, 0.5], meanScore: 0.5, generation: 0 },
-    { id: 'd', components: {}, scores: [0, 0], meanScore: 0, generation: 0 },
-  ];
+  const mk = (id: string, t0: number, t1: number): GepaCandidate => ({
+    id,
+    components: {},
+    scores: [t0, t1],
+    scoresByTask: { t0, t1 },
+    meanScore: (t0 + t1) / 2,
+    generation: 0,
+  });
+  const candidates = [mk('a', 1, 0), mk('b', 0, 1), mk('c', 0.5, 0.5), mk('d', 0, 0)];
   assert.equal(dominates(candidates[0], candidates[3]), true);
   assert.equal(dominates(candidates[0], candidates[1]), false);
   const front = paretoFront(candidates)
@@ -57,10 +60,49 @@ test('dominates and paretoFront identify non-dominated candidates', () => {
   assert.deepEqual(front, ['a', 'b', 'c']);
 });
 
+test('dominates treats disjoint task sets as incomparable', () => {
+  const a: GepaCandidate = {
+    id: 'a',
+    components: {},
+    scores: [1, 1],
+    scoresByTask: { t0: 1, t1: 1 },
+    meanScore: 1,
+    generation: 0,
+  };
+  const b: GepaCandidate = {
+    id: 'b',
+    components: {},
+    scores: [0, 0],
+    scoresByTask: { t2: 0, t3: 0 },
+    meanScore: 0,
+    generation: 0,
+  };
+  assert.equal(dominates(a, b), false);
+  assert.equal(dominates(b, a), false);
+  const front = paretoFront([a, b])
+    .map((c) => c.id)
+    .sort();
+  assert.deepEqual(front, ['a', 'b']);
+});
+
 test('selectParent is deterministic with a seeded rng', () => {
   const front: GepaCandidate[] = [
-    { id: 'a', components: {}, scores: [1, 0], meanScore: 0.5, generation: 0 },
-    { id: 'b', components: {}, scores: [0, 1], meanScore: 0.5, generation: 0 },
+    {
+      id: 'a',
+      components: {},
+      scores: [1, 0],
+      scoresByTask: { t0: 1, t1: 0 },
+      meanScore: 0.5,
+      generation: 0,
+    },
+    {
+      id: 'b',
+      components: {},
+      scores: [0, 1],
+      scoresByTask: { t0: 0, t1: 1 },
+      meanScore: 0.5,
+      generation: 0,
+    },
   ];
   const rng = seededRng(42);
   const picks = Array.from({ length: 5 }, () => selectParent(front, { rng }).id);

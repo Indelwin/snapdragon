@@ -122,7 +122,11 @@ test('httpTaskSource POSTs request and parses response', async () => {
 
   const tasks = await collectTasks(src, 2, 5);
   assert.equal(captured?.url, 'https://example.test/sample');
-  assert.deepEqual(captured?.body, { sourceId: 'gym', count: 2, seed: 5 });
+  assert.equal((captured?.body as { sourceId: string }).sourceId, 'gym');
+  assert.equal((captured?.body as { count: number }).count, 2);
+  assert.equal((captured?.body as { seed: number }).seed, 5);
+  // requestId is deterministic when seed is supplied.
+  assert.equal((captured?.body as { requestId: string }).requestId, 'gym-5-2');
   assert.deepEqual(
     tasks.map((t) => t.id),
     ['h1', 'h2'],
@@ -201,4 +205,57 @@ test('evaluateSource throws when streaming source given without count', async ()
       async (ex) => ({ exampleId: ex.id, output: '', toolCalls: [] }),
     ),
   );
+});
+
+test('mixedTaskSource backfills when a weighted source under-delivers', async () => {
+  // Bounded source with only 1 task; other source is procedural (unbounded).
+  const tiny = datasetTaskSource({
+    id: 'tiny-1',
+    examples: [{ id: 'only', prompt: 'x' }],
+  });
+  const proc = proceduralTaskSource({
+    id: 'fill',
+    generate: ({ index }) => ({ id: `f-${index}`, prompt: '' }),
+  });
+  const mix = mixedTaskSource({
+    id: 'mix-fill',
+    sources: [
+      { source: tiny, weight: 1 },
+      { source: proc, weight: 1 },
+    ],
+  });
+  const tasks = await collectTasks(mix, 6);
+  assert.equal(tasks.length, 6);
+  // Exhausted source contributes at most its size.
+  assert.ok(tasks.filter((t) => t.id === 'only').length <= 1);
+});
+
+test('processTaskSource aborts mid-stream on AbortSignal', async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'task-source-abort-'));
+  const script = join(dir, 'slow.mjs');
+  // Child emits one task then sleeps; abort should cut us off cleanly.
+  await writeFile(
+    script,
+    [
+      'process.stdout.write(JSON.stringify({ id: "p1", prompt: "first" }) + "\\n");',
+      'await new Promise((r) => setTimeout(r, 5000));',
+      'process.stdout.write(JSON.stringify({ id: "p2", prompt: "second" }) + "\\n");',
+    ].join('\n'),
+  );
+  const src = processTaskSource({
+    id: 'slow',
+    command: process.execPath,
+    args: [script],
+    timeoutMs: 10_000,
+  });
+  const controller = new AbortController();
+  const start = Date.now();
+  const out: TaskExample[] = [];
+  for await (const task of src.sample({ count: 5, signal: controller.signal })) {
+    out.push(task);
+    controller.abort();
+  }
+  const elapsed = Date.now() - start;
+  assert.equal(out.length, 1);
+  assert.ok(elapsed < 2000, `abort should be prompt, took ${elapsed}ms`);
 });
