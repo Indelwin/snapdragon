@@ -1,8 +1,17 @@
 // Shared GEPA types. The optimiser produces and consumes `GepaCandidate`
-// objects whose `components` map each target id to its current text. The
-// `scores` array is the per-task scalar reward on the optimiser's evaluation
-// batch, kept around so Pareto selection can compare candidates by per-task
-// dominance rather than only by mean score.
+// objects whose `components` map each target id to its current text.
+//
+// Each candidate carries two reward views:
+//
+// - `scores`         — per-task scalars from the *most recent* eval batch,
+//                       in batch order. Used for the bandit's mean-score
+//                       weighting and for the parent-vs-child improvement
+//                       test on the iteration's shared minibatch.
+// - `scoresByTask`   — cumulative map of `taskId -> latestScore`. Used by
+//                       Pareto selection so dominance compares candidates on
+//                       the *same* tasks even when minibatches differ across
+//                       iterations (fresh batches per iter would otherwise
+//                       make positional comparison meaningless).
 
 import type { TaskExample } from './dataset.js';
 import type { RolloutTrace } from './rollout.js';
@@ -13,8 +22,11 @@ export interface GepaCandidate {
   id: string;
   /** targetId -> candidate text. */
   components: Record<string, string>;
-  /** Per-task scores on the optimiser's eval batch. Empty until evaluated. */
+  /** Per-task scores on the *latest* eval batch. Empty until evaluated. */
   scores: number[];
+  /** Cumulative taskId -> latest score, across all batches this candidate
+   *  has been evaluated on. Drives Pareto dominance. */
+  scoresByTask: Record<string, number>;
   /** Cached mean of `scores`. NaN until evaluated. */
   meanScore: number;
   /** Generation number; seed = 0. */
