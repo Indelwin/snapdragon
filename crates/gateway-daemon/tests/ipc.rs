@@ -44,10 +44,43 @@ async fn ipc_serves_status_and_service_registration() {
         "worker"
     );
 
-    let table = request(
+    let agent = request(
         &path,
         json!({
             "id": 5,
+            "method": "agents.register",
+            "params": {
+                "descriptor": {
+                    "id": "sd",
+                    "kind": "sd",
+                    "protocol": "embedded",
+                    "supported_job_kinds": ["agent.run"],
+                    "capabilities": ["tools.shell"]
+                }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(agent["result"]["id"], "sd");
+
+    let agents = request(&path, json!({ "id": 6, "method": "agents.list" })).await;
+    assert_eq!(agents["result"][0]["protocol"], "embedded");
+
+    let agent = request(
+        &path,
+        json!({
+            "id": 7,
+            "method": "agents.show",
+            "params": { "id": "sd" }
+        }),
+    )
+    .await;
+    assert_eq!(agent["result"]["kind"], "sd");
+
+    let table = request(
+        &path,
+        json!({
+            "id": 8,
             "method": "tables.create",
             "params": { "name": "state", "owner": "worker", "access": "Private" }
         }),
@@ -58,13 +91,16 @@ async fn ipc_serves_status_and_service_registration() {
     let table = request(
         &path,
         json!({
-            "id": 6,
+            "id": 9,
             "method": "tables.show",
             "params": { "name": "state" }
         }),
     )
     .await;
     assert_eq!(table["result"]["owner"], "worker");
+
+    let status = request(&path, json!({ "id": 10, "method": "status" })).await;
+    assert_eq!(status["result"]["agent_runtimes"][0]["id"], "sd");
     server.abort();
     let _ = std::fs::remove_file(path);
 }

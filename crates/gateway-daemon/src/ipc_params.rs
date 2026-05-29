@@ -1,7 +1,8 @@
 use serde::Deserialize;
 use serde_json::Value;
 use snapdragon_gateway_core::{
-    ActorId, GatewayEnvelope, GatewayJobSpec, ReceiveFilter, ServiceSpec, TableAccess,
+    ActorId, GatewayAgentRuntimeDescriptor, GatewayEnvelope, GatewayJobSpec, ReceiveFilter,
+    ServiceSpec, TableAccess,
 };
 
 #[derive(Debug, Deserialize)]
@@ -54,6 +55,16 @@ pub(crate) struct CapabilityParams {
 #[derive(Debug, Deserialize)]
 pub(crate) struct CapabilityLookupParams {
     pub(crate) capability: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct AgentRuntimeParams {
+    pub(crate) descriptor: GatewayAgentRuntimeDescriptor,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct AgentRuntimeIdParams {
+    pub(crate) id: String,
 }
 
 #[derive(Debug, Deserialize)]

@@ -5,6 +5,7 @@
 //! mailboxes, selective receive, registry lookups, links, monitors,
 //! supervision, ETS-like tables, and transport-neutral envelopes.
 
+pub mod agent;
 pub mod envelope;
 pub mod jobs;
 pub mod links;
@@ -17,6 +18,7 @@ pub mod supervisor;
 pub mod tables;
 pub mod transport;
 
+pub use agent::*;
 pub use envelope::*;
 pub use jobs::*;
 pub use links::*;

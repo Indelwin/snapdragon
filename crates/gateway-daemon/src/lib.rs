@@ -2,10 +2,10 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use snapdragon_gateway_core::{
-    ActorId, GatewayEnvelope, GatewayExitReason, GatewayJobSpec, GatewayJobStatus,
-    GatewayLogRecord, GatewayWorkerProcess, LinkGraph, Mailbox, ProcessRegistry, ReceiveFilter,
-    RegistrySnapshot, ServiceSpec, ServiceStatus, Supervisor, TableAccess, TableRegistry,
-    TableSnapshot,
+    ActorId, GatewayAgentRuntimeDescriptor, GatewayEnvelope, GatewayExitReason, GatewayJobSpec,
+    GatewayJobStatus, GatewayLogRecord, GatewayWorkerProcess, LinkGraph, Mailbox, ProcessRegistry,
+    ReceiveFilter, RegistrySnapshot, ServiceSpec, ServiceStatus, Supervisor, TableAccess,
+    TableRegistry, TableSnapshot,
 };
 use tokio::{sync::RwLock, task::JoinHandle};
 
@@ -36,6 +36,7 @@ struct GatewayDaemonInner {
     links: LinkGraph,
     mailboxes: BTreeMap<ActorId, Mailbox>,
     tables: TableRegistry,
+    agent_runtimes: BTreeMap<String, GatewayAgentRuntimeDescriptor>,
     service_specs: BTreeMap<String, ServiceSpec>,
     services: BTreeMap<String, ServiceStatus>,
     worker_processes: BTreeMap<String, GatewayWorkerProcess>,
@@ -87,6 +88,32 @@ impl GatewayDaemon {
 
     pub async fn registry_snapshot(&self) -> RegistrySnapshot {
         self.inner.read().await.registry.snapshot()
+    }
+
+    pub async fn register_agent_runtime(
+        &self,
+        descriptor: GatewayAgentRuntimeDescriptor,
+    ) -> GatewayAgentRuntimeDescriptor {
+        self.inner
+            .write()
+            .await
+            .agent_runtimes
+            .insert(descriptor.id.clone(), descriptor.clone());
+        descriptor
+    }
+
+    pub async fn agent_runtime(&self, id: &str) -> Option<GatewayAgentRuntimeDescriptor> {
+        self.inner.read().await.agent_runtimes.get(id).cloned()
+    }
+
+    pub async fn list_agent_runtimes(&self) -> Vec<GatewayAgentRuntimeDescriptor> {
+        self.inner
+            .read()
+            .await
+            .agent_runtimes
+            .values()
+            .cloned()
+            .collect()
     }
 
     pub async fn send(&self, envelope: GatewayEnvelope) {
