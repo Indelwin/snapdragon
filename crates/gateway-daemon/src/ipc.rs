@@ -8,7 +8,9 @@ use tokio::net::{UnixListener, UnixStream};
 
 use crate::{
     GatewayDaemon,
-    ipc_core::{dispatch_envelopes, dispatch_registry, dispatch_services, dispatch_tables},
+    ipc_core::{
+        dispatch_agents, dispatch_envelopes, dispatch_registry, dispatch_services, dispatch_tables,
+    },
     ipc_durable::{dispatch_events, dispatch_jobs, dispatch_logs},
 };
 
@@ -89,6 +91,7 @@ async fn dispatch(daemon: &GatewayDaemon, method: &str, params: Value) -> Result
     match namespace(method) {
         "status" => ok_json(daemon.status().await),
         "services" => dispatch_services(daemon, method, params).await,
+        "agents" => dispatch_agents(daemon, method, params).await,
         "envelope" => dispatch_envelopes(daemon, method, params).await,
         "registry" => dispatch_registry(daemon, method, params).await,
         "tables" => dispatch_tables(daemon, method, params).await,

@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 use snapdragon_gateway_core::{
-    GatewayJobState, GatewayJobStatus, GatewayLease, GatewayLogRecord, GatewayQueueDepth,
-    GatewayWorkerProcess, GatewayWorkerProcessState, ServiceStatus,
+    GatewayAgentRuntimeDescriptor, GatewayJobState, GatewayJobStatus, GatewayLease,
+    GatewayLogRecord, GatewayQueueDepth, GatewayWorkerProcess, GatewayWorkerProcessState,
+    ServiceStatus,
 };
 
 use crate::GatewayDaemon;
@@ -9,6 +10,7 @@ use crate::GatewayDaemon;
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct GatewayStatusSnapshot {
     pub services: Vec<ServiceStatus>,
+    pub agent_runtimes: Vec<GatewayAgentRuntimeDescriptor>,
     pub processes: usize,
     pub worker_processes: Vec<GatewayWorkerProcess>,
     pub tables: Vec<String>,
@@ -32,6 +34,7 @@ impl GatewayDaemon {
         let jobs = self.store.as_ref().and_then(|store| store.list_jobs().ok());
         GatewayStatusSnapshot {
             services: inner.services.values().cloned().collect(),
+            agent_runtimes: inner.agent_runtimes.values().cloned().collect(),
             processes: inner.mailboxes.len() + running_workers(&worker_processes),
             worker_processes,
             tables: inner.tables.table_names(),

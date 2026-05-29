@@ -5,7 +5,7 @@ import { InlineServiceStore } from './inline-services.js';
 import { InlineTableStore } from './inline-tables.js';
 import type {
   ActorId,
-  GatewayClient,
+  GatewayAgentRuntimeDescriptor,
   GatewayEnvelope,
   GatewayEventRecord,
   GatewayJobLease,
@@ -21,12 +21,15 @@ import type {
   GatewayTableAccess,
   GatewayTableSnapshot,
 } from './types.js';
+import type { GatewayOrchestrationClient, GatewayWorldSnapshot } from './types-runtime.js';
+import { buildGatewayWorldSnapshot } from './world.js';
 
-export class InlineGatewayClient implements GatewayClient {
+export class InlineGatewayClient implements GatewayOrchestrationClient {
   readonly runtime = 'inline-ts' as const;
   #mailboxes = new InlineMailboxStore();
   #services = new InlineServiceStore();
   #capabilities = new InlineCapabilityRegistry();
+  #agentRuntimes = new Map<string, GatewayAgentRuntimeDescriptor>();
   #tables = new InlineTableStore();
   #jobs = new InlineJobStore({
     log: (level, target, message, data) => this.#log(level, target, message, data),
@@ -65,6 +68,7 @@ export class InlineGatewayClient implements GatewayClient {
     return {
       runtime: this.runtime,
       services: await this.listServices(),
+      agentRuntimes: await this.listAgentRuntimes(),
       processes: this.#mailboxes.size(),
       workerProcesses: [],
       tables: await this.tableNames(),
@@ -91,6 +95,26 @@ export class InlineGatewayClient implements GatewayClient {
 
   async registrySnapshot(): Promise<GatewayRegistrySnapshot> {
     return this.#capabilities.snapshot();
+  }
+
+  async registerAgentRuntime(
+    descriptor: GatewayAgentRuntimeDescriptor,
+  ): Promise<GatewayAgentRuntimeDescriptor> {
+    const normalized = normalizeAgentRuntime(descriptor);
+    this.#agentRuntimes.set(normalized.id, normalized);
+    this.#log('info', normalized.id, 'agent runtime registered', {
+      kind: normalized.kind,
+      protocol: normalized.protocol,
+    });
+    return normalized;
+  }
+
+  async listAgentRuntimes(): Promise<GatewayAgentRuntimeDescriptor[]> {
+    return [...this.#agentRuntimes.values()].sort((a, b) => a.id.localeCompare(b.id));
+  }
+
+  async showAgentRuntime(id: string): Promise<GatewayAgentRuntimeDescriptor | undefined> {
+    return this.#agentRuntimes.get(id);
   }
 
   async createTable(
@@ -177,6 +201,10 @@ export class InlineGatewayClient implements GatewayClient {
     return logs.slice(-(options.limit ?? 20));
   }
 
+  async worldSnapshot(): Promise<GatewayWorldSnapshot> {
+    return buildGatewayWorldSnapshot(this);
+  }
+
   #cancel<T extends { id: string; state: string; updatedAtMs: number }>(
     records: Map<string, T>,
     id: string,
@@ -204,4 +232,14 @@ export class InlineGatewayClient implements GatewayClient {
 
 function inlineId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeAgentRuntime(
+  descriptor: GatewayAgentRuntimeDescriptor,
+): GatewayAgentRuntimeDescriptor {
+  return {
+    ...descriptor,
+    supportedJobKinds: descriptor.supportedJobKinds ?? [],
+    capabilities: descriptor.capabilities ?? [],
+  };
 }
