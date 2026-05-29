@@ -1142,7 +1142,7 @@ test('inline shell command keeps a bounded tail for noisy commands', async () =>
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-shell-'));
   try {
     const result = await runInlineShellCommand(
-      "printf 'first\\n'; printf 'x%.0s' {1..200}; printf '\\nlast\\n'",
+      "printf 'first\\n'; i=0; while [ $i -lt 200 ]; do printf x; i=$((i + 1)); done; printf '\\nlast\\n'",
       {
         cwd: workspace,
         timeoutMs: 5_000,
