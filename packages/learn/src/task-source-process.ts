@@ -39,9 +39,14 @@ export function processTaskSource(opts: ProcessTaskSourceOptions): TaskSource {
     size: opts.size,
     async *sample(args: TaskSourceSampleArgs): AsyncIterable<TaskExample> {
       const child = spawnChild(opts);
+      // Wire abort -> immediate SIGTERM so consumers can cut the loop short
+      // without waiting for the next line or the per-call timeout.
+      const onAbort = () => terminate(child);
+      args.signal?.addEventListener('abort', onAbort, { once: true });
       try {
         yield* readTasks(child, opts, args);
       } finally {
+        args.signal?.removeEventListener('abort', onAbort);
         terminate(child);
       }
     },
@@ -70,18 +75,22 @@ async function* readTasks(
   child.stdin?.end();
 
   const timeoutMs = opts.timeoutMs ?? 60_000;
-  const stderrChunks: string[] = [];
-  child.stderr?.on('data', (chunk: Buffer) => stderrChunks.push(chunk.toString('utf8')));
+  const stderr = boundedStderr(4096);
+  child.stderr?.on('data', (chunk: Buffer) => stderr.push(chunk.toString('utf8')));
 
   const lines = createInterface({ input: child.stdout!, crlfDelay: Infinity });
-  const timer = setTimeout(() => terminate(child), timeoutMs);
+  const timedOut = { value: false };
+  const timer = setTimeout(() => {
+    timedOut.value = true;
+    terminate(child);
+  }, timeoutMs);
   let emitted = 0;
   try {
     for await (const line of lines) {
       if (args.signal?.aborted) return;
       const trimmed = line.trim();
       if (trimmed.length === 0) continue;
-      yield parseTaskLine(opts.id, trimmed, stderrChunks);
+      yield parseTaskLine(opts.id, trimmed, stderr.snapshot());
       emitted += 1;
       if (emitted >= args.count) return;
     }
@@ -89,20 +98,37 @@ async function* readTasks(
     clearTimeout(timer);
   }
 
-  if (emitted === 0 && stderrChunks.length > 0) {
+  if (timedOut.value) {
     throw new Error(
-      `processTaskSource(${opts.id}): child produced no tasks; stderr=${stderrChunks.join('').slice(0, 500)}`,
+      `processTaskSource(${opts.id}): timed out after ${timeoutMs}ms (emitted ${emitted}/${args.count}); stderr=${stderr.snapshot().slice(-500)}`,
+    );
+  }
+  if (emitted === 0 && stderr.snapshot().length > 0) {
+    throw new Error(
+      `processTaskSource(${opts.id}): child produced no tasks; stderr=${stderr.snapshot().slice(0, 500)}`,
     );
   }
 }
 
-function parseTaskLine(id: string, line: string, stderrChunks: readonly string[]): TaskExample {
+/** Ring-buffered stderr capture. Keeps at most `limit` UTF-8 chars. */
+function boundedStderr(limit: number): { push(s: string): void; snapshot(): string } {
+  let buf = '';
+  return {
+    push(s) {
+      buf = (buf + s).slice(-limit);
+    },
+    snapshot() {
+      return buf;
+    },
+  };
+}
+
+function parseTaskLine(id: string, line: string, stderrTail: string): TaskExample {
   try {
     return JSON.parse(line) as TaskExample;
   } catch (error) {
-    const stderrTail = stderrChunks.join('').slice(-200);
     throw new Error(
-      `processTaskSource(${id}): malformed TaskExample line: ${(error as Error).message}; stderr=${stderrTail}`,
+      `processTaskSource(${id}): malformed TaskExample line: ${(error as Error).message}; stderr=${stderrTail.slice(-200)}`,
     );
   }
 }

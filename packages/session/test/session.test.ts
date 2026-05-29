@@ -235,6 +235,34 @@ test('JSONL context compaction keeps assistant tool calls with tool results', ()
   assert.equal(result.chunks[0].range_end, 3);
 });
 
+test('JSONL context assembly skips compacted message bodies without parsing them', () => {
+  const root = mkdtempSync(join(tmpdir(), 'snapdragon-session-'));
+  const store = new SessionStore({ root });
+  const session = store.create('session_compacted_read');
+  session.appendMessage({ role: 'user', content: 'old huge message' });
+  session.appendContextChunk({
+    range_start: 1,
+    range_end: 1,
+    summary_text: 'old summary',
+    source_token_count: 1000,
+    summary_token_count: 3,
+    level: 'deterministic',
+    created_by_model: null,
+  });
+  appendFileSync(
+    join(root, 'session_compacted_read.jsonl'),
+    '{"type":"message","store_id":1,"role":"tool","content":\n',
+    'utf8',
+  );
+  session.appendMessage({ role: 'user', content: 'fresh tail' });
+
+  const assembled = session.assembleContext({ freshTailCount: 1 });
+
+  assert.match(String(assembled[0].content), /Context summary for earlier canonical messages 1-1/);
+  assert.match(String(assembled[0].content), /old summary/);
+  assert.equal(assembled[1].content, 'fresh tail');
+});
+
 test('JSONL context compaction avoids splitting tool calls across the fresh tail', () => {
   const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-session-')) });
   const session = store.create('session_5');

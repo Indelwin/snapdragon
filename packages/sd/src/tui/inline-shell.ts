@@ -28,10 +28,13 @@ export function runInlineShellCommand(
       stdio: ['ignore', 'pipe', 'pipe'],
     });
     let output = '';
+    let truncated = false;
     let timedOut = false;
     const append = (chunk: Buffer) => {
-      output += chunk.toString('utf8');
-      if (output.length > maxOutputBytes) output = output.slice(0, maxOutputBytes);
+      const text = chunk.toString('utf8');
+      const next = text.length >= maxOutputBytes ? text.slice(-maxOutputBytes) : output + text;
+      truncated ||= output.length + text.length > maxOutputBytes;
+      output = next.length > maxOutputBytes ? next.slice(-maxOutputBytes) : next;
     };
     const timer = setTimeout(() => {
       timedOut = true;
@@ -41,7 +44,6 @@ export function runInlineShellCommand(
     child.stderr?.on('data', append);
     child.on('close', (code) => {
       clearTimeout(timer);
-      const truncated = output.length >= maxOutputBytes;
       const suffix = timedOut
         ? `\n[timeout after ${timeoutMs}ms]`
         : truncated

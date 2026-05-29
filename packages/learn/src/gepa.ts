@@ -138,6 +138,7 @@ function buildContext(args: OptimizeGepaArgs): LoopContext {
     nextId,
     evals: { count: 0 },
     memory: gepaFeedbackMemory({ topK: args.options.memoryTopK }),
+    batchSeq: { value: 0 },
   };
 }
 
@@ -146,6 +147,7 @@ function buildSeed(ctx: LoopContext, args: OptimizeGepaArgs): GepaCandidate {
     id: args.seed.id ?? ctx.nextId(),
     components: { ...args.seed.components },
     scores: [],
+    scoresByTask: {},
     meanScore: Number.NaN,
     generation: 0,
   };
