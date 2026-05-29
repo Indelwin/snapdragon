@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs';
 import type { Message } from '@snapdragon-ai/host';
 import type { ContextWindowOptions } from './context-options.js';
+import { resolveContextWindowOptions } from './context-options.js';
+import { readCompactedContextState } from './context-records.js';
 import type { ContextChunkInput } from './context-summary.js';
 import { assembleContextWindow, recordToMessage } from './context-window.js';
 import { type SessionMetadata, sessionMetadata } from './metadata.js';
@@ -129,18 +131,12 @@ export class JsonlSession {
   }
 
   assembleContext(options: ContextWindowOptions = {}): Message[] {
-    const records = this.#readRecords();
-    return assembleContextWindow(
-      { messages: messageRecords(records), chunks: contextChunks(records) },
-      options,
-    ).messages;
+    return assembleContextWindow(this.#readContextState(options), options).messages;
   }
 
   compactContext(options: ContextWindowOptions = {}): ContextCompactionResult {
-    const records = this.#readRecords();
     return compactSessionContext({
-      messages: messageRecords(records),
-      chunks: contextChunks(records),
+      ...this.#readContextState(options),
       options,
       append: (chunk) => this.appendContextChunk(chunk),
     });
@@ -165,6 +161,16 @@ export class JsonlSession {
     this.#nextChunkId = nextChunkId(records);
     this.#messageCount = messageRecords(records).length;
     return records;
+  }
+
+  #readContextState(options: ContextWindowOptions): {
+    messages: SessionMessageRecord[];
+    chunks: SessionContextChunkRecord[];
+  } {
+    if (resolveContextWindowOptions(options).enabled)
+      return readCompactedContextState(this.jsonlPath);
+    const records = this.#readRecords();
+    return { messages: messageRecords(records), chunks: contextChunks(records) };
   }
 }
 

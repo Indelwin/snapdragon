@@ -19,6 +19,9 @@ export interface LoopContext {
   nextId: () => string;
   evals: { count: number };
   memory: GepaFeedbackMemory;
+  /** Monotonic counter of minibatch draws, used to derive a per-call seed
+   *  so dataset/procedural sources don't restart from index 0 every call. */
+  batchSeq: { value: number };
 }
 
 export async function evaluateCandidate(
@@ -34,21 +37,42 @@ export async function evaluateCandidate(
   });
   candidate.scores = result.scores;
   candidate.meanScore = mean(result.scores);
+  // Update cumulative per-task evidence. Later evals overwrite earlier ones
+  // for the same task id; tasks not in this batch are preserved.
+  for (let i = 0; i < tasks.length; i += 1) {
+    const taskId = (tasks[i] as TaskExample).id;
+    const score = result.scores[i];
+    if (typeof score === 'number') candidate.scoresByTask[taskId] = score;
+  }
   ctx.evals.count += 1;
   return result;
 }
 
+/**
+ * Draw a fresh minibatch. Each call advances `ctx.batchSeq` and derives a
+ * new seed via mulberry-style mixing of `options.seed` + the counter, so
+ * dataset and procedural sources do not silently restart from index 0 on
+ * every iteration.
+ */
 export async function drawMinibatch(ctx: LoopContext, size: number): Promise<TaskExample[]> {
+  ctx.batchSeq.value += 1;
+  const seed = deriveBatchSeed(ctx.options.seed, ctx.batchSeq.value);
   const tasks: TaskExample[] = [];
   for await (const example of ctx.source.sample({
     count: size,
-    seed: ctx.options.seed,
+    seed,
     signal: ctx.options.signal,
   })) {
     tasks.push(example);
     if (tasks.length >= size) break;
   }
   return tasks;
+}
+
+function deriveBatchSeed(baseSeed: number | undefined, seq: number): number | undefined {
+  if (baseSeed === undefined) return undefined;
+  // Knuth-style multiplicative hash; deterministic given (baseSeed, seq).
+  return ((baseSeed + seq * 2654435761) >>> 0) ^ ((seq * 40503) >>> 0);
 }
 
 export function pickTarget(ctx: LoopContext, iteration: number): GepaTarget {
@@ -84,6 +108,7 @@ export async function proposeChild(
       id: ctx.nextId(),
       components,
       scores: [],
+      scoresByTask: {},
       meanScore: Number.NaN,
       generation,
       parents: [parent.id],
@@ -103,6 +128,7 @@ function emptyChild(
     id: ctx.nextId(),
     components: { ...parent.components, [target.id]: current },
     scores: [],
+    scoresByTask: {},
     meanScore: Number.NaN,
     generation,
     parents: [parent.id],
@@ -120,6 +146,7 @@ export function buildChildFromComponents(
     id: ctx.nextId(),
     components: { ...components },
     scores: [],
+    scoresByTask: {},
     meanScore: Number.NaN,
     generation,
     parents,
