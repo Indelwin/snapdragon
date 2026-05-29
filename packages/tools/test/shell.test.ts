@@ -60,7 +60,8 @@ test('run_shell unblocks even when a backgrounded grandchild keeps stdout open',
 
 test('run_shell keeps a bounded tail for noisy commands', async () => {
   const result = await runShell({
-    command: "printf 'first\\n'; printf 'x%.0s' {1..200}; printf '\\nlast\\n'",
+    command:
+      "printf 'first\\n'; i=0; while [ $i -lt 200 ]; do printf x; i=$((i + 1)); done; printf '\\nlast\\n'",
     maxOutputBytes: 32,
   });
   const content = String(result.content);
