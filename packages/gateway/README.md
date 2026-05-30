@@ -55,6 +55,44 @@ const snapshot = await gateway.worldSnapshot();
 console.log(snapshot.agentRuntimes.map((runtime) => runtime.id));
 ```
 
+## Pi RPC Runtime Adapter
+
+Pi Agent is the first external runtime adapter. The gateway facade talks to the
+installed `pi` binary over Pi's JSONL RPC mode, so the user's existing
+`~/.pi/agent` configuration, extensions, skills, prompt templates, sessions,
+and provider credentials remain owned by Pi instead of being re-hosted in
+Snapdragon.
+
+```ts
+import {
+  createPiRpcRuntimeDescriptor,
+  probePiRpcRuntime,
+  runPiRpcAgentJob,
+  RustGatewayClient,
+} from '@snapdragon-ai/gateway';
+
+const gateway = new RustGatewayClient({ socketPath: '/tmp/snapdragon-gateway.sock' });
+
+await gateway.registerAgentRuntime(createPiRpcRuntimeDescriptor());
+
+const healthCheckedDescriptor = await probePiRpcRuntime();
+await gateway.registerAgentRuntime(healthCheckedDescriptor);
+
+const result = await runPiRpcAgentJob({
+  prompt: 'Inspect this project and identify the next useful task.',
+  targetRuntimeId: 'pi',
+  session: 'new',
+});
+
+console.log(result.summary);
+```
+
+The adapter sends `prompt`, `get_state`, and `get_commands` commands over stdin,
+observes streamed message and agent lifecycle events on stdout, and cancels
+blocking extension UI prompts by default. That makes it safe for headless job
+workers while preserving non-blocking Pi extension status/widget updates for
+future management UIs.
+
 ## Service Workers
 
 Services may be registered with an in-process runner or a worker command:
