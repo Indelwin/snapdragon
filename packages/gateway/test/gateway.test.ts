@@ -1,10 +1,16 @@
 import assert from 'node:assert/strict';
-import { rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import test from 'node:test';
-import { createGatewayRestServer, InlineGatewayClient, RustGatewayClient } from '../src/index.js';
+import {
+  createGatewayRestServer,
+  InlineGatewayClient,
+  probePiRpcRuntime,
+  RustGatewayClient,
+  runPiRpcAgentJob,
+} from '../src/index.js';
 
 test('inline gateway supports selective receive without reordering other messages', async () => {
   const gateway = new InlineGatewayClient();
@@ -131,6 +137,44 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.equal(Array.isArray(world.logs), true);
   } finally {
     await rest.close();
+  }
+});
+
+test('Pi RPC adapter probes runtime descriptors over JSONL', async () => {
+  const fixture = await writePiRpcFixture();
+  try {
+    const descriptor = await probePiRpcRuntime({
+      command: process.execPath,
+      args: [fixture],
+      timeoutMs: 3_000,
+    });
+    assert.equal(descriptor.id, 'pi');
+    assert.equal(descriptor.kind, 'pi');
+    assert.equal(descriptor.protocol, 'jsonl');
+    assert.equal(descriptor.health?.state, 'ok');
+    assert.equal(descriptor.metadata?.commandCount, 2);
+    assert.equal((descriptor.metadata?.state as any)?.sessionId, 'fake-session');
+  } finally {
+    await rm(dirname(fixture), { force: true, recursive: true });
+  }
+});
+
+test('Pi RPC adapter runs prompts, handles extension UI, and returns output', async () => {
+  const fixture = await writePiRpcFixture();
+  try {
+    const result = await runPiRpcAgentJob(
+      { prompt: 'hello from snapdragon', targetRuntimeId: 'pi' },
+      { command: process.execPath, args: [fixture], timeoutMs: 3_000 },
+    );
+    assert.equal(result.content, 'hello from fake pi');
+    assert.equal(result.summary, 'hello from fake pi');
+    assert.equal(result.metrics.extension_ui_requests, 1);
+    assert.equal(
+      result.events.some((event) => event.type === 'extension_ui_request'),
+      true,
+    );
+  } finally {
+    await rm(dirname(fixture), { force: true, recursive: true });
   }
 });
 
@@ -502,4 +546,66 @@ function wireAgentRuntime(id = 'sd'): unknown {
     health: null,
     metadata: null,
   };
+}
+
+async function writePiRpcFixture(): Promise<string> {
+  const root = await mkdtemp(join(tmpdir(), `snapdragon-pi-rpc-${process.pid}-`));
+  const fixture = join(root, 'fake-pi-rpc.mjs');
+  await writeFile(
+    fixture,
+    `
+import { createInterface } from 'node:readline';
+
+const rl = createInterface({ input: process.stdin });
+const emit = (message) => process.stdout.write(JSON.stringify(message) + '\\n');
+
+rl.on('line', (line) => {
+  const command = JSON.parse(line);
+  if (command.type === 'get_state') {
+    emit({
+      id: command.id,
+      type: 'response',
+      command: 'get_state',
+      success: true,
+      data: { sessionId: 'fake-session', thinkingLevel: 'high', isStreaming: false },
+    });
+    return;
+  }
+  if (command.type === 'get_commands') {
+    emit({
+      id: command.id,
+      type: 'response',
+      command: 'get_commands',
+      success: true,
+      data: { commands: [{ name: 'vault' }, { name: 'skill:repo-processor' }] },
+    });
+    return;
+  }
+  if (command.type === 'prompt') {
+    emit({ id: command.id, type: 'response', command: 'prompt', success: true });
+    emit({
+      type: 'message_update',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'hello ' }] },
+      assistantMessageEvent: { type: 'text_delta', delta: 'hello ' },
+    });
+    emit({ type: 'extension_ui_request', id: 'ui-1', method: 'input', title: 'Need input' });
+    return;
+  }
+  if (command.type === 'extension_ui_response' && command.id === 'ui-1') {
+    emit({
+      type: 'message_update',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'hello from fake pi' }] },
+      assistantMessageEvent: { type: 'text_delta', delta: 'from fake pi' },
+    });
+    emit({
+      type: 'message_end',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'hello from fake pi' }] },
+    });
+    emit({ type: 'agent_end', messages: [] });
+  }
+});
+`,
+    'utf8',
+  );
+  return fixture;
 }

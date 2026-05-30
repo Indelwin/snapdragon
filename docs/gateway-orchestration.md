@@ -86,9 +86,25 @@ descriptor fields are:
 - isolation preference such as inherit, profile, channel, or sandbox.
 - health and metadata for dashboards and routing.
 
-`sd` should register as the built-in runtime. Codex, Hermes Agent, Pi Agent, and
-custom workers should use the same descriptor model through command, JSONL,
-stdio, HTTP, or embedded protocols.
+`sd` should register as the built-in runtime. Pi Agent is the first concrete
+external adapter: Snapdragon registers a `kind: "pi"`, `protocol: "jsonl"`
+descriptor and launches `pi --mode rpc` as a worker runtime. Codex, Hermes
+Agent, and custom workers should use the same descriptor model through command,
+JSONL, stdio, HTTP, or embedded protocols.
+
+```mermaid
+sequenceDiagram
+  participant Gateway
+  participant Worker as "agent-jobs service"
+  participant Pi as "pi --mode rpc"
+  Gateway->>Worker: lease agent.run targetRuntimeId=pi
+  Worker->>Pi: spawn JSONL RPC process
+  Worker->>Pi: prompt
+  Pi-->>Worker: message_update and extension_ui_request
+  Worker-->>Pi: extension_ui_response cancelled
+  Pi-->>Worker: message_end and agent_end
+  Worker-->>Gateway: complete job with summary, content, metrics
+```
 
 ## Executive Agents
 

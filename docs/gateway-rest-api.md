@@ -76,6 +76,29 @@ content-type: application/json
 }
 ```
 
+Register the local Pi runtime:
+
+```http
+POST /v1/agents/register
+content-type: application/json
+
+{
+  "descriptor": {
+    "id": "pi",
+    "kind": "pi",
+    "protocol": "jsonl",
+    "label": "Pi Agent",
+    "command": {
+      "command": "pi",
+      "args": ["--mode", "rpc"]
+    },
+    "supportedJobKinds": ["agent.run"],
+    "capabilities": ["llm.chat", "tools.pi", "skills.pi", "extensions.pi"],
+    "isolation": "profile"
+  }
+}
+```
+
 Enqueue a routed agent job:
 
 ```http
@@ -89,7 +112,7 @@ content-type: application/json
     "priority": 10,
     "payload": {
       "prompt": "Run the release checks and summarize failures.",
-      "targetRuntimeId": "codex",
+      "targetRuntimeId": "pi",
       "correlationId": "release-check-001",
       "policyHints": {
         "approvalRequired": false,

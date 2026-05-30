@@ -14,7 +14,9 @@ Usage:
 
 Gateway commands:
   sd gateway jobs enqueue|list|show|cancel
-  sd gateway agents run|enqueue|status|cancel
+  sd gateway agents list|show|register-pi|probe-pi
+  sd gateway agents run|enqueue [--runtime <id>]
+  sd gateway agents status|cancel <job-id>
   sd gateway learn enqueue-eval <dataset.json> [--id <id>]
   sd gateway logs tail [target] [limit]
   sd gateway sandboxes list

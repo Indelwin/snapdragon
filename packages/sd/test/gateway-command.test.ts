@@ -52,6 +52,25 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
       /enqueued agent job job_1/,
     );
     assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['agents', 'enqueue', '--runtime', 'pi', 'test agent'],
+      }),
+      /runtime=pi/,
+    );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['agents', 'list'] }),
+      /pi\tpi\tjsonl/,
+    );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['agents', 'show', 'pi'] }),
+      /"protocol": "jsonl"/,
+    );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['agents', 'register-pi'] }),
+      /registered agent runtime pi/,
+    );
+    assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['logs', 'tail'] }),
       /gateway logs/,
     );
@@ -244,6 +263,15 @@ function responseFor(request: any): unknown {
   if (request.method === 'jobs.cancel') {
     return { id: request.id, ok: true, result: wireJob(request.params.id, 'Cancelled') };
   }
+  if (request.method === 'agents.register') {
+    return { id: request.id, ok: true, result: request.params.descriptor };
+  }
+  if (request.method === 'agents.list') {
+    return { id: request.id, ok: true, result: [wireAgentRuntime('pi')] };
+  }
+  if (request.method === 'agents.show') {
+    return { id: request.id, ok: true, result: wireAgentRuntime(request.params.id) };
+  }
   if (request.method === 'logs.tail') {
     return {
       id: request.id,
@@ -282,5 +310,20 @@ function wireJob(id: string, state: string): unknown {
     attempts: 0,
     created_at_ms: 10,
     updated_at_ms: 10,
+  };
+}
+
+function wireAgentRuntime(id: string): unknown {
+  return {
+    id,
+    kind: id === 'pi' ? 'pi' : 'custom',
+    protocol: id === 'pi' ? 'jsonl' : 'command',
+    label: id === 'pi' ? 'Pi Agent' : null,
+    command: null,
+    supported_job_kinds: ['agent.run'],
+    capabilities: [],
+    isolation: 'profile',
+    health: null,
+    metadata: null,
   };
 }
