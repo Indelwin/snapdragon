@@ -1,25 +1,41 @@
-import type { GatewayAgentRunSpec } from '@snapdragon-ai/gateway';
 import type { SdCliArgs } from './args-types.js';
 import { loadSdConfig } from './config.js';
+import { agentSpecFromArgs } from './gateway-agent-command-args.js';
+import { runGatewayAgentRuntime } from './gateway-agent-dispatch.js';
+import {
+  listAgentRuntimes,
+  probePiRuntime,
+  registerPiRuntime,
+  showAgentRuntime,
+} from './gateway-agent-runtime-commands.js';
 import { gatewayErrorMessage, rustGatewayClientForConfig } from './gateway-command-client.js';
-import { runHeadlessGatewayAgent } from './gateway-headless-agent.js';
+
+type AgentCommandHandler = (rest: string[], args: SdCliArgs) => Promise<string>;
+
+const agentCommandHandlers: Record<string, AgentCommandHandler> = {
+  cancel: (rest, args) => cancelAgent(rest[0], args),
+  enqueue: enqueueAgent,
+  list: (_rest, args) => listAgentRuntimes(args),
+  'probe-pi': (rest) => probePiRuntime(rest),
+  'register-pi': registerPiRuntime,
+  run: runAgent,
+  show: (rest, args) => showAgentRuntime(rest[0], args),
+  status: (rest, args) => agentStatus(rest[0], args),
+};
 
 export async function agentsCommand(
   action: string,
   rest: string[],
   args: SdCliArgs,
 ): Promise<string> {
-  if (action === 'run') return runAgent(rest, args);
-  if (action === 'enqueue') return enqueueAgent(rest, args);
-  if (action === 'status') return agentStatus(rest[0], args);
-  if (action === 'cancel') return cancelAgent(rest[0], args);
-  return `Unknown gateway agents command: ${action}\n`;
+  const handler = agentCommandHandlers[action];
+  return handler ? handler(rest, args) : `Unknown gateway agents command: ${action}\n`;
 }
 
 async function runAgent(rest: string[], args: SdCliArgs): Promise<string> {
   const spec = agentSpecFromArgs(rest, args);
   if (!spec.prompt) return 'gateway agents run requires a prompt\n';
-  const result = await runHeadlessGatewayAgent(spec, args);
+  const result = await runGatewayAgentRuntime(spec, { args });
   return `${result.summary ?? 'agent run complete'}\n`;
 }
 
@@ -33,7 +49,7 @@ async function enqueueAgent(rest: string[], args: SdCliArgs): Promise<string> {
       payload: spec,
       maxAttempts: 1,
     });
-    return `enqueued agent job ${job.id}\n`;
+    return `enqueued agent job ${job.id} runtime=${spec.targetRuntimeId ?? 'sd'}\n`;
   } catch (error) {
     return `Rust gateway unavailable: ${gatewayErrorMessage(error)}\n`;
   }
@@ -59,16 +75,4 @@ async function cancelAgent(id: string | undefined, args: SdCliArgs): Promise<str
   } catch (error) {
     return `Rust gateway unavailable: ${gatewayErrorMessage(error)}\n`;
   }
-}
-
-function agentSpecFromArgs(rest: string[], args: SdCliArgs): GatewayAgentRunSpec {
-  return {
-    prompt: rest.join(' '),
-    provider: args.provider,
-    model: args.model,
-    configPath: args.configPath,
-    cwd: args.cwd,
-    profile: args.profileName,
-    session: 'new',
-  };
 }
