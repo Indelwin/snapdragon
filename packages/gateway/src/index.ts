@@ -1,4 +1,15 @@
 export { InlineGatewayClient } from './inline.js';
+export type {
+  PiRpcAgentJobOptions,
+  PiRpcAgentRunResult,
+  PiRpcObservedEvent,
+  PiRpcRuntimeOptions,
+} from './pi-rpc.js';
+export {
+  createPiRpcRuntimeDescriptor,
+  probePiRpcRuntime,
+  runPiRpcAgentJob,
+} from './pi-rpc.js';
 export type { GatewayRestServer, GatewayRestServerOptions } from './rest.js';
 export { createGatewayRestServer } from './rest.js';
 export { RustGatewayClient, type RustGatewayClientOptions } from './rust.js';

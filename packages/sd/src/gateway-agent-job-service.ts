@@ -1,7 +1,7 @@
 import type { GatewayAgentRunSpec, GatewayJobStatus } from '@snapdragon-ai/gateway';
 import type { SdBackgroundService, SdBackgroundServiceResult } from './background.js';
+import { runGatewayAgentRuntime } from './gateway-agent-dispatch.js';
 import { rustGatewayClientForConfig } from './gateway-command-client.js';
-import { runHeadlessGatewayAgent } from './gateway-headless-agent.js';
 
 export function gatewayAgentJobService(): SdBackgroundService {
   return {
@@ -28,11 +28,20 @@ async function runAgentJob(
   job: GatewayJobStatus,
 ): Promise<SdBackgroundServiceResult> {
   try {
-    const result = await runHeadlessGatewayAgent(job.spec.payload as GatewayAgentRunSpec);
+    const spec = job.spec.payload as GatewayAgentRunSpec;
+    const runtime = spec.targetRuntimeId
+      ? await client.showAgentRuntime(spec.targetRuntimeId)
+      : undefined;
+    const result = await runGatewayAgentRuntime(spec, {
+      runtime,
+      timeoutMs: job.spec.timeoutMs,
+    });
     await client.completeJob(job.id, {
+      runtimeId: result.runtimeId,
       summary: result.summary,
       content: result.content,
       metrics: result.metrics,
+      outputArtifact: result.outputArtifact,
     });
     return summary(1, 0, result.summary ?? `completed ${job.id}`);
   } catch (error) {
