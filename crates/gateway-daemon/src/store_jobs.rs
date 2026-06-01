@@ -62,6 +62,11 @@ impl GatewayStore {
         status.lease_id = None;
         status.lease_expires_at_ms = None;
         self.upsert_job(&status)?;
+        self.with_conn(|conn| {
+            conn.execute("delete from gateway_leases where job_id=?1", params![id])
+                .map(|_| ())
+                .map_err(|error| error.to_string())
+        })?;
         self.append_log(now_ms, "warn", Some(id), "job cancelled", None)?;
         Ok(Some(status))
     }
@@ -170,6 +175,9 @@ impl GatewayStore {
         let Some(mut status) = self.job(id)? else {
             return Ok(None);
         };
+        if status.state == GatewayJobState::Cancelled {
+            return Ok(Some(status));
+        }
         status.state = state;
         status.updated_at_ms = now_ms;
         status.result = result;

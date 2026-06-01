@@ -12,6 +12,7 @@ import type { GatewayAgentRunSpec } from './types-runtime.js';
 
 export class PiRpcRunController {
   readonly #runState = new PiRpcRunState();
+  readonly #observerTasks = new Set<Promise<void>>();
   #session?: PiRpcSession;
 
   constructor(
@@ -21,16 +22,19 @@ export class PiRpcRunController {
 
   async run(): Promise<PiRpcAgentRunResult> {
     if (!this.spec.prompt.trim()) throw new Error('Pi RPC agent job requires a prompt');
+    if (this.options.signal?.aborted) throw new Error('Pi RPC agent run aborted');
     this.#session = startPiRpcSession(this.options, this.spec, this.options.descriptor);
-    this.#session.onEvent((event) => this.#runState.record(event, this.#requireSession()));
+    this.#session.onEvent((event) => this.#recordEvent(event));
     const startedAtMs = Date.now();
     const agentEnd = this.#waitForAgentEnd();
     try {
       await this.#sendPrompt();
       const state = await agentEnd;
+      await this.#flushObservers();
       return this.#runState.result(this.spec, state, Date.now() - startedAtMs);
     } catch (error) {
       agentEnd.catch(() => undefined);
+      await this.#flushObservers();
       throw error;
     } finally {
       await this.#requireSession().stop();
@@ -50,6 +54,10 @@ export class PiRpcRunController {
       const timeout = this.#agentTimeout(reject);
       const abort = this.#abortHandler(timeout, reject);
       const session = this.#requireSession();
+      if (this.options.signal?.aborted) {
+        abort();
+        return;
+      }
       this.options.signal?.addEventListener('abort', abort, { once: true });
       session.onEvent((event) => this.#resolveAgentEnd(event, timeout, abort, resolve));
       session.child.once('exit', (code, signal) => {
@@ -94,6 +102,17 @@ export class PiRpcRunController {
   #requireSession(): PiRpcSession {
     if (!this.#session) throw new Error('Pi RPC session was not started');
     return this.#session;
+  }
+
+  #recordEvent(event: Record<string, unknown>): void {
+    const observed = this.#runState.record(event, this.#requireSession());
+    const task = Promise.resolve(this.options.onEvent?.(observed)).catch(() => undefined);
+    this.#observerTasks.add(task);
+    void task.finally(() => this.#observerTasks.delete(task));
+  }
+
+  async #flushObservers(): Promise<void> {
+    await Promise.all([...this.#observerTasks]);
   }
 }
 

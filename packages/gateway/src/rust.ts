@@ -17,6 +17,7 @@ import {
   fromWireJobStatus,
   fromWireLogRecord,
   toWireJobSpec,
+  toWireLogInput,
 } from './rust-wire-durable.js';
 import {
   fromWireAgentRuntimeDescriptor,
@@ -31,6 +32,7 @@ import type {
   GatewayJobLease,
   GatewayJobSpec,
   GatewayJobStatus,
+  GatewayLogInput,
   GatewayLogRecord,
   GatewayReceiveFilter,
   GatewayRegistrySnapshot,
@@ -41,7 +43,7 @@ import type {
   GatewayTableAccess,
   GatewayTableSnapshot,
 } from './types.js';
-import type { GatewayOrchestrationClient, GatewayWorldSnapshot } from './types-runtime.js';
+import type { GatewayOrchestrationClient } from './types-runtime.js';
 import { buildGatewayWorldSnapshot } from './world.js';
 
 export type { RustGatewayClientOptions } from './rust-options.js';
@@ -231,18 +233,19 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
     return fromWireEventRecord((await this.#call('events.cancel', { id })) as any);
   }
 
+  async appendLog(input: GatewayLogInput): Promise<GatewayLogRecord> {
+    return fromWireLogRecord(await this.#call('logs.append', toWireLogInput(input)));
+  }
+
   async tailLogs(options: { target?: string; limit?: number } = {}): Promise<GatewayLogRecord[]> {
     return ((await this.#call('logs.tail', options)) as any[]).map(fromWireLogRecord);
   }
 
-  async worldSnapshot(): Promise<GatewayWorldSnapshot> {
+  async worldSnapshot() {
     return buildGatewayWorldSnapshot(this);
   }
 
-  async #recordServiceRun(
-    name: string,
-    summary?: string,
-  ): Promise<GatewayServiceStatus | undefined> {
+  async #recordServiceRun(name: string, summary?: string) {
     const status = await this.#call('services.record_run', { name, at_ms: Date.now(), summary });
     return status ? fromWireServiceStatus(status as any) : undefined;
   }

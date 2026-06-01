@@ -199,6 +199,14 @@ export interface GatewayLogRecord {
   data?: unknown;
 }
 
+export interface GatewayLogInput {
+  level?: string;
+  target?: string;
+  message: string;
+  data?: unknown;
+  atMs?: number;
+}
+
 export interface GatewayTransport {
   readonly runtime: GatewayRuntime;
   send(envelope: GatewayEnvelope): Promise<void>;
@@ -241,5 +249,6 @@ export interface GatewayClient extends GatewayTransport {
   }): Promise<GatewayEventRecord>;
   listEvents(): Promise<GatewayEventRecord[]>;
   cancelEvent(id: string): Promise<GatewayEventRecord | undefined>;
+  appendLog(input: GatewayLogInput): Promise<GatewayLogRecord>;
   tailLogs(options?: { target?: string; limit?: number }): Promise<GatewayLogRecord[]>;
 }
