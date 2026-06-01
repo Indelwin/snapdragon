@@ -3,6 +3,7 @@ import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { createPiRpcRuntimeDescriptor } from '@snapdragon-ai/gateway';
 import {
   DEFAULT_SD_CONFIG_PATH,
   defaultSdConfig,
@@ -12,6 +13,10 @@ import {
   writeEnvTemplate,
 } from '../src/config.ts';
 import { configPathForLoad } from '../src/config-path.ts';
+import {
+  configuredAgentRuntime,
+  saveAgentRuntimeToConfig,
+} from '../src/gateway-agent-runtime-config.ts';
 
 test('default config uses Anthropic Opus 4.7 without storing secrets', () => {
   const config = defaultSdConfig();
@@ -29,6 +34,7 @@ test('default config uses Anthropic Opus 4.7 without storing secrets', () => {
   assert.equal(config.background?.mode, 'daemon');
   assert.equal(config.background?.daemon?.auto_start, false);
   assert.equal(config.gateway?.runtime, 'rust');
+  assert.deepEqual(config.gateway?.agent_runtimes, {});
   assert.equal(config.gateway?.services?.['channel-events']?.enabled, true);
   assert.equal(config.gateway?.services?.['memory-worker']?.enabled, false);
   assert.deepEqual(config.background?.channels, {
@@ -58,6 +64,59 @@ test('default config uses Anthropic Opus 4.7 without storing secrets', () => {
     effort: 'medium',
   });
   assert.equal(JSON.stringify(config).includes('sk-ant-'), false);
+});
+
+test('loadSdConfig merges saved gateway agent runtimes', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-agent-runtime-config-'));
+  const configPath = join(workspace, 'config.yaml');
+  try {
+    await writeFile(
+      configPath,
+      [
+        'version: 1',
+        'gateway:',
+        '  agent_runtimes:',
+        '    pi:',
+        '      kind: pi',
+        '      protocol: jsonl',
+        '      label: Pi Agent',
+        '      supported_job_kinds:',
+        '        - agent.run',
+        '',
+      ].join('\n'),
+      'utf8',
+    );
+
+    const config = await loadSdConfig(configPath);
+    const runtime = configuredAgentRuntime(config, 'pi');
+    assert.equal(runtime?.id, 'pi');
+    assert.equal(runtime?.kind, 'pi');
+    assert.deepEqual(runtime?.supportedJobKinds, ['agent.run']);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('saveAgentRuntimeToConfig persists runtime descriptors in config shape', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-save-agent-runtime-'));
+  const configPath = join(workspace, 'config.yaml');
+  try {
+    await writeFile(configPath, ['version: 1', 'default_provider: mock', ''].join('\n'), 'utf8');
+    const savedPath = await saveAgentRuntimeToConfig(
+      configPath,
+      createPiRpcRuntimeDescriptor({ agentDir: join(workspace, 'pi-agent') }),
+    );
+    assert.equal(savedPath, configPath);
+    const raw = await readFile(configPath, 'utf8');
+    assert.match(raw, /agent_runtimes:/);
+    assert.match(raw, /supported_job_kinds:/);
+
+    const config = await loadSdConfig(configPath);
+    const runtime = configuredAgentRuntime(config, 'pi');
+    assert.equal(runtime?.command?.env?.PI_CODING_AGENT_DIR, join(workspace, 'pi-agent'));
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
 });
 
 test('loadSdConfig merges YAML with defaults', async () => {

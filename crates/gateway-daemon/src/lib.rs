@@ -9,6 +9,7 @@ use snapdragon_gateway_core::{
 };
 use tokio::{sync::RwLock, task::JoinHandle};
 
+mod agent_runtimes;
 pub mod ipc;
 mod ipc_core;
 mod ipc_durable;
@@ -21,6 +22,7 @@ mod services;
 mod services_persistence;
 mod status;
 mod store;
+mod store_agent_runtimes;
 mod store_events;
 mod store_job_types;
 mod store_jobs;
@@ -88,32 +90,6 @@ impl GatewayDaemon {
 
     pub async fn registry_snapshot(&self) -> RegistrySnapshot {
         self.inner.read().await.registry.snapshot()
-    }
-
-    pub async fn register_agent_runtime(
-        &self,
-        descriptor: GatewayAgentRuntimeDescriptor,
-    ) -> GatewayAgentRuntimeDescriptor {
-        self.inner
-            .write()
-            .await
-            .agent_runtimes
-            .insert(descriptor.id.clone(), descriptor.clone());
-        descriptor
-    }
-
-    pub async fn agent_runtime(&self, id: &str) -> Option<GatewayAgentRuntimeDescriptor> {
-        self.inner.read().await.agent_runtimes.get(id).cloned()
-    }
-
-    pub async fn list_agent_runtimes(&self) -> Vec<GatewayAgentRuntimeDescriptor> {
-        self.inner
-            .read()
-            .await
-            .agent_runtimes
-            .values()
-            .cloned()
-            .collect()
     }
 
     pub async fn send(&self, envelope: GatewayEnvelope) {
@@ -218,6 +194,14 @@ impl GatewayDaemon {
         let Some(store) = &self.store else {
             return Ok(());
         };
+        {
+            let mut inner = self.inner.write().await;
+            for descriptor in store.agent_runtime_snapshots()? {
+                inner
+                    .agent_runtimes
+                    .insert(descriptor.id.clone(), descriptor);
+            }
+        }
         for (spec, mut status) in store.service_snapshots()? {
             status.state = if spec.enabled {
                 snapdragon_gateway_core::ServiceState::Running

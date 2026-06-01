@@ -87,6 +87,11 @@ const result = await runPiRpcAgentJob({
 console.log(result.summary);
 ```
 
+Registered runtime descriptors are durable in the Rust gateway store. A daemon
+restart recovers Pi, `sd`, Codex, Hermes, and custom runtime descriptors before
+workers lease queued jobs, so orchestration does not depend on a one-shot setup
+command still being present in process memory.
+
 The adapter sends `prompt`, `get_state`, and `get_commands` commands over stdin,
 observes streamed message and agent lifecycle events on stdout, and cancels
 blocking extension UI prompts by default. That makes it safe for headless job

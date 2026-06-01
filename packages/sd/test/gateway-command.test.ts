@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -67,9 +67,15 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
       /"protocol": "jsonl"/,
     );
     assert.match(
-      await runGatewayCommand({ ...args, gatewayArgs: ['agents', 'register-pi'] }),
-      /registered agent runtime pi/,
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['agents', 'register-pi', '--save', '--agent-dir', join(root, 'pi-agent')],
+      }),
+      /registered agent runtime pi.*saved=/,
     );
+    const savedConfig = await readFile(configPath, 'utf8');
+    assert.match(savedConfig, /agent_runtimes:/);
+    assert.match(savedConfig, /PI_CODING_AGENT_DIR/);
     assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['logs', 'tail'] }),
       /gateway logs/,
@@ -88,6 +94,44 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
     );
   } finally {
     await server.close();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('gateway agent commands surface saved runtimes when the daemon is unavailable', async () => {
+  const root = await mkGatewayRoot();
+  const configPath = join(root, 'config.yaml');
+  await writeFile(
+    configPath,
+    stringifyYaml({
+      version: 1,
+      gateway: {
+        runtime: 'rust',
+        root,
+        agent_runtimes: {
+          pi: {
+            kind: 'pi',
+            protocol: 'jsonl',
+            label: 'Pi Agent',
+            supported_job_kinds: ['agent.run'],
+          },
+        },
+      },
+    }),
+    'utf8',
+  );
+
+  try {
+    const args = { configPath, gatewayArgs: [] } as any;
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['agents', 'list'] }),
+      /pi\tpi\tjsonl Pi Agent\tsaved/,
+    );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['agents', 'show', 'pi'] }),
+      /"id": "pi"/,
+    );
+  } finally {
     await rm(root, { force: true, recursive: true });
   }
 });

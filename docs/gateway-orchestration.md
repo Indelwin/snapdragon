@@ -92,6 +92,12 @@ descriptor and launches `pi --mode rpc` as a worker runtime. Codex, Hermes
 Agent, and custom workers should use the same descriptor model through command,
 JSONL, stdio, HTTP, or embedded protocols.
 
+The Rust gateway persists registered runtime descriptors in its durable store.
+The `sd` facade can also save descriptors under `gateway.agent_runtimes`; saved
+descriptors are visible in `sd gateway agents list/show` even before the daemon
+is available, and job workers can re-register them before dispatch. This gives
+operators one stable setup step instead of a hidden in-memory runtime table.
+
 ```mermaid
 sequenceDiagram
   participant Gateway

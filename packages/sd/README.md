@@ -59,6 +59,7 @@ sd gateway jobs enqueue agent.run '{"prompt":"check the repo"}'
 sd gateway jobs list
 sd gateway agents enqueue "run the release checks"
 sd gateway agents register-pi
+sd gateway agents register-pi --save --agent-dir ~/.pi-agent
 sd gateway agents list
 sd gateway agents enqueue --runtime pi "ask my Pi agent to triage the workspace"
 sd gateway agents run "summarize the current workspace"
@@ -88,12 +89,15 @@ in a SQLite WAL database under the gateway root. Agent jobs use the same
 headless runtime as service workers, so scheduled channel work can use tools,
 sessions, skills, memory, and TODOs without starting Ink.
 
-Agent jobs can also target registered external runtimes. `sd gateway agents
-register-pi` adds a Pi JSONL runtime descriptor for the installed `pi` command.
+Agent jobs can also target external runtimes. `sd gateway agents register-pi`
+adds a Pi JSONL runtime descriptor for the installed `pi` command; adding
+`--save` persists the descriptor in `gateway.agent_runtimes` so future daemon
+starts and job workers can rehydrate it without another manual registration.
 `sd gateway agents enqueue --runtime pi "..."` then routes the job through Pi's
 RPC mode, preserving the user's Pi configuration, extensions, skills, sessions,
-and provider credentials. This keeps the current TUI experience intact while
-making Pi an ordinary gateway worker runtime for orchestration.
+and provider credentials. `sd gateway agents list` and `show` include saved
+runtimes even when the daemon is unavailable, which keeps the management surface
+inspectable before background services are running.
 
 Learning eval jobs are gateway jobs on the `learn` queue. The first built-in
 runner is deliberately local and simple: `learn-jobs` consumes `learn.eval`

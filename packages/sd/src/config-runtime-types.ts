@@ -1,5 +1,33 @@
 export type SdBackgroundMode = 'daemon' | 'inline' | 'off';
 export type SdGatewayRuntime = 'rust' | 'inline-ts';
+export type SdGatewayAgentRuntimeKind = 'sd' | 'codex' | 'hermes' | 'pi' | 'custom';
+export type SdGatewayAgentRuntimeProtocol = 'embedded' | 'command' | 'jsonl' | 'http' | 'stdio';
+export type SdGatewayAgentRuntimeIsolation = 'inherit' | 'profile' | 'channel' | 'sandbox';
+
+export interface SdGatewayAgentRuntimeHealthConfig {
+  state: string;
+  checked_at_ms?: number;
+  message?: string;
+}
+
+export interface SdGatewayAgentRuntimeCommandConfig {
+  command: string;
+  args?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+}
+
+export interface SdGatewayAgentRuntimeConfig {
+  kind: SdGatewayAgentRuntimeKind;
+  protocol: SdGatewayAgentRuntimeProtocol;
+  label?: string;
+  command?: SdGatewayAgentRuntimeCommandConfig;
+  supported_job_kinds?: string[];
+  capabilities?: string[];
+  isolation?: SdGatewayAgentRuntimeIsolation;
+  health?: SdGatewayAgentRuntimeHealthConfig;
+  metadata?: Record<string, unknown>;
+}
 
 export interface SdDaemonConfig {
   root?: string;
@@ -26,6 +54,7 @@ export interface SdGatewayConfig {
   runtime?: SdGatewayRuntime;
   root?: string;
   services?: Record<string, SdGatewayServiceConfig>;
+  agent_runtimes?: Record<string, SdGatewayAgentRuntimeConfig>;
 }
 
 export interface SdBackgroundConfig {

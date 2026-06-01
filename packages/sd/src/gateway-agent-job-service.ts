@@ -1,6 +1,8 @@
 import type { GatewayAgentRunSpec, GatewayJobStatus } from '@snapdragon-ai/gateway';
 import type { SdBackgroundService, SdBackgroundServiceResult } from './background.js';
+import type { SdConfig } from './config-schema.js';
 import { runGatewayAgentRuntime } from './gateway-agent-dispatch.js';
+import { registerSavedAgentRuntime } from './gateway-agent-runtime-resolve.js';
 import { rustGatewayClientForConfig } from './gateway-command-client.js';
 
 export function gatewayAgentJobService(): SdBackgroundService {
@@ -18,19 +20,20 @@ export function gatewayAgentJobService(): SdBackgroundService {
         await client.failJob(lease.job.id, `unsupported job kind: ${lease.job.spec.kind}`);
         return summary(0, 1, `unsupported job ${lease.job.id}`);
       }
-      return runAgentJob(client, lease.job);
+      return runAgentJob(client, ctx.config, lease.job);
     },
   };
 }
 
 async function runAgentJob(
   client: ReturnType<typeof rustGatewayClientForConfig>,
+  config: SdConfig,
   job: GatewayJobStatus,
 ): Promise<SdBackgroundServiceResult> {
   try {
     const spec = job.spec.payload as GatewayAgentRunSpec;
     const runtime = spec.targetRuntimeId
-      ? await client.showAgentRuntime(spec.targetRuntimeId)
+      ? await registerSavedAgentRuntime(client, config, spec.targetRuntimeId)
       : undefined;
     const result = await runGatewayAgentRuntime(spec, {
       runtime,
