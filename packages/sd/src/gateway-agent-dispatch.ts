@@ -1,6 +1,7 @@
 import {
   type GatewayAgentRunSpec,
   type GatewayAgentRuntimeDescriptor,
+  type GatewayAgentRuntimeObservedEvent,
   runPiRpcAgentJob,
 } from '@snapdragon-ai/gateway';
 import type { SdCliArgs } from './args-types.js';
@@ -14,6 +15,7 @@ export interface GatewayAgentDispatchOptions {
   runtime?: GatewayAgentRuntimeDescriptor;
   timeoutMs?: number;
   signal?: AbortSignal;
+  onEvent?: (event: GatewayAgentRuntimeObservedEvent) => void | Promise<void>;
 }
 
 export interface GatewayAgentDispatchResult extends HeadlessGatewayAgentResult {
@@ -35,6 +37,7 @@ export async function runGatewayAgentRuntime(
       descriptor: options.runtime,
       signal: options.signal,
       timeoutMs: options.timeoutMs,
+      onEvent: options.onEvent,
     });
     return {
       runtimeId,
