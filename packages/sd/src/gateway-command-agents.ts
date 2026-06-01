@@ -8,6 +8,7 @@ import {
   registerPiRuntime,
   showAgentRuntime,
 } from './gateway-agent-runtime-commands.js';
+import { registerSavedAgentRuntime } from './gateway-agent-runtime-resolve.js';
 import { gatewayErrorMessage, rustGatewayClientForConfig } from './gateway-command-client.js';
 
 type AgentCommandHandler = (rest: string[], args: SdCliArgs) => Promise<string>;
@@ -44,7 +45,11 @@ async function enqueueAgent(rest: string[], args: SdCliArgs): Promise<string> {
   if (!spec.prompt) return 'gateway agents enqueue requires a prompt\n';
   const config = await loadSdConfig(args.configPath);
   try {
-    const job = await rustGatewayClientForConfig(config).enqueueJob({
+    const client = rustGatewayClientForConfig(config);
+    if (spec.targetRuntimeId) {
+      await registerSavedAgentRuntime(client, config, spec.targetRuntimeId);
+    }
+    const job = await client.enqueueJob({
       kind: 'agent.run',
       payload: spec,
       maxAttempts: 1,

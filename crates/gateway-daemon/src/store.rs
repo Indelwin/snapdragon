@@ -97,6 +97,12 @@ create table if not exists gateway_services(
   status_json text not null,
   updated_at_ms integer not null
 );
+
+create table if not exists gateway_agent_runtimes(
+  id text primary key,
+  descriptor_json text not null,
+  updated_at_ms integer not null
+);
 "#;
 
 pub(crate) fn json_parse<T: for<'de> serde::Deserialize<'de>>(json: &str) -> Result<T, String> {
