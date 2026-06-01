@@ -92,6 +92,7 @@ function defaultGateway(): SdConfig['gateway'] {
   return {
     runtime: 'rust',
     root: DEFAULT_SD_DAEMON_ROOT,
+    agent_runtimes: {},
     services: {
       'memory-worker': { ...restart, enabled: false, interval_ms: 5 * 60 * 1000 },
       'skill-builder': { ...restart, enabled: false, interval_ms: 10 * 60 * 1000 },

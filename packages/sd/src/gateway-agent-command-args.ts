@@ -46,14 +46,26 @@ export function agentSpecFromArgs(rest: string[], args: SdCliArgs): GatewayAgent
 }
 
 export function parsePiRuntimeOptions(rest: string[]): PiRpcRuntimeOptions {
+  return parsePiRuntimeRegistrationArgs(rest).options;
+}
+
+export function parsePiRuntimeRegistrationArgs(rest: string[]): {
+  options: PiRpcRuntimeOptions;
+  save: boolean;
+} {
   const options: PiRpcRuntimeOptions = {};
   const extraArgs: string[] = [];
+  let save = false;
   for (let i = 0; i < rest.length; i += 1) {
+    if (rest[i] === '--save') {
+      save = true;
+      continue;
+    }
     const consumed = applyPiRuntimeOption(options, extraArgs, rest, i);
     i += consumed;
   }
   if (extraArgs.length > 0) options.args = ['--mode', 'rpc', ...extraArgs];
-  return options;
+  return { options, save };
 }
 
 function parseAgentRunArgs(rest: string[]): { runtimeId?: string; prompt: string[] } {

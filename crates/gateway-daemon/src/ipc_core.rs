@@ -105,7 +105,7 @@ pub(crate) async fn dispatch_agents(
     match method {
         "agents.register" => {
             let params = parse::<AgentRuntimeParams>(params)?;
-            ok_json(daemon.register_agent_runtime(params.descriptor).await)
+            ok_json(daemon.register_agent_runtime(params.descriptor).await?)
         }
         "agents.list" => ok_json(daemon.list_agent_runtimes().await),
         "agents.show" => {

@@ -2,6 +2,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use snapdragon_gateway_core::{
+    GatewayAgentRuntimeDescriptor, GatewayAgentRuntimeKind, GatewayAgentRuntimeProtocol,
     GatewayEventRecord, GatewayEventState, GatewayJobSpec, GatewayJobState,
 };
 use snapdragon_gateway_daemon::GatewayStore;
@@ -53,6 +54,25 @@ fn store_persists_jobs_events_logs_and_services() {
         store.cancel_event("event_1", 13).unwrap().unwrap().state,
         GatewayEventState::Cancelled
     );
+    let runtime = store
+        .persist_agent_runtime(
+            &GatewayAgentRuntimeDescriptor {
+                id: "pi".into(),
+                kind: GatewayAgentRuntimeKind::Pi,
+                protocol: GatewayAgentRuntimeProtocol::Jsonl,
+                label: Some("Pi Agent".into()),
+                command: None,
+                supported_job_kinds: vec!["agent.run".into()],
+                capabilities: vec!["skills.pi".into()],
+                isolation: None,
+                health: None,
+                metadata: None,
+            },
+            14,
+        )
+        .unwrap();
+    assert_eq!(runtime.id, "pi");
+    assert_eq!(store.agent_runtime_snapshots().unwrap()[0].id, "pi");
     assert!(!store.tail_logs(None, 10).unwrap().is_empty());
     let _ = std::fs::remove_file(path);
 }
