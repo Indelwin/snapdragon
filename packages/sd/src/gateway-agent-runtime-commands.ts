@@ -1,42 +1,60 @@
-import {
-  createPiRpcRuntimeDescriptor,
-  type GatewayAgentRuntimeDescriptor,
-  probePiRpcRuntime,
-} from '@snapdragon-ai/gateway';
+import { createPiRpcRuntimeDescriptor, probePiRpcRuntime } from '@snapdragon-ai/gateway';
 import type { SdCliArgs } from './args-types.js';
 import { loadSdConfig } from './config.js';
-import { parsePiRuntimeOptions } from './gateway-agent-command-args.js';
+import {
+  parsePiRuntimeOptions,
+  parsePiRuntimeRegistrationArgs,
+} from './gateway-agent-command-args.js';
+import {
+  configuredAgentRuntime,
+  configuredAgentRuntimeDescriptors,
+  saveAgentRuntimeToConfig,
+} from './gateway-agent-runtime-config.js';
+import {
+  formatAgentRuntimeList,
+  formatSavedAgentRuntimeList,
+} from './gateway-agent-runtime-format.js';
 import { gatewayErrorMessage, rustGatewayClientForConfig } from './gateway-command-client.js';
 
 export async function listAgentRuntimes(args: SdCliArgs): Promise<string> {
   const config = await loadSdConfig(args.configPath);
+  const saved = configuredAgentRuntimeDescriptors(config);
   try {
-    const runtimes = await rustGatewayClientForConfig(config).listAgentRuntimes();
-    if (runtimes.length === 0) return 'No agent runtimes registered\n';
-    return `${runtimes.map(formatAgentRuntime).join('\n')}\n`;
+    const registered = await rustGatewayClientForConfig(config).listAgentRuntimes();
+    return formatAgentRuntimeList(saved, registered);
   } catch (error) {
-    return `Rust gateway unavailable: ${gatewayErrorMessage(error)}\n`;
+    return formatSavedAgentRuntimeList(saved, error);
   }
 }
 
 export async function showAgentRuntime(id: string | undefined, args: SdCliArgs): Promise<string> {
   if (!id) return 'gateway agents show requires <runtime-id>\n';
   const config = await loadSdConfig(args.configPath);
+  const saved = configuredAgentRuntime(config, id);
   try {
     const runtime = await rustGatewayClientForConfig(config).showAgentRuntime(id);
-    return runtime ? `${JSON.stringify(runtime, null, 2)}\n` : `Unknown agent runtime: ${id}\n`;
+    return runtime || saved
+      ? `${JSON.stringify(runtime ?? saved, null, 2)}\n`
+      : `Unknown agent runtime: ${id}\n`;
   } catch (error) {
+    if (saved) return `${JSON.stringify(saved, null, 2)}\n`;
     return `Rust gateway unavailable: ${gatewayErrorMessage(error)}\n`;
   }
 }
 
 export async function registerPiRuntime(rest: string[], args: SdCliArgs): Promise<string> {
   const config = await loadSdConfig(args.configPath);
-  const descriptor = createPiRpcRuntimeDescriptor(parsePiRuntimeOptions(rest));
+  const { options, save } = parsePiRuntimeRegistrationArgs(rest);
+  const descriptor = createPiRpcRuntimeDescriptor(options);
+  const savedPath = save ? await saveAgentRuntimeToConfig(args.configPath, descriptor) : undefined;
   try {
     const runtime = await rustGatewayClientForConfig(config).registerAgentRuntime(descriptor);
-    return `registered agent runtime ${runtime.id} kind=${runtime.kind} protocol=${runtime.protocol}\n`;
+    const savedText = savedPath ? ` saved=${savedPath}` : '';
+    return `registered agent runtime ${runtime.id} kind=${runtime.kind} protocol=${runtime.protocol}${savedText}\n`;
   } catch (error) {
+    if (savedPath) {
+      return `saved agent runtime ${descriptor.id} to ${savedPath}\nRust gateway unavailable: ${gatewayErrorMessage(error)}\n`;
+    }
     return `Rust gateway unavailable: ${gatewayErrorMessage(error)}\n`;
   }
 }
@@ -48,9 +66,4 @@ export async function probePiRuntime(rest: string[]): Promise<string> {
   } catch (error) {
     return `Pi RPC probe failed: ${gatewayErrorMessage(error)}\n`;
   }
-}
-
-function formatAgentRuntime(runtime: GatewayAgentRuntimeDescriptor): string {
-  const label = runtime.label ? ` ${runtime.label}` : '';
-  return `${runtime.id}\t${runtime.kind}\t${runtime.protocol}${label}`;
 }

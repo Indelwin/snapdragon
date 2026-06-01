@@ -41,7 +41,7 @@ should be added above the same route shape.
 | `POST` | `/v1/services/:name/run` | Run a service immediately. |
 | `POST` | `/v1/services/:name/enable` | Enable or disable a service. |
 | `GET` | `/v1/agents` | List registered agent runtimes. |
-| `POST` | `/v1/agents/register` | Register an agent runtime descriptor. |
+| `POST` | `/v1/agents/register` | Register and durably store an agent runtime descriptor. |
 | `GET` | `/v1/agents/:id` | Show one runtime descriptor. |
 | `GET` | `/v1/workers` | List worker process snapshots. |
 | `GET` | `/v1/jobs` | List durable jobs. |

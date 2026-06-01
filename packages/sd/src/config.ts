@@ -37,6 +37,12 @@ export {
 } from './config-constants.js';
 export { defaultSdConfig } from './config-default.js';
 export type {
+  SdGatewayAgentRuntimeCommandConfig,
+  SdGatewayAgentRuntimeConfig,
+  SdGatewayAgentRuntimeHealthConfig,
+  SdGatewayAgentRuntimeIsolation,
+  SdGatewayAgentRuntimeKind,
+  SdGatewayAgentRuntimeProtocol,
   SdGatewayConfig,
   SdGatewayRuntime,
   SdGatewayServiceConfig,
@@ -115,6 +121,10 @@ function mergeGatewayConfig(
     services: {
       ...(defaults?.services ?? {}),
       ...(input?.services ?? {}),
+    },
+    agent_runtimes: {
+      ...(defaults?.agent_runtimes ?? {}),
+      ...(input?.agent_runtimes ?? {}),
     },
   };
 }
