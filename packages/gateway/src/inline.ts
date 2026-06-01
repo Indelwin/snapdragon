@@ -11,6 +11,7 @@ import type {
   GatewayJobLease,
   GatewayJobSpec,
   GatewayJobStatus,
+  GatewayLogInput,
   GatewayLogRecord,
   GatewayReceiveFilter,
   GatewayRegistrySnapshot,
@@ -194,6 +195,10 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
     return this.#cancel(this.#events, id, 'event cancelled');
   }
 
+  async appendLog(input: GatewayLogInput): Promise<GatewayLogRecord> {
+    return this.#log(input.level ?? 'info', input.target, input.message, input.data, input.atMs);
+  }
+
   async tailLogs(options: { target?: string; limit?: number } = {}): Promise<GatewayLogRecord[]> {
     const logs = options.target
       ? this.#logs.filter((log) => log.target === options.target)
@@ -218,15 +223,23 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
     return record;
   }
 
-  #log(level: string, target: string | undefined, message: string, data?: unknown): void {
-    this.#logs.push({
+  #log(
+    level: string,
+    target: string | undefined,
+    message: string,
+    data?: unknown,
+    atMs = Date.now(),
+  ): GatewayLogRecord {
+    const record = {
       id: this.#logs.length + 1,
-      atMs: Date.now(),
+      atMs,
       level,
       target,
       message,
       data,
-    });
+    };
+    this.#logs.push(record);
+    return record;
   }
 }
 

@@ -56,6 +56,12 @@ should be added above the same route shape.
 | `GET` | `/v1/capabilities` | Capability provider map. |
 | `GET` | `/v1/sandboxes` | Sandbox lease list placeholder. |
 
+Runtime workers append job-targeted logs over local IPC while they run. REST
+clients inspect those breadcrumbs with `GET /v1/logs?target=<job_id>`. For Pi
+runtime jobs this includes lifecycle events such as `agent_start`,
+`message_end`, tool execution boundaries, extension UI requests, and
+cancellation observation without exposing raw token deltas by default.
+
 ## Request Examples
 
 Register an external runtime:
@@ -122,6 +128,20 @@ content-type: application/json
   }
 }
 ```
+
+Cancel a running job:
+
+```http
+POST /v1/jobs/job_123/cancel
+content-type: application/json
+
+{}
+```
+
+The durable gateway treats cancellation as terminal. Cooperative workers observe
+the cancelled job record, abort their runtime signal, clear active leases, and
+leave subsequent late `complete` or `fail` writes as no-ops against the
+cancelled status.
 
 Watch world snapshots:
 

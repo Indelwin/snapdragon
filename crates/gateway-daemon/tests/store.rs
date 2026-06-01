@@ -33,8 +33,31 @@ fn store_persists_jobs_events_logs_and_services() {
         .unwrap();
     assert_eq!(job.state, GatewayJobState::Pending);
     assert_eq!(store.list_jobs().unwrap().len(), 1);
+    let (running, _) = store
+        .acquire_job("default", "worker-1", 1_000, 11)
+        .unwrap()
+        .unwrap();
+    assert_eq!(running.state, GatewayJobState::Running);
+    assert_eq!(store.active_leases(11).unwrap().len(), 1);
     assert_eq!(
-        store.cancel_job("job_1", 11).unwrap().unwrap().state,
+        store.cancel_job("job_1", 12).unwrap().unwrap().state,
+        GatewayJobState::Cancelled
+    );
+    assert!(store.active_leases(12).unwrap().is_empty());
+    assert_eq!(
+        store
+            .complete_job("job_1", Some(serde_json::json!({"late": true})), 13)
+            .unwrap()
+            .unwrap()
+            .state,
+        GatewayJobState::Cancelled
+    );
+    assert_eq!(
+        store
+            .fail_job("job_1", "late failure".into(), 14)
+            .unwrap()
+            .unwrap()
+            .state,
         GatewayJobState::Cancelled
     );
 
@@ -45,13 +68,13 @@ fn store_persists_jobs_events_logs_and_services() {
             target: Some("local:test".into()),
             state: GatewayEventState::Pending,
             payload: Value::Null,
-            created_at_ms: 12,
-            updated_at_ms: 12,
+            created_at_ms: 15,
+            updated_at_ms: 15,
         })
         .unwrap();
     assert_eq!(event.id, "event_1");
     assert_eq!(
-        store.cancel_event("event_1", 13).unwrap().unwrap().state,
+        store.cancel_event("event_1", 16).unwrap().unwrap().state,
         GatewayEventState::Cancelled
     );
     let runtime = store
@@ -68,11 +91,19 @@ fn store_persists_jobs_events_logs_and_services() {
                 health: None,
                 metadata: None,
             },
-            14,
+            17,
         )
         .unwrap();
     assert_eq!(runtime.id, "pi");
     assert_eq!(store.agent_runtime_snapshots().unwrap()[0].id, "pi");
+    assert_eq!(
+        store
+            .append_log(18, "info", Some("job_1"), "runtime breadcrumb", None)
+            .unwrap()
+            .target
+            .as_deref(),
+        Some("job_1")
+    );
     assert!(!store.tail_logs(None, 10).unwrap().is_empty());
     let _ = std::fs::remove_file(path);
 }

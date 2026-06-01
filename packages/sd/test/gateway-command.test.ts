@@ -4,8 +4,10 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
+import { InlineGatewayClient } from '@snapdragon-ai/gateway';
 import { stringify as stringifyYaml } from 'yaml';
 import { parseArgs } from '../src/args.ts';
+import { runGatewayAgentJob } from '../src/gateway-agent-job-service.ts';
 import { runGatewayCommand } from '../src/gateway-command.ts';
 import { configuredRustGatewayServices } from '../src/gateway-rust-config.ts';
 import { formatRustGatewayStatus } from '../src/gateway-rust-status.ts';
@@ -136,6 +138,65 @@ test('gateway agent commands surface saved runtimes when the daemon is unavailab
   }
 });
 
+test('gateway agent job service records Pi runtime breadcrumbs', async () => {
+  const root = await mkGatewayRoot();
+  const fixture = await writePiRpcJobFixture(root);
+  const gateway = new InlineGatewayClient();
+  const job = await gateway.enqueueJob({
+    kind: 'agent.run',
+    payload: { prompt: 'hello pi', targetRuntimeId: 'pi' },
+    timeoutMs: 3_000,
+  });
+  const lease = await gateway.acquireJob('default', 'test-worker');
+  assert.ok(lease);
+  assert.equal(lease.job.id, job.id);
+
+  try {
+    const result = await runGatewayAgentJob(gateway, piRuntimeConfig(root, fixture), lease.job, {
+      cancellationPollMs: 10,
+    });
+    assert.equal(result.metrics?.completed, 1);
+    assert.equal((await gateway.showJob(job.id))?.state, 'completed');
+    const logs = await gateway.tailLogs({ target: job.id, limit: 20 });
+    assert.match(
+      logs.map((log) => log.message).join('\n'),
+      /agent runtime started[\s\S]*agent runtime event: agent_start[\s\S]*agent runtime event: message_end/,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('gateway agent job service aborts Pi runtime when the job is cancelled', async () => {
+  const root = await mkGatewayRoot();
+  const fixture = await writePiRpcJobFixture(root, { hang: true });
+  const gateway = new InlineGatewayClient();
+  const job = await gateway.enqueueJob({
+    kind: 'agent.run',
+    payload: { prompt: 'wait here', targetRuntimeId: 'pi' },
+    timeoutMs: 3_000,
+  });
+  const lease = await gateway.acquireJob('default', 'test-worker');
+  assert.ok(lease);
+  assert.equal(lease.job.id, job.id);
+
+  try {
+    const running = runGatewayAgentJob(gateway, piRuntimeConfig(root, fixture), lease.job, {
+      cancellationPollMs: 10,
+    });
+    await waitForLog(gateway, job.id, /agent runtime event: agent_start/);
+    await gateway.cancelJob(job.id);
+    const result = await running;
+    assert.equal(result.metrics?.completed, 0);
+    assert.equal(result.metrics?.failed, 0);
+    assert.equal((await gateway.showJob(job.id))?.state, 'cancelled');
+    const logs = await gateway.tailLogs({ target: job.id, limit: 20 });
+    assert.match(logs.map((log) => log.message).join('\n'), /job cancellation observed/);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test('configured Rust gateway services point at headless sd workers', async () => {
   const root = await mkGatewayRoot();
   const configPath = join(root, 'config.yaml');
@@ -254,6 +315,75 @@ async function writeGatewayConfig(configPath: string, root: string): Promise<voi
     }),
     'utf8',
   );
+}
+
+function piRuntimeConfig(root: string, fixture: string): any {
+  return {
+    gateway: {
+      root,
+      agent_runtimes: {
+        pi: {
+          kind: 'pi',
+          protocol: 'jsonl',
+          label: 'Pi Agent',
+          command: { command: process.execPath, args: [fixture] },
+          supported_job_kinds: ['agent.run'],
+        },
+      },
+    },
+  };
+}
+
+async function writePiRpcJobFixture(
+  root: string,
+  options: { hang?: boolean } = {},
+): Promise<string> {
+  const fixture = join(root, options.hang ? 'pi-rpc-hang.cjs' : 'pi-rpc-complete.cjs');
+  await writeFile(
+    fixture,
+    `
+const readline = require('node:readline');
+const rl = readline.createInterface({ input: process.stdin });
+const hang = ${JSON.stringify(Boolean(options.hang))};
+function emit(value) {
+  process.stdout.write(JSON.stringify(value) + '\\n');
+}
+rl.on('line', (line) => {
+  const command = JSON.parse(line);
+  if (command.type === 'prompt') {
+    emit({ id: command.id, type: 'response', command: 'prompt', success: true });
+    emit({ type: 'agent_start' });
+    if (hang) return;
+    emit({
+      type: 'message_end',
+      message: { role: 'assistant', content: [{ type: 'text', text: 'hello from pi fixture' }] },
+    });
+    emit({ type: 'agent_end', messages: [] });
+  }
+  if (command.type === 'abort') {
+    process.exit(0);
+  }
+});
+`,
+    'utf8',
+  );
+  return fixture;
+}
+
+async function waitForLog(
+  gateway: InlineGatewayClient,
+  target: string,
+  pattern: RegExp,
+): Promise<void> {
+  const deadline = Date.now() + 1_000;
+  while (Date.now() < deadline) {
+    const messages = (await gateway.tailLogs({ target, limit: 20 }))
+      .map((log) => log.message)
+      .join('\n');
+    if (pattern.test(messages)) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail(`Timed out waiting for log ${pattern}`);
 }
 
 function mockGatewayServer(socketPath: string) {

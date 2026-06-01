@@ -104,13 +104,22 @@ sequenceDiagram
   participant Worker as "agent-jobs service"
   participant Pi as "pi --mode rpc"
   Gateway->>Worker: lease agent.run targetRuntimeId=pi
+  Worker->>Gateway: append log agent runtime started
   Worker->>Pi: spawn JSONL RPC process
   Worker->>Pi: prompt
   Pi-->>Worker: message_update and extension_ui_request
+  Worker->>Gateway: append selected Pi runtime events as job logs
   Worker-->>Pi: extension_ui_response cancelled
   Pi-->>Worker: message_end and agent_end
   Worker-->>Gateway: complete job with summary, content, metrics
 ```
+
+While a runtime job is active, the worker polls the durable job record. If an
+operator or executive agent cancels the job through IPC, REST, or CLI, the
+worker aborts the runtime signal and the Pi adapter sends an RPC `abort` before
+stopping the child process. Cancelled jobs are terminal: late completion or
+failure writes from a worker return the cancelled record instead of resurrecting
+the job.
 
 ## Executive Agents
 
@@ -142,7 +151,8 @@ Failures should be explicit and inspectable:
 - A timed-out worker is killed by the daemon and recorded as `timed_out`.
 - A stale lease expires during watchdog/status passes.
 - Retry decisions are controlled by job attempts and service restart intensity.
-- Cancellation should update the durable record and stop future dispatch.
+- Cancellation updates the durable record, removes active leases, aborts
+  cooperative runtime workers, and stops future dispatch.
 - Policy or approval blocks should be represented as state, not hidden logs.
 
 ## AX Expectations

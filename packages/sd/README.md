@@ -99,6 +99,14 @@ and provider credentials. `sd gateway agents list` and `show` include saved
 runtimes even when the daemon is unavailable, which keeps the management surface
 inspectable before background services are running.
 
+While a Pi job runs, the `agent-jobs` worker mirrors selected Pi lifecycle
+events into gateway logs targeted at the job id. `sd gateway logs tail <job_id>`
+shows runtime start, `agent_start`, `message_end`, tool execution boundaries,
+extension UI requests, and cancellation observation without dumping every token
+delta. `sd gateway agents cancel <job_id>` marks the durable job cancelled; the
+worker observes that state, aborts the Pi RPC run, clears the lease, and leaves
+late worker completion/failure writes as no-ops against the cancelled job.
+
 Learning eval jobs are gateway jobs on the `learn` queue. The first built-in
 runner is deliberately local and simple: `learn-jobs` consumes `learn.eval`
 payloads with inline datasets and scores rollout metadata through the

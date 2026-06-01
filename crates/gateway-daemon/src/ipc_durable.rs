@@ -8,7 +8,7 @@ use crate::{
     ipc::{ok_json, parse},
     ipc_params::{
         EventRecordParams, JobAcquireParams, JobCompleteParams, JobFailParams, JobIdParams,
-        JobSpecParams, LogTailParams,
+        JobSpecParams, LogAppendParams, LogTailParams,
     },
 };
 
@@ -57,6 +57,7 @@ pub(crate) async fn dispatch_logs(
     params: Value,
 ) -> Result<Value, String> {
     match method {
+        "logs.append" => append_log(daemon, params),
         "logs.tail" => {
             let params = parse::<LogTailParams>(params)?;
             ok_json(
@@ -123,6 +124,17 @@ fn append_event(daemon: &GatewayDaemon, params: Value) -> Result<Value, String> 
         created_at_ms: now,
         updated_at_ms: now,
     })?)
+}
+
+fn append_log(daemon: &GatewayDaemon, params: Value) -> Result<Value, String> {
+    let params = parse::<LogAppendParams>(params)?;
+    ok_json(require_store(daemon)?.append_log(
+        params.at_ms,
+        params.level.as_deref().unwrap_or("info"),
+        params.target.as_deref(),
+        &params.message,
+        params.data,
+    )?)
 }
 
 enum FinishKind {

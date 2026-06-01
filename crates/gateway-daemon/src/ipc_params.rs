@@ -123,3 +123,12 @@ pub(crate) struct LogTailParams {
     pub(crate) target: Option<String>,
     pub(crate) limit: Option<u64>,
 }
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct LogAppendParams {
+    pub(crate) at_ms: u64,
+    pub(crate) level: Option<String>,
+    pub(crate) target: Option<String>,
+    pub(crate) message: String,
+    pub(crate) data: Option<Value>,
+}

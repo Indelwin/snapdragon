@@ -84,15 +84,22 @@ impl GatewayStore {
         target: Option<&str>,
         message: &str,
         data: Option<Value>,
-    ) -> Result<(), String> {
+    ) -> Result<GatewayLogRecord, String> {
         self.with_conn(|conn| {
             conn.execute(
                 "insert into gateway_logs(at_ms, level, target, message, data_json)
                  values (?1, ?2, ?3, ?4, ?5)",
                 params![at_ms, level, target, message, optional_json(data.as_ref())?],
             )
-            .map(|_| ())
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+            Ok(GatewayLogRecord {
+                id: conn.last_insert_rowid() as u64,
+                at_ms,
+                level: level.to_string(),
+                target: target.map(str::to_string),
+                message: message.to_string(),
+                data,
+            })
         })
     }
 

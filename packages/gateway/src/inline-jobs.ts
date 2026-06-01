@@ -51,6 +51,8 @@ export class InlineJobStore {
     if (!job) return undefined;
     job.state = 'cancelled';
     job.updatedAtMs = Date.now();
+    job.leaseId = undefined;
+    job.leaseExpiresAtMs = undefined;
     this.logger.log('warn', id, 'job cancelled');
     return job;
   }
@@ -126,6 +128,7 @@ export class InlineJobStore {
   ): GatewayJobStatus | undefined {
     const job = this.#jobs.get(id);
     if (!job) return undefined;
+    if (job.state === 'cancelled') return job;
     Object.assign(job, {
       state,
       result,
