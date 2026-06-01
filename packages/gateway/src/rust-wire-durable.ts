@@ -6,6 +6,7 @@ import type {
   GatewayJobState,
   GatewayJobStatus,
   GatewayLease,
+  GatewayLogInput,
   GatewayLogRecord,
 } from './types.js';
 
@@ -135,6 +136,16 @@ export function fromWireLogRecord(value: unknown): GatewayLogRecord {
     target: record.target ?? undefined,
     message: record.message,
     data: record.data,
+  };
+}
+
+export function toWireLogInput(input: GatewayLogInput): Record<string, unknown> {
+  return {
+    at_ms: input.atMs ?? Date.now(),
+    level: input.level ?? 'info',
+    target: input.target,
+    message: input.message,
+    data: input.data,
   };
 }
 

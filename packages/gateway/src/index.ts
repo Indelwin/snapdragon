@@ -31,6 +31,7 @@ export type {
   GatewayJobState,
   GatewayJobStatus,
   GatewayLease,
+  GatewayLogInput,
   GatewayLogRecord,
   GatewayQueueDepth,
   GatewayReceiveFilter,
@@ -50,6 +51,7 @@ export type {
 } from './types.js';
 export type {
   GatewayAgentRunSpec,
+  GatewayAgentRuntimeObservedEvent,
   GatewayApplianceDescriptor,
   GatewayExtensionContributions,
   GatewayOrchestrationClient,

@@ -170,7 +170,24 @@ async fn ipc_persists_jobs_events_and_logs() {
 
     let logs = request(
         &path,
-        json!({ "id": 5, "method": "logs.tail", "params": {} }),
+        json!({
+            "id": 5,
+            "method": "logs.append",
+            "params": {
+                "at_ms": 20,
+                "level": "info",
+                "target": "job_1",
+                "message": "runtime breadcrumb",
+                "data": { "runtimeId": "pi" }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(logs["result"]["message"], "runtime breadcrumb");
+
+    let logs = request(
+        &path,
+        json!({ "id": 6, "method": "logs.tail", "params": { "target": "job_1" } }),
     )
     .await;
     assert!(logs["result"].as_array().unwrap().len() >= 2);

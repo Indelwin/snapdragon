@@ -16,15 +16,17 @@ export class PiRpcRunState {
   #extensionUiRequests = 0;
   #latestAssistantText: string | undefined;
 
-  record(event: Record<string, unknown>, session: PiRpcSession): void {
+  record(event: Record<string, unknown>, session: PiRpcSession): PiRpcObservedEvent {
     this.#handleExtensionUi(event, session);
     this.#appendTextDelta(event);
     this.#captureFinalAssistantText(event);
-    this.#events.push({
+    const observed = {
       type: stringField(event.type, 'event'),
       atMs: Date.now(),
       payload: event,
-    });
+    };
+    this.#events.push(observed);
+    return observed;
   }
 
   async result(

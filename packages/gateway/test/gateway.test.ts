@@ -78,6 +78,16 @@ test('inline gateway leases, completes, and logs jobs', async () => {
     (await gateway.status()).recentFailures?.map((log) => log.message).join('\n') ?? '',
     /nope/,
   );
+  const cancelled = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'stop it' } });
+  await gateway.acquireJob('default', 'worker-1');
+  assert.equal((await gateway.cancelJob(cancelled.id))?.state, 'cancelled');
+  assert.equal((await gateway.status()).activeLeases?.length, 0);
+  assert.equal((await gateway.completeJob(cancelled.id, { late: true }))?.state, 'cancelled');
+  assert.equal((await gateway.failJob(cancelled.id, 'late'))?.state, 'cancelled');
+  assert.equal(
+    (await gateway.appendLog({ target: cancelled.id, message: 'runtime breadcrumb' })).target,
+    cancelled.id,
+  );
   assert.match((await gateway.tailLogs({ limit: 5 })).map((log) => log.message).join('\n'), /job/);
 });
 
@@ -178,6 +188,18 @@ test('Pi RPC adapter runs prompts, handles extension UI, and returns output', as
   }
 });
 
+test('Pi RPC adapter rejects pre-aborted runs before spawning', async () => {
+  const controller = new AbortController();
+  controller.abort();
+  await assert.rejects(
+    runPiRpcAgentJob(
+      { prompt: 'do not start', targetRuntimeId: 'pi' },
+      { command: 'pi-rpc-fixture-that-should-not-spawn', signal: controller.signal },
+    ),
+    /aborted/,
+  );
+});
+
 test('rust gateway client speaks the JSONL IPC protocol', async () => {
   const socketPath = join(tmpdir(), `snapdragon-gateway-${process.pid}-${Date.now()}.sock`);
   const seen: string[] = [];
@@ -254,6 +276,10 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
     assert.equal((await gateway.completeJob('job_1', { ok: true }))?.state, 'completed');
     assert.equal((await gateway.appendEvent({ kind: 'channel.run' })).state, 'pending');
     assert.equal((await gateway.cancelEvent('event_1'))?.state, 'cancelled');
+    assert.equal(
+      (await gateway.appendLog({ target: 'job_1', message: 'runtime event' })).target,
+      'job_1',
+    );
     assert.equal((await gateway.tailLogs()).length, 1);
     assert.deepEqual(requests[0].params.spec.worker, {
       command: 'node',
@@ -279,6 +305,7 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'jobs.complete',
       'events.append',
       'events.cancel',
+      'logs.append',
       'logs.tail',
     ]);
   } finally {
@@ -459,6 +486,20 @@ function responseFor(request: any): unknown {
   }
   if (request.method === 'events.cancel') {
     return { id: request.id, ok: true, result: wireEvent(request.params.id, 'Cancelled') };
+  }
+  if (request.method === 'logs.append') {
+    return {
+      id: request.id,
+      ok: true,
+      result: {
+        id: 1,
+        at_ms: request.params.at_ms,
+        level: request.params.level,
+        target: request.params.target,
+        message: request.params.message,
+        data: request.params.data,
+      },
+    };
   }
   if (request.method === 'logs.tail') {
     return {

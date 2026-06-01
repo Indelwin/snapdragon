@@ -51,6 +51,12 @@ export interface GatewayAgentRunSpec {
   outputArtifact?: string;
 }
 
+export interface GatewayAgentRuntimeObservedEvent {
+  type: string;
+  atMs: number;
+  payload: Record<string, unknown>;
+}
+
 export interface GatewayProjectRef {
   id: string;
   root: string;

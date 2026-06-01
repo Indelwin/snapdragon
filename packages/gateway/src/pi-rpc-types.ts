@@ -1,5 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { GatewayAgentRuntimeDescriptor } from './types.js';
+import type { GatewayAgentRuntimeObservedEvent } from './types-runtime.js';
 
 export interface PiRpcRuntimeOptions {
   id?: string;
@@ -18,13 +19,10 @@ export interface PiRpcRuntimeOptions {
 export interface PiRpcAgentJobOptions extends PiRpcRuntimeOptions {
   descriptor?: GatewayAgentRuntimeDescriptor;
   signal?: AbortSignal;
+  onEvent?: (event: PiRpcObservedEvent) => void | Promise<void>;
 }
 
-export interface PiRpcObservedEvent {
-  type: string;
-  atMs: number;
-  payload: Record<string, unknown>;
-}
+export interface PiRpcObservedEvent extends GatewayAgentRuntimeObservedEvent {}
 
 export interface PiRpcAgentRunResult {
   summary?: string;

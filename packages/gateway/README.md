@@ -82,6 +82,12 @@ const result = await runPiRpcAgentJob({
   prompt: 'Inspect this project and identify the next useful task.',
   targetRuntimeId: 'pi',
   session: 'new',
+}, {
+  onEvent: (event) => gateway.appendLog({
+    target: 'job_123',
+    message: `agent runtime event: ${event.type}`,
+    data: { eventType: event.type },
+  }),
 });
 
 console.log(result.summary);
@@ -94,9 +100,12 @@ command still being present in process memory.
 
 The adapter sends `prompt`, `get_state`, and `get_commands` commands over stdin,
 observes streamed message and agent lifecycle events on stdout, and cancels
-blocking extension UI prompts by default. That makes it safe for headless job
-workers while preserving non-blocking Pi extension status/widget updates for
-future management UIs.
+blocking extension UI prompts by default. Callers can pass `onEvent` to mirror
+selected lifecycle events into gateway logs, which is how the `sd` agent-job
+worker exposes Pi progress under the durable job id. If the provided
+`AbortSignal` fires, the adapter sends Pi an `abort` RPC message before stopping
+the child process. That makes it safe for headless job workers while preserving
+non-blocking Pi extension status/widget updates for future management UIs.
 
 ## Service Workers
 
