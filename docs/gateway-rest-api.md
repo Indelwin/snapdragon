@@ -55,7 +55,10 @@ should be added above the same route shape.
 | `POST` | `/v1/logs` | Append an inspectable runtime breadcrumb. |
 | `GET` | `/v1/registry` | Registry names, capabilities, and channels. |
 | `GET` | `/v1/capabilities` | Capability provider map. |
-| `GET` | `/v1/sandboxes` | Sandbox lease list placeholder. |
+| `GET` | `/v1/sandboxes` | List active sandbox leases. |
+| `POST` | `/v1/sandboxes` | Create or record a sandbox lease. |
+| `GET` | `/v1/sandboxes/:id` | Show one active sandbox lease. |
+| `POST` | `/v1/sandboxes/:id/release` | Release one sandbox lease. |
 
 Runtime workers append job-targeted logs over local IPC while they run. External
 adapters can use `POST /v1/logs` when REST is their integration surface, and
@@ -171,6 +174,39 @@ Then tail logs for the same job:
 
 ```http
 GET /v1/logs?target=job_123&limit=20
+```
+
+Create and release a sandbox lease:
+
+```http
+POST /v1/sandboxes
+content-type: application/json
+
+{
+  "spec": {
+    "sandboxId": "release-check-worktree",
+    "cwd": "/tmp/snapdragon/sandboxes/worktrees/release-check-worktree",
+    "backend": "worktree",
+    "project": {
+      "id": "snapdragon",
+      "root": "/Users/shannon/Workspace/snapdragon",
+      "branch": "main"
+    },
+    "referenceRoots": ["/Users/shannon/Workspace/reference-repo"],
+    "ttlMs": 3600000
+  }
+}
+```
+
+The response is a `GatewaySandboxLease`. The same lease then appears in
+`GET /v1/sandboxes` and the `sandboxes` field of `GET /v1/world` until it is
+released or expires.
+
+```http
+POST /v1/sandboxes/lease_release-check-worktree/release
+content-type: application/json
+
+{}
 ```
 
 Watch world snapshots:

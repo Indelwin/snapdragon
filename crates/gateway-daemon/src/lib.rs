@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use snapdragon_gateway_core::{
     ActorId, GatewayAgentRuntimeDescriptor, GatewayEnvelope, GatewayExitReason, GatewayJobSpec,
-    GatewayJobStatus, GatewayLogRecord, GatewayWorkerProcess, LinkGraph, Mailbox, ProcessRegistry,
-    ReceiveFilter, RegistrySnapshot, ServiceSpec, ServiceStatus, Supervisor, TableAccess,
-    TableRegistry, TableSnapshot,
+    GatewayJobStatus, GatewayLogRecord, GatewaySandboxLease, GatewaySandboxSpec,
+    GatewayWorkerProcess, LinkGraph, Mailbox, ProcessRegistry, ReceiveFilter, RegistrySnapshot,
+    ServiceSpec, ServiceStatus, Supervisor, TableAccess, TableRegistry, TableSnapshot,
 };
 use tokio::{sync::RwLock, task::JoinHandle};
 
@@ -27,6 +27,7 @@ mod store_events;
 mod store_job_types;
 mod store_jobs;
 mod store_observability;
+mod store_sandboxes;
 mod store_services;
 
 pub use status::GatewayStatusSnapshot;
@@ -176,6 +177,26 @@ impl GatewayDaemon {
         limit: u64,
     ) -> Result<Vec<GatewayLogRecord>, String> {
         self.require_store()?.tail_logs(target, limit)
+    }
+
+    pub async fn lease_sandbox(
+        &self,
+        spec: GatewaySandboxSpec,
+        now_ms: u64,
+    ) -> Result<GatewaySandboxLease, String> {
+        self.require_store()?.lease_sandbox(spec, now_ms)
+    }
+
+    pub async fn list_sandbox_leases(&self) -> Result<Vec<GatewaySandboxLease>, String> {
+        self.require_store()?.sandbox_leases(unix_time_ms())
+    }
+
+    pub async fn sandbox_lease(&self, id: &str) -> Result<Option<GatewaySandboxLease>, String> {
+        self.require_store()?.sandbox_lease(id, unix_time_ms())
+    }
+
+    pub async fn release_sandbox(&self, id: &str) -> Result<Option<GatewaySandboxLease>, String> {
+        self.require_store()?.release_sandbox(id, unix_time_ms())
     }
 
     pub async fn attach_supervisor(&self, name: impl Into<String>, supervisor: Supervisor) {

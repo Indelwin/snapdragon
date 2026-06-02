@@ -102,11 +102,18 @@ test('inline gateway registers agent runtimes and snapshots the world', async ()
     isolation: 'profile',
   });
   await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'map the world' } });
+  await gateway.leaseSandbox({
+    id: 'test-sandbox',
+    cwd: '/tmp/sandbox',
+    project: { id: 'repo', root: '/tmp/repo' },
+    referenceRoots: ['/tmp/reference'],
+  });
   const snapshot = await gateway.worldSnapshot();
   assert.equal(snapshot.agentRuntimes[0]?.id, 'sd');
   assert.equal(snapshot.jobs[0]?.spec.kind, 'agent.run');
   assert.equal(snapshot.status.agentRuntimes?.[0]?.protocol, 'embedded');
-  assert.deepEqual(snapshot.sandboxes, []);
+  assert.equal(snapshot.sandboxes[0]?.id, 'lease_test-sandbox');
+  assert.deepEqual(snapshot.sandboxes[0]?.referenceRoots, ['/tmp/reference']);
 });
 
 test('gateway validates agent runtime descriptors before registration', async () => {
@@ -197,9 +204,22 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.match(await invalidLog.text(), /missing log message/);
     assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/cancel`, {})).state, 'cancelled');
 
+    const sandbox = await postJson(`${baseUrl}/sandboxes`, {
+      id: 'rest-sandbox',
+      cwd: '/tmp/rest-sandbox',
+      project: { id: 'repo', root: '/tmp/repo' },
+      referenceRoots: ['/tmp/reference'],
+    });
+    assert.equal(sandbox.id, 'lease_rest-sandbox');
+    assert.equal((await getJson(`${baseUrl}/sandboxes/${sandbox.id}`)).cwd, '/tmp/rest-sandbox');
+    assert.equal((await getJson(`${baseUrl}/sandboxes`))[0]?.sandboxId, 'rest-sandbox');
+
     const world = await getJson(`${baseUrl}/world`);
     assert.equal(world.agentRuntimes[0]?.id, 'codex');
     assert.equal(Array.isArray(world.logs), true);
+    assert.equal(world.sandboxes[0]?.id, sandbox.id);
+    assert.equal((await postJson(`${baseUrl}/sandboxes/${sandbox.id}/release`, {})).id, sandbox.id);
+    assert.equal((await getJson(`${baseUrl}/sandboxes`)).length, 0);
   } finally {
     await rest.close();
   }
@@ -337,6 +357,15 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'job_1',
     );
     assert.equal((await gateway.tailLogs()).length, 1);
+    const sandbox = await gateway.leaseSandbox({
+      id: 'ipc-sandbox',
+      cwd: '/tmp/ipc-sandbox',
+      project: { id: 'repo', root: '/tmp/repo' },
+    });
+    assert.equal(sandbox.id, 'lease_ipc-sandbox');
+    assert.equal((await gateway.listSandboxLeases())[0]?.sandboxId, 'ipc-sandbox');
+    assert.equal((await gateway.showSandboxLease(sandbox.id))?.cwd, '/tmp/ipc-sandbox');
+    assert.equal((await gateway.releaseSandbox(sandbox.id))?.id, sandbox.id);
     assert.deepEqual(requests[0].params.spec.worker, {
       command: 'node',
       args: ['worker.js'],
@@ -363,6 +392,10 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'events.cancel',
       'logs.append',
       'logs.tail',
+      'sandboxes.lease',
+      'sandboxes.list',
+      'sandboxes.show',
+      'sandboxes.release',
     ]);
   } finally {
     server.close();
@@ -564,7 +597,38 @@ function responseFor(request: any): unknown {
       result: [{ id: 1, at_ms: 10, level: 'info', message: 'ok' }],
     };
   }
+  if (request.method === 'sandboxes.lease') {
+    return { id: request.id, ok: true, result: wireSandboxLease(request.params.spec) };
+  }
+  if (request.method === 'sandboxes.list') {
+    return {
+      id: request.id,
+      ok: true,
+      result: [wireSandboxLease({ id: 'ipc-sandbox', cwd: '/tmp/ipc-sandbox' })],
+    };
+  }
+  if (request.method === 'sandboxes.show' || request.method === 'sandboxes.release') {
+    return {
+      id: request.id,
+      ok: true,
+      result: wireSandboxLease({ id: 'ipc-sandbox', cwd: '/tmp/ipc-sandbox' }),
+    };
+  }
   return { id: request.id, ok: true, result: true };
+}
+
+function wireSandboxLease(spec: any): unknown {
+  const sandboxId = spec.sandbox_id ?? spec.id ?? 'ipc-sandbox';
+  return {
+    id: spec.lease_id ?? `lease_${sandboxId}`,
+    sandbox_id: sandboxId,
+    cwd: spec.cwd ?? '/tmp/ipc-sandbox',
+    acquired_at_ms: spec.acquired_at_ms ?? 10,
+    expires_at_ms: spec.expires_at_ms ?? null,
+    backend: spec.backend ?? 'worktree',
+    project: spec.project ?? { id: 'repo', root: '/tmp/repo', branch: null },
+    reference_roots: spec.reference_roots ?? [],
+  };
 }
 
 async function getJson(url: string): Promise<any> {
