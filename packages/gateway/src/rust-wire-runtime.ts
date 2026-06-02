@@ -1,3 +1,4 @@
+import { normalizeGatewayAgentRuntimeDescriptor } from './agent-runtime-validation.js';
 import type {
   GatewayAgentRuntimeDescriptor,
   GatewayAgentRuntimeHealth,
@@ -31,30 +32,31 @@ interface WireAgentRuntimeDescriptor {
 export function toWireAgentRuntimeDescriptor(
   descriptor: GatewayAgentRuntimeDescriptor,
 ): Record<string, unknown> {
+  const normalized = normalizeGatewayAgentRuntimeDescriptor(descriptor);
   return {
-    id: descriptor.id,
-    kind: descriptor.kind,
-    protocol: descriptor.protocol,
-    label: descriptor.label ?? null,
-    command: descriptor.command
+    id: normalized.id,
+    kind: normalized.kind,
+    protocol: normalized.protocol,
+    label: normalized.label ?? null,
+    command: normalized.command
       ? {
-          command: descriptor.command.command,
-          args: descriptor.command.args ?? [],
-          cwd: descriptor.command.cwd ?? null,
-          env: descriptor.command.env ?? {},
+          command: normalized.command.command,
+          args: normalized.command.args ?? [],
+          cwd: normalized.command.cwd ?? null,
+          env: normalized.command.env ?? {},
         }
       : null,
-    supported_job_kinds: descriptor.supportedJobKinds ?? [],
-    capabilities: descriptor.capabilities ?? [],
-    isolation: descriptor.isolation ?? null,
-    health: descriptor.health
+    supported_job_kinds: normalized.supportedJobKinds ?? [],
+    capabilities: normalized.capabilities ?? [],
+    isolation: normalized.isolation ?? null,
+    health: normalized.health
       ? {
-          state: descriptor.health.state,
-          checked_at_ms: descriptor.health.checkedAtMs,
-          message: descriptor.health.message ?? null,
+          state: normalized.health.state,
+          checked_at_ms: normalized.health.checkedAtMs,
+          message: normalized.health.message ?? null,
         }
       : null,
-    metadata: descriptor.metadata ?? null,
+    metadata: normalized.metadata ?? null,
   };
 }
 

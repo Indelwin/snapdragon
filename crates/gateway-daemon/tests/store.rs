@@ -2,8 +2,9 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 use snapdragon_gateway_core::{
-    GatewayAgentRuntimeDescriptor, GatewayAgentRuntimeKind, GatewayAgentRuntimeProtocol,
-    GatewayEventRecord, GatewayEventState, GatewayJobSpec, GatewayJobState,
+    GatewayAgentRuntimeCommand, GatewayAgentRuntimeDescriptor, GatewayAgentRuntimeKind,
+    GatewayAgentRuntimeProtocol, GatewayEventRecord, GatewayEventState, GatewayJobSpec,
+    GatewayJobState,
 };
 use snapdragon_gateway_daemon::GatewayStore;
 
@@ -84,7 +85,12 @@ fn store_persists_jobs_events_logs_and_services() {
                 kind: GatewayAgentRuntimeKind::Pi,
                 protocol: GatewayAgentRuntimeProtocol::Jsonl,
                 label: Some("Pi Agent".into()),
-                command: None,
+                command: Some(GatewayAgentRuntimeCommand {
+                    command: "pi".into(),
+                    args: vec!["--mode".into(), "rpc".into()],
+                    cwd: None,
+                    env: Default::default(),
+                }),
                 supported_job_kinds: vec!["agent.run".into()],
                 capabilities: vec!["skills.pi".into()],
                 isolation: None,

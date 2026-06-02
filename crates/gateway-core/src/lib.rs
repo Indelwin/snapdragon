@@ -6,6 +6,7 @@
 //! supervision, ETS-like tables, and transport-neutral envelopes.
 
 pub mod agent;
+mod agent_validation;
 pub mod envelope;
 pub mod jobs;
 pub mod links;
