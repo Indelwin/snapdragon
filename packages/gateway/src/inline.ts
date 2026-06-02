@@ -1,3 +1,4 @@
+import { normalizeGatewayAgentRuntimeDescriptor } from './agent-runtime-validation.js';
 import { InlineJobStore } from './inline-jobs.js';
 import { InlineMailboxStore } from './inline-mailboxes.js';
 import { InlineCapabilityRegistry } from './inline-registry.js';
@@ -101,7 +102,7 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async registerAgentRuntime(
     descriptor: GatewayAgentRuntimeDescriptor,
   ): Promise<GatewayAgentRuntimeDescriptor> {
-    const normalized = normalizeAgentRuntime(descriptor);
+    const normalized = normalizeGatewayAgentRuntimeDescriptor(descriptor);
     this.#agentRuntimes.set(normalized.id, normalized);
     this.#log('info', normalized.id, 'agent runtime registered', {
       kind: normalized.kind,
@@ -245,14 +246,4 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
 
 function inlineId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function normalizeAgentRuntime(
-  descriptor: GatewayAgentRuntimeDescriptor,
-): GatewayAgentRuntimeDescriptor {
-  return {
-    ...descriptor,
-    supportedJobKinds: descriptor.supportedJobKinds ?? [],
-    capabilities: descriptor.capabilities ?? [],
-  };
 }

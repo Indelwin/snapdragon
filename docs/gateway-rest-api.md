@@ -52,15 +52,21 @@ should be added above the same route shape.
 | `POST` | `/v1/events` | Append an event. |
 | `POST` | `/v1/events/:id/cancel` | Cancel one event. |
 | `GET` | `/v1/logs` | Tail logs, with optional `target` and `limit`. |
+| `POST` | `/v1/logs` | Append an inspectable runtime breadcrumb. |
 | `GET` | `/v1/registry` | Registry names, capabilities, and channels. |
 | `GET` | `/v1/capabilities` | Capability provider map. |
 | `GET` | `/v1/sandboxes` | Sandbox lease list placeholder. |
 
-Runtime workers append job-targeted logs over local IPC while they run. REST
-clients inspect those breadcrumbs with `GET /v1/logs?target=<job_id>`. For Pi
+Runtime workers append job-targeted logs over local IPC while they run. External
+adapters can use `POST /v1/logs` when REST is their integration surface, and
+operators inspect those breadcrumbs with `GET /v1/logs?target=<job_id>`. For Pi
 runtime jobs this includes lifecycle events such as `agent_start`,
 `message_end`, tool execution boundaries, extension UI requests, and
 cancellation observation without exposing raw token deltas by default.
+
+Runtime registration validates descriptors before storage. Runtime ids must be
+URL/config-safe, command-like protocols require a non-empty `command.command`,
+and blank supported job kinds or capabilities are rejected with `400` responses.
 
 ## Request Examples
 
@@ -75,6 +81,10 @@ content-type: application/json
     "id": "codex",
     "kind": "codex",
     "protocol": "command",
+    "command": {
+      "command": "codex",
+      "args": ["--json"]
+    },
     "supportedJobKinds": ["agent.run"],
     "capabilities": ["repo.edit", "tools.shell"],
     "isolation": "sandbox"
@@ -142,6 +152,26 @@ The durable gateway treats cancellation as terminal. Cooperative workers observe
 the cancelled job record, abort their runtime signal, clear active leases, and
 leave subsequent late `complete` or `fail` writes as no-ops against the
 cancelled status.
+
+Append and inspect a runtime breadcrumb:
+
+```http
+POST /v1/logs
+content-type: application/json
+
+{
+  "target": "job_123",
+  "level": "info",
+  "message": "agent runtime event: agent_start",
+  "data": { "runtime": "pi" }
+}
+```
+
+Then tail logs for the same job:
+
+```http
+GET /v1/logs?target=job_123&limit=20
+```
 
 Watch world snapshots:
 

@@ -1,6 +1,6 @@
 use snapdragon_gateway_core::{
-    GatewayAgentRuntimeDescriptor, GatewayAgentRuntimeKind, GatewayAgentRuntimeProtocol,
-    Supervisor, SupervisorStrategy,
+    GatewayAgentRuntimeCommand, GatewayAgentRuntimeDescriptor, GatewayAgentRuntimeKind,
+    GatewayAgentRuntimeProtocol, Supervisor, SupervisorStrategy,
 };
 use snapdragon_gateway_daemon::{GatewayDaemon, GatewayStore};
 
@@ -57,7 +57,12 @@ async fn daemon_recovers_agent_runtime_descriptors_from_store() {
                 kind: GatewayAgentRuntimeKind::Pi,
                 protocol: GatewayAgentRuntimeProtocol::Jsonl,
                 label: Some("Pi Agent".into()),
-                command: None,
+                command: Some(GatewayAgentRuntimeCommand {
+                    command: "pi".into(),
+                    args: vec!["--mode".into(), "rpc".into()],
+                    cwd: None,
+                    env: Default::default(),
+                }),
                 supported_job_kinds: vec!["agent.run".into()],
                 capabilities: vec!["skills.pi".into()],
                 isolation: None,
@@ -76,4 +81,42 @@ async fn daemon_recovers_agent_runtime_descriptors_from_store() {
         GatewayAgentRuntimeKind::Pi
     );
     let _ = std::fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn daemon_rejects_invalid_agent_runtime_descriptors() {
+    let daemon = GatewayDaemon::new();
+    let error = daemon
+        .register_agent_runtime(GatewayAgentRuntimeDescriptor {
+            id: "bad runtime".into(),
+            kind: GatewayAgentRuntimeKind::Codex,
+            protocol: GatewayAgentRuntimeProtocol::Command,
+            label: None,
+            command: None,
+            supported_job_kinds: vec!["agent.run".into()],
+            capabilities: vec![],
+            isolation: None,
+            health: None,
+            metadata: None,
+        })
+        .await
+        .unwrap_err();
+    assert!(error.contains("id"));
+
+    let error = daemon
+        .register_agent_runtime(GatewayAgentRuntimeDescriptor {
+            id: "codex".into(),
+            kind: GatewayAgentRuntimeKind::Codex,
+            protocol: GatewayAgentRuntimeProtocol::Command,
+            label: None,
+            command: None,
+            supported_job_kinds: vec!["agent.run".into()],
+            capabilities: vec![],
+            isolation: None,
+            health: None,
+            metadata: None,
+        })
+        .await
+        .unwrap_err();
+    assert!(error.contains("requires command.command"));
 }

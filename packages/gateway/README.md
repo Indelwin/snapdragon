@@ -46,6 +46,7 @@ await gateway.registerAgentRuntime({
   id: 'codex',
   kind: 'codex',
   protocol: 'command',
+  command: { command: 'codex', args: ['--json'] },
   supportedJobKinds: ['agent.run'],
   capabilities: ['tools.shell', 'repo.edit'],
   isolation: 'sandbox',
@@ -97,6 +98,11 @@ Registered runtime descriptors are durable in the Rust gateway store. A daemon
 restart recovers Pi, `sd`, Codex, Hermes, and custom runtime descriptors before
 workers lease queued jobs, so orchestration does not depend on a one-shot setup
 command still being present in process memory.
+
+The facade validates descriptors before registration: runtime ids must be
+URL/config-safe, command-like protocols need a launch command, and advertised
+job kinds or capabilities cannot be blank. The Rust daemon performs the same
+validation for raw IPC callers before persisting descriptors.
 
 The adapter sends `prompt`, `get_state`, and `get_commands` commands over stdin,
 observes streamed message and agent lifecycle events on stdout, and cancels
@@ -181,8 +187,8 @@ Initial routes cover:
 - `GET /v1/workers`, `GET /v1/jobs`, `POST /v1/jobs`,
   `GET /v1/jobs/:id`, and `POST /v1/jobs/:id/cancel`.
 - `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
-  `GET /v1/logs`, `GET /v1/registry`, `GET /v1/capabilities`, and
-  `GET /v1/sandboxes`.
+  `GET /v1/logs`, `POST /v1/logs`, `GET /v1/registry`,
+  `GET /v1/capabilities`, and `GET /v1/sandboxes`.
 
 The default listener binds to `127.0.0.1`. Authentication, policy enforcement,
 and remote exposure are later layers on the same route shape.

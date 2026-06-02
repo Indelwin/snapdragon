@@ -1,3 +1,4 @@
+import { normalizeGatewayAgentRuntimeDescriptor } from './agent-runtime-validation.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayAgentRuntimeDescriptor, GatewayClient } from './types.js';
 
@@ -30,5 +31,11 @@ async function registerAgentRuntime(
 ): Promise<RestRouteResult> {
   const body = await readJson<{ descriptor?: GatewayAgentRuntimeDescriptor }>(request);
   if (!body.descriptor) return { status: 400, body: { error: 'missing agent descriptor' } };
-  return { status: 201, body: await client.registerAgentRuntime(body.descriptor) };
+  let descriptor: GatewayAgentRuntimeDescriptor;
+  try {
+    descriptor = normalizeGatewayAgentRuntimeDescriptor(body.descriptor);
+  } catch (error) {
+    return { status: 400, body: { error: error instanceof Error ? error.message : String(error) } };
+  }
+  return { status: 201, body: await client.registerAgentRuntime(descriptor) };
 }
