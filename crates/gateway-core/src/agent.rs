@@ -71,3 +71,9 @@ pub struct GatewayAgentRuntimeDescriptor {
     #[serde(default)]
     pub metadata: Option<Value>,
 }
+
+impl GatewayAgentRuntimeDescriptor {
+    pub fn validate(&self) -> Result<(), String> {
+        crate::agent_validation::validate_agent_runtime_descriptor(self)
+    }
+}

@@ -1,3 +1,4 @@
+export { normalizeGatewayAgentRuntimeDescriptor } from './agent-runtime-validation.js';
 export { InlineGatewayClient } from './inline.js';
 export type {
   PiRpcAgentJobOptions,
