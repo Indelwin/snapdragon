@@ -4,7 +4,7 @@ use serde_json::Value;
 use snapdragon_gateway_core::{
     GatewayAgentRuntimeCommand, GatewayAgentRuntimeDescriptor, GatewayAgentRuntimeKind,
     GatewayAgentRuntimeProtocol, GatewayEventRecord, GatewayEventState, GatewayJobSpec,
-    GatewayJobState,
+    GatewayJobState, GatewayProjectRef, GatewaySandboxSpec,
 };
 use snapdragon_gateway_daemon::GatewayStore;
 
@@ -102,6 +102,39 @@ fn store_persists_jobs_events_logs_and_services() {
         .unwrap();
     assert_eq!(runtime.id, "pi");
     assert_eq!(store.agent_runtime_snapshots().unwrap()[0].id, "pi");
+    let sandbox = store
+        .lease_sandbox(
+            GatewaySandboxSpec {
+                id: Some("sandbox_1".into()),
+                lease_id: None,
+                sandbox_id: None,
+                cwd: Some("/tmp/sandbox_1".into()),
+                project: GatewayProjectRef {
+                    id: "repo".into(),
+                    root: "/tmp/repo".into(),
+                    branch: None,
+                },
+                backend: None,
+                reference_roots: vec!["/tmp/reference".into()],
+                inherit_env: false,
+                ttl_ms: Some(1_000),
+                expires_at_ms: None,
+                acquired_at_ms: None,
+            },
+            18,
+        )
+        .unwrap();
+    assert_eq!(sandbox.id, "lease_sandbox_1");
+    assert_eq!(store.sandbox_leases(19).unwrap()[0].sandbox_id, "sandbox_1");
+    assert_eq!(
+        store
+            .release_sandbox("lease_sandbox_1", 20)
+            .unwrap()
+            .unwrap()
+            .id,
+        "lease_sandbox_1"
+    );
+    assert!(store.sandbox_leases(21).unwrap().is_empty());
     assert_eq!(
         store
             .append_log(18, "info", Some("job_1"), "runtime breadcrumb", None)

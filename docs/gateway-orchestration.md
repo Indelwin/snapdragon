@@ -26,6 +26,8 @@ Systems act when entities match their conditions:
 - Scheduler systems enqueue due service runs and event work.
 - Lease systems acquire pending jobs, expire stale leases, and release failed
   workers.
+- Sandbox lease systems record project-scoped execution spaces, expose active
+  leases in world snapshots, and release or hide expired sandboxes.
 - Dispatch systems route jobs to matching agent runtimes or native services.
 - Supervisor systems restart transient workers and suppress restart storms.
 - Policy systems evaluate scopes, approvals, sandbox requirements, and future
@@ -74,6 +76,12 @@ stateDiagram-v2
 Every job should have enough context for agent experience: kind, queue, payload,
 priority, parent job id, correlation id, target runtime id, project/channel refs,
 sandbox lease, policy hints, attempts, last error, result, and logs.
+
+Sandbox leases are gateway entities, not local implementation details. The
+first local backend records `git worktree` leases with cwd, project ref, branch,
+TTL, and reference roots. The Rust gateway stores the active lease registry and
+serves it through IPC, REST, SSE world snapshots, and the TypeScript facade, so
+agents can ask "where am I allowed to work?" without hunting through files.
 
 ## Agent Runtime Registration
 

@@ -5,8 +5,10 @@ import type {
   GatewayJobStatus,
   GatewayLease,
   GatewayLogRecord,
+  GatewayProjectRef,
   GatewayQueueDepth,
   GatewayRegistrySnapshot,
+  GatewaySandboxLease,
   GatewayServiceSpec,
   GatewayServiceStatus,
   GatewayStatus,
@@ -20,6 +22,9 @@ export type {
   GatewayAgentRuntimeIsolation,
   GatewayAgentRuntimeKind,
   GatewayAgentRuntimeProtocol,
+  GatewayProjectRef,
+  GatewaySandboxLease,
+  GatewaySandboxSpec,
 } from './types.js';
 
 export interface GatewayPolicyHints {
@@ -55,31 +60,6 @@ export interface GatewayAgentRuntimeObservedEvent {
   type: string;
   atMs: number;
   payload: Record<string, unknown>;
-}
-
-export interface GatewayProjectRef {
-  id: string;
-  root: string;
-  branch?: string;
-}
-
-export interface GatewaySandboxSpec {
-  id?: string;
-  project: GatewayProjectRef;
-  backend?: 'worktree';
-  referenceRoots?: string[];
-  inheritEnv?: boolean;
-}
-
-export interface GatewaySandboxLease {
-  id: string;
-  sandboxId: string;
-  cwd: string;
-  acquiredAtMs: number;
-  expiresAtMs?: number;
-  backend?: 'worktree';
-  project?: GatewayProjectRef;
-  referenceRoots?: string[];
 }
 
 export interface GatewayExtensionContributions {

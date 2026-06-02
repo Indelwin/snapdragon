@@ -1,7 +1,9 @@
 import { normalizeGatewayAgentRuntimeDescriptor } from './agent-runtime-validation.js';
+import { InlineEventStore } from './inline-events.js';
 import { InlineJobStore } from './inline-jobs.js';
 import { InlineMailboxStore } from './inline-mailboxes.js';
 import { InlineCapabilityRegistry } from './inline-registry.js';
+import { InlineSandboxStore } from './inline-sandboxes.js';
 import { InlineServiceStore } from './inline-services.js';
 import { InlineTableStore } from './inline-tables.js';
 import type {
@@ -16,6 +18,8 @@ import type {
   GatewayLogRecord,
   GatewayReceiveFilter,
   GatewayRegistrySnapshot,
+  GatewaySandboxLease,
+  GatewaySandboxSpec,
   GatewayServiceRunner,
   GatewayServiceSpec,
   GatewayServiceStatus,
@@ -36,7 +40,12 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   #jobs = new InlineJobStore({
     log: (level, target, message, data) => this.#log(level, target, message, data),
   });
-  #events = new Map<string, GatewayEventRecord>();
+  #sandboxes = new InlineSandboxStore((level, target, message, data) =>
+    this.#log(level, target, message, data),
+  );
+  #events = new InlineEventStore((level, target, message, data) =>
+    this.#log(level, target, message, data),
+  );
   #logs: GatewayLogRecord[] = [];
 
   async send(envelope: GatewayEnvelope): Promise<void> {
@@ -167,61 +176,37 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
     return this.#jobs.fail(id, error);
   }
 
+  async leaseSandbox(spec: GatewaySandboxSpec): Promise<GatewaySandboxLease> {
+    return this.#sandboxes.lease(spec);
+  }
+
+  async listSandboxLeases(): Promise<GatewaySandboxLease[]> {
+    return this.#sandboxes.list();
+  }
+
+  async showSandboxLease(id: string): Promise<GatewaySandboxLease | undefined> {
+    return this.#sandboxes.show(id);
+  }
+
+  async releaseSandbox(id: string): Promise<GatewaySandboxLease | undefined> {
+    return this.#sandboxes.release(id);
+  }
+
   async appendEvent(input: {
     id?: string;
     kind: string;
     target?: string;
     payload?: unknown;
   }): Promise<GatewayEventRecord> {
-    const now = Date.now();
-    const event: GatewayEventRecord = {
-      id: input.id ?? inlineId('event'),
-      kind: input.kind,
-      target: input.target,
-      state: 'pending',
-      payload: input.payload ?? {},
-      createdAtMs: now,
-      updatedAtMs: now,
-    };
-    this.#events.set(event.id, event);
-    this.#log('info', event.id, 'event appended', { kind: event.kind });
-    return event;
+    return this.#events.append(input);
   }
 
   async listEvents(): Promise<GatewayEventRecord[]> {
-    return [...this.#events.values()].sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+    return this.#events.list();
   }
 
   async cancelEvent(id: string): Promise<GatewayEventRecord | undefined> {
-    return this.#cancel(this.#events, id, 'event cancelled');
-  }
-
-  async appendLog(input: GatewayLogInput): Promise<GatewayLogRecord> {
-    return this.#log(input.level ?? 'info', input.target, input.message, input.data, input.atMs);
-  }
-
-  async tailLogs(options: { target?: string; limit?: number } = {}): Promise<GatewayLogRecord[]> {
-    const logs = options.target
-      ? this.#logs.filter((log) => log.target === options.target)
-      : this.#logs;
-    return logs.slice(-(options.limit ?? 20));
-  }
-
-  async worldSnapshot(): Promise<GatewayWorldSnapshot> {
-    return buildGatewayWorldSnapshot(this);
-  }
-
-  #cancel<T extends { id: string; state: string; updatedAtMs: number }>(
-    records: Map<string, T>,
-    id: string,
-    message: string,
-  ): T | undefined {
-    const record = records.get(id);
-    if (!record) return undefined;
-    record.state = 'cancelled' as T['state'];
-    record.updatedAtMs = Date.now();
-    this.#log('warn', id, message);
-    return record;
+    return this.#events.cancel(id);
   }
 
   #log(
@@ -241,6 +226,21 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
     };
     this.#logs.push(record);
     return record;
+  }
+
+  async appendLog(input: GatewayLogInput): Promise<GatewayLogRecord> {
+    return this.#log(input.level ?? 'info', input.target, input.message, input.data, input.atMs);
+  }
+
+  async tailLogs(options: { target?: string; limit?: number } = {}): Promise<GatewayLogRecord[]> {
+    const logs = options.target
+      ? this.#logs.filter((log) => log.target === options.target)
+      : this.#logs;
+    return logs.slice(-(options.limit ?? 20));
+  }
+
+  async worldSnapshot(): Promise<GatewayWorldSnapshot> {
+    return buildGatewayWorldSnapshot(this);
   }
 }
 
