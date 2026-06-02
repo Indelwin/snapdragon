@@ -1,8 +1,8 @@
 use serde::Deserialize;
 use serde_json::Value;
 use snapdragon_gateway_core::{
-    ActorId, GatewayAgentRuntimeDescriptor, GatewayEnvelope, GatewayJobSpec, ReceiveFilter,
-    ServiceSpec, TableAccess,
+    ActorId, GatewayAgentRuntimeDescriptor, GatewayEnvelope, GatewayJobSpec, GatewaySandboxSpec,
+    ReceiveFilter, ServiceSpec, TableAccess,
 };
 
 #[derive(Debug, Deserialize)]
@@ -131,4 +131,14 @@ pub(crate) struct LogAppendParams {
     pub(crate) target: Option<String>,
     pub(crate) message: String,
     pub(crate) data: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SandboxLeaseParams {
+    pub(crate) spec: GatewaySandboxSpec,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct SandboxIdParams {
+    pub(crate) id: String,
 }

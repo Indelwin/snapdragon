@@ -24,6 +24,8 @@ The public TypeScript API is intentionally small and serializable:
 - `GatewayEventRecord` and `GatewayLogRecord` for inspectable orchestration
   history.
 - `GatewayWorldSnapshot` for dashboard, REST, and agent-facing inspection.
+- `GatewaySandboxSpec` and `GatewaySandboxLease` for project-scoped execution
+  spaces.
 - Registry, capability, channel, and ETS-like table snapshots.
 
 The inline client is useful for package tests and applications that want the
@@ -188,7 +190,11 @@ Initial routes cover:
   `GET /v1/jobs/:id`, and `POST /v1/jobs/:id/cancel`.
 - `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
   `GET /v1/logs`, `POST /v1/logs`, `GET /v1/registry`,
-  `GET /v1/capabilities`, and `GET /v1/sandboxes`.
+  `GET /v1/capabilities`, `GET /v1/sandboxes`, `POST /v1/sandboxes`,
+  `GET /v1/sandboxes/:id`, and `POST /v1/sandboxes/:id/release`.
+
+World snapshots include active sandbox leases alongside jobs, events, logs,
+services, workers, runtimes, capabilities, queue depths, and tables.
 
 The default listener binds to `127.0.0.1`. Authentication, policy enforcement,
 and remote exposure are later layers on the same route shape.
@@ -200,6 +206,11 @@ spaces without baking in a backend. The first `sd` backend is local git
 worktrees with optional linked reference roots; richer providers such as
 OpenShell, Docker, microVMs, or remote sandboxes should implement the same lease
 shape instead of coupling callers to a specific runtime.
+
+The inline facade keeps leases in memory for tests. The Rust daemon persists
+leases in the gateway store, exposes them over IPC, and serves the same shape
+through REST so UIs, external runtimes, and executive agents can inspect and
+release sandboxes without scanning local lease files.
 
 ## Observability
 

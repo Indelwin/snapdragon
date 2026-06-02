@@ -7,6 +7,8 @@ use rusqlite::Connection;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::store_sandboxes::SANDBOX_SCHEMA;
+
 #[derive(Clone)]
 pub struct GatewayStore {
     conn: Arc<Mutex<Connection>>,
@@ -32,6 +34,7 @@ impl GatewayStore {
     pub fn init(&self) -> Result<(), String> {
         self.with_conn(|conn| {
             conn.execute_batch(SCHEMA)
+                .and_then(|_| conn.execute_batch(SANDBOX_SCHEMA))
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })
@@ -103,6 +106,7 @@ create table if not exists gateway_agent_runtimes(
   descriptor_json text not null,
   updated_at_ms integer not null
 );
+
 "#;
 
 pub(crate) fn json_parse<T: for<'de> serde::Deserialize<'de>>(json: &str) -> Result<T, String> {
