@@ -109,6 +109,28 @@ test('inline gateway registers agent runtimes and snapshots the world', async ()
   assert.deepEqual(snapshot.sandboxes, []);
 });
 
+test('gateway validates agent runtime descriptors before registration', async () => {
+  const gateway = new InlineGatewayClient();
+  await assert.rejects(
+    gateway.registerAgentRuntime({
+      id: 'bad runtime',
+      kind: 'codex',
+      protocol: 'command',
+      command: { command: 'codex' },
+    }),
+    /runtime id/,
+  );
+  await assert.rejects(
+    gateway.registerAgentRuntime({
+      id: 'codex',
+      kind: 'codex',
+      protocol: 'command',
+    }),
+    /requires command\.command/,
+  );
+  assert.equal((await gateway.listAgentRuntimes()).length, 0);
+});
+
 test('gateway REST server exposes local orchestration routes', async () => {
   const gateway = new InlineGatewayClient();
   const rest = createGatewayRestServer(gateway, { streamIntervalMs: 20 });
@@ -116,10 +138,24 @@ test('gateway REST server exposes local orchestration routes', async () => {
   try {
     assert.equal((await getJson(`${baseUrl}/health`)).runtime, 'inline-ts');
     const runtime = await postJson(`${baseUrl}/agents/register`, {
-      descriptor: { id: 'codex', kind: 'codex', protocol: 'command' },
+      descriptor: {
+        id: 'codex',
+        kind: 'codex',
+        protocol: 'command',
+        command: { command: 'codex', args: ['--json'] },
+      },
     });
     assert.equal(runtime.id, 'codex');
     assert.equal((await getJson(`${baseUrl}/agents/codex`)).protocol, 'command');
+    const invalidRuntime = await fetch(`${baseUrl}/agents/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        descriptor: { id: 'bad runtime', kind: 'codex', protocol: 'command' },
+      }),
+    });
+    assert.equal(invalidRuntime.status, 400);
+    assert.match(await invalidRuntime.text(), /runtime id/);
 
     const service = await postJson(`${baseUrl}/services`, { spec: { name: 'pulse' } });
     assert.equal(service.name, 'pulse');
@@ -140,6 +176,25 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(job.state, 'pending');
     assert.equal((await getJson(`${baseUrl}/jobs/${job.id}`)).id, job.id);
+    const log = await postJson(`${baseUrl}/logs`, {
+      target: job.id,
+      message: 'runtime breadcrumb',
+      data: { phase: 'started' },
+    });
+    assert.equal(log.target, job.id);
+    assert.match(
+      (await getJson(`${baseUrl}/logs?target=${job.id}`))
+        .map((record: any) => record.message)
+        .join('\n'),
+      /runtime breadcrumb/,
+    );
+    const invalidLog = await fetch(`${baseUrl}/logs`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ target: job.id }),
+    });
+    assert.equal(invalidLog.status, 400);
+    assert.match(await invalidLog.text(), /missing log message/);
     assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/cancel`, {})).state, 'cancelled');
 
     const world = await getJson(`${baseUrl}/world`);
@@ -255,6 +310,7 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
           id: 'codex',
           kind: 'codex',
           protocol: 'command',
+          command: { command: 'codex', args: ['--json'] },
           supportedJobKinds: ['agent.run'],
         })
       ).kind,

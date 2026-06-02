@@ -8,6 +8,7 @@ impl GatewayStore {
         descriptor: &GatewayAgentRuntimeDescriptor,
         updated_at_ms: u64,
     ) -> Result<GatewayAgentRuntimeDescriptor, String> {
+        descriptor.validate()?;
         let json = json_string(descriptor)?;
         self.with_conn(|conn| {
             conn.execute(

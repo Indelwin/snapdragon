@@ -7,6 +7,7 @@ impl GatewayDaemon {
         &self,
         descriptor: GatewayAgentRuntimeDescriptor,
     ) -> Result<GatewayAgentRuntimeDescriptor, String> {
+        descriptor.validate()?;
         if let Some(store) = &self.store {
             store.persist_agent_runtime(&descriptor, unix_time_ms())?;
         }

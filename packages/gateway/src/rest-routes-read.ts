@@ -1,5 +1,5 @@
-import type { RestRoute, RestRouteResult } from './rest-types.js';
-import type { GatewayClient } from './types.js';
+import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
+import type { GatewayClient, GatewayLogInput } from './types.js';
 
 export async function dispatchWorkers(
   client: GatewayClient,
@@ -13,7 +13,9 @@ export async function dispatchWorkers(
 export async function dispatchLogs(
   client: GatewayClient,
   route: RestRoute,
+  request?: RestRequest,
 ): Promise<RestRouteResult> {
+  if (route.method === 'POST' && request) return appendLog(client, request);
   if (route.method !== 'GET') return { status: 404, body: { error: 'not found' } };
   return {
     status: 200,
@@ -22,6 +24,15 @@ export async function dispatchLogs(
       limit: parseLimit(route.searchParams.get('limit')),
     }),
   };
+}
+
+async function appendLog(client: GatewayClient, request: RestRequest): Promise<RestRouteResult> {
+  const body = await readJson<GatewayLogInput>(request);
+  if (!body || typeof body !== 'object' || typeof body.message !== 'string') {
+    return { status: 400, body: { error: 'missing log message' } };
+  }
+  if (body.message.trim() === '') return { status: 400, body: { error: 'missing log message' } };
+  return { status: 201, body: await client.appendLog(body) };
 }
 
 export async function dispatchRegistry(

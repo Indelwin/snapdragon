@@ -115,6 +115,7 @@ test('gateway agent commands surface saved runtimes when the daemon is unavailab
             kind: 'pi',
             protocol: 'jsonl',
             label: 'Pi Agent',
+            command: { command: process.execPath, args: ['fake-pi-rpc.mjs'] },
             supported_job_kinds: ['agent.run'],
           },
         },
