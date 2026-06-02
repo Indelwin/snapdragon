@@ -1,10 +1,11 @@
 import { existsSync, rmSync } from 'node:fs';
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
-import type { GatewaySandboxLease } from '@snapdragon-ai/gateway';
+import type { GatewaySandboxLease, GatewaySandboxSpec } from '@snapdragon-ai/gateway';
 import type { SdCliArgs } from './args-types.js';
 import { loadSdConfig } from './config.js';
 import { daemonPathsForConfig } from './daemon-paths.js';
+import { rustGatewayClientForConfig } from './gateway-command-client.js';
 import {
   linkReferenceRoots,
   parseLeaseArgs,
@@ -13,16 +14,23 @@ import {
   safeName,
 } from './gateway-sandbox-worktree.js';
 
+type SandboxCommandHandler = (rest: string[], args: SdCliArgs) => Promise<string>;
+
+const sandboxCommandHandlers: Record<string, SandboxCommandHandler> = {
+  list: (_rest, args) => listSandboxes(args),
+  lease: leaseSandbox,
+  release: (rest, args) => releaseSandbox(rest[0], args),
+  destroy: (rest, args) => destroySandbox(rest[0], args),
+};
+
 export async function sandboxesCommand(
   action: string,
   rest: string[],
   args: SdCliArgs,
 ): Promise<string> {
-  if (action === 'list') return listSandboxes(args);
-  if (action === 'lease') return leaseSandbox(rest, args);
-  if (action === 'release') return releaseSandbox(rest[0], args);
-  if (action === 'destroy') return destroySandbox(rest[0], args);
-  return `Unknown gateway sandboxes command: ${action}\n`;
+  return (
+    sandboxCommandHandlers[action]?.(rest, args) ?? `Unknown gateway sandboxes command: ${action}\n`
+  );
 }
 
 async function listSandboxes(args: SdCliArgs): Promise<string> {
@@ -54,6 +62,7 @@ async function leaseSandbox(rest: string[], args: SdCliArgs): Promise<string> {
     referenceRoots: options.referenceRoots,
   };
   await writeLease(root, lease);
+  await recordGatewayLease(args, lease);
   return `leased ${lease.id}\n${cwd}\n`;
 }
 
@@ -63,6 +72,7 @@ async function releaseSandbox(id: string | undefined, args: SdCliArgs): Promise<
   const lease = await readLease(root, id);
   if (!lease) return `Unknown sandbox lease: ${id}\n`;
   rmSync(leaseFile(root, id), { force: true });
+  await releaseGatewayLease(args, id);
   return `released ${id}\n`;
 }
 
@@ -80,6 +90,7 @@ async function destroySandbox(id: string | undefined, args: SdCliArgs): Promise<
     lease.cwd,
   ]);
   rmSync(leaseFile(root, id), { force: true });
+  await releaseGatewayLease(args, id);
   return `destroyed ${id}\n`;
 }
 
@@ -111,6 +122,37 @@ async function readLease(root: string, id: string): Promise<GatewaySandboxLease 
 
 async function writeLease(root: string, lease: GatewaySandboxLease): Promise<void> {
   await writeFile(leaseFile(root, lease.id), `${JSON.stringify(lease, null, 2)}\n`);
+}
+
+async function recordGatewayLease(args: SdCliArgs, lease: GatewaySandboxLease): Promise<void> {
+  try {
+    const config = await loadSdConfig(args.configPath);
+    await rustGatewayClientForConfig(config).leaseSandbox(specFromLease(lease));
+  } catch {
+    // File-backed sandbox commands should keep working when the daemon is offline.
+  }
+}
+
+async function releaseGatewayLease(args: SdCliArgs, id: string): Promise<void> {
+  try {
+    const config = await loadSdConfig(args.configPath);
+    await rustGatewayClientForConfig(config).releaseSandbox(id);
+  } catch {
+    // Local lease files are still the fallback source of truth without the daemon.
+  }
+}
+
+function specFromLease(lease: GatewaySandboxLease): GatewaySandboxSpec {
+  return {
+    leaseId: lease.id,
+    sandboxId: lease.sandboxId,
+    cwd: lease.cwd,
+    acquiredAtMs: lease.acquiredAtMs,
+    expiresAtMs: lease.expiresAtMs,
+    backend: lease.backend,
+    project: lease.project ?? { id: lease.sandboxId, root: lease.cwd },
+    referenceRoots: lease.referenceRoots,
+  };
 }
 
 function leaseFile(root: string, id: string): string {

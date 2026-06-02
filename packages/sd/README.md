@@ -119,9 +119,12 @@ config policy changes it.
 
 The built-in sandbox backend is local `git worktree` isolation. Leases record
 the project root, branch, backend, TTL, and optional reference roots; references
-are linked under `.snapdragon/references/` in the worktree. OpenShell, Docker,
-microVM, and remote backends are expected to plug into the same sandbox lease
-contract later.
+are linked under `.snapdragon/references/` in the worktree. When the Rust
+gateway daemon is available, `sd gateway sandboxes lease` also records the lease
+in the durable gateway registry, and `release`/`destroy` release it there as
+well. The file-backed lease remains the fallback source of truth when the daemon
+is offline. OpenShell, Docker, microVM, and remote backends are expected to plug
+into the same sandbox lease contract later.
 
 Interactive commands:
 

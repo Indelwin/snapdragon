@@ -191,6 +191,54 @@ async fn ipc_persists_jobs_events_and_logs() {
     )
     .await;
     assert!(logs["result"].as_array().unwrap().len() >= 2);
+
+    let sandbox = request(
+        &path,
+        json!({
+            "id": 7,
+            "method": "sandboxes.lease",
+            "params": {
+                "spec": {
+                    "id": "sandbox_1",
+                    "cwd": "/tmp/sandbox_1",
+                    "project": { "id": "repo", "root": "/tmp/repo" },
+                    "reference_roots": ["/tmp/reference"],
+                    "ttl_ms": 1000
+                }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(sandbox["result"]["id"], "lease_sandbox_1");
+
+    let sandboxes = request(
+        &path,
+        json!({ "id": 8, "method": "sandboxes.list", "params": {} }),
+    )
+    .await;
+    assert_eq!(sandboxes["result"][0]["sandbox_id"], "sandbox_1");
+
+    let sandbox = request(
+        &path,
+        json!({
+            "id": 9,
+            "method": "sandboxes.show",
+            "params": { "id": "lease_sandbox_1" }
+        }),
+    )
+    .await;
+    assert_eq!(sandbox["result"]["cwd"], "/tmp/sandbox_1");
+
+    let sandbox = request(
+        &path,
+        json!({
+            "id": 10,
+            "method": "sandboxes.release",
+            "params": { "id": "lease_sandbox_1" }
+        }),
+    )
+    .await;
+    assert_eq!(sandbox["result"]["id"], "lease_sandbox_1");
     server.abort();
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_file(db);
