@@ -253,6 +253,60 @@ test('gateway worker command is parsed as gateway args while preserving config',
   assert.match(parsed.configPath, /sd\.yaml$/);
 });
 
+test('gateway rest command is parsed as gateway args while preserving config', () => {
+  const parsed = parseArgs(['gateway', 'rest', 'serve', '--port', '8787', '--config', './sd.yaml']);
+  assert.equal(parsed.mode, 'gateway');
+  assert.deepEqual(parsed.gatewayArgs, ['rest', 'serve', '--port', '8787']);
+  assert.match(parsed.configPath, /sd\.yaml$/);
+});
+
+test('gateway rest serve exposes the local REST facade until stopped', async () => {
+  const root = await mkGatewayRoot();
+  const configPath = join(root, 'config.yaml');
+  const writes: string[] = [];
+  const controller = new AbortController();
+  await writeInlineGatewayConfig(configPath, root);
+
+  try {
+    const running = runGatewayCommand(
+      { configPath, gatewayArgs: ['rest', 'serve', '--port', '0', '--prefix', '/api'] } as any,
+      {
+        signal: controller.signal,
+        stdout: { write: (chunk) => writes.push(String(chunk)) },
+        async onRestListening(url) {
+          assert.match(url, /\/api$/);
+          const response = await fetch(`${url}/health`);
+          assert.equal(response.status, 200);
+          assert.equal((await response.json()).runtime, 'inline-ts');
+          controller.abort();
+        },
+      },
+    );
+    assert.match(await running, /gateway REST stopped/);
+    assert.match(writes.join(''), /gateway REST listening http:\/\/127\.0\.0\.1:\d+\/api/);
+  } finally {
+    controller.abort();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('gateway rest serve is local-only unless remote bind is explicit', async () => {
+  const root = await mkGatewayRoot();
+  const configPath = join(root, 'config.yaml');
+  await writeInlineGatewayConfig(configPath, root);
+  try {
+    await assert.rejects(
+      runGatewayCommand({
+        configPath,
+        gatewayArgs: ['rest', 'serve', '--host', '0.0.0.0', '--port', '0', '--once'],
+      } as any),
+      /loopback/,
+    );
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
 test('rust gateway status shows leases, queues, service scheduling, and failures', () => {
   const text = formatRustGatewayStatus(
     {
@@ -331,6 +385,20 @@ async function writeGatewayConfig(configPath: string, root: string): Promise<voi
         runtime: 'rust',
         root,
         services: { 'memory-worker': { enabled: true } },
+      },
+    }),
+    'utf8',
+  );
+}
+
+async function writeInlineGatewayConfig(configPath: string, root: string): Promise<void> {
+  await writeFile(
+    configPath,
+    stringifyYaml({
+      version: 1,
+      gateway: {
+        runtime: 'inline-ts',
+        root,
       },
     }),
     'utf8',

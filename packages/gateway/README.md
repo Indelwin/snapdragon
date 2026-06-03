@@ -218,6 +218,12 @@ const baseUrl = await rest.listen();
 console.log(baseUrl); // http://127.0.0.1:<port>/v1
 ```
 
+From `sd`, the same facade can be started as an operator command:
+
+```sh
+sd gateway rest serve --start --port 8787
+```
+
 Initial routes cover:
 
 - `GET /v1/health`, `GET /v1/status`, and `GET /v1/world`.

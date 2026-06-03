@@ -118,6 +118,7 @@ export {
   type SdGatewayChannelTarget,
 } from './gateway-channels.js';
 export { runGatewayCommand } from './gateway-command.js';
+export type { GatewayCommandOptions } from './gateway-command-options.js';
 export {
   channelEventService,
   runSdGatewayChannelEventsOnce,
