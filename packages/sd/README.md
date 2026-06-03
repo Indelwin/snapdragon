@@ -68,6 +68,7 @@ sd gateway workers register pi-worker-1 --runtime pi --capability agent.run --st
 sd gateway workers heartbeat pi-worker-1 --state idle --status "waiting for work"
 sd gateway workers list
 sd gateway workers show pi-worker-1
+sd gateway rest serve --start --port 8787
 sd gateway learn enqueue-eval ./eval-dataset.json
 sd gateway logs tail
 sd gateway sandboxes lease . --ref ../reference-repo --ttl-ms 3600000
@@ -107,6 +108,12 @@ or runtime metadata, and keep its current state inspectable. `list` and `show`
 display the worker queue, state, status, current job, and current lease. The
 singular `sd gateway worker` command remains the internal headless service
 worker runner used by the Rust daemon.
+
+`sd gateway rest serve` starts a foreground local REST/SSE facade over the
+gateway client. By default it binds `127.0.0.1:8787` with `/v1` routes; use
+`--port`, `--host`, `--prefix`, and `--stream-ms` to tune it. It refuses
+non-loopback hosts unless `--allow-remote` is passed, keeping auth-less preview
+servers local by default. Add `--start` to start the Rust gateway daemon first.
 
 Agent jobs can also target external runtimes. `sd gateway agents register-pi`
 adds a Pi JSONL runtime descriptor for the installed `pi` command; adding

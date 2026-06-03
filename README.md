@@ -56,6 +56,7 @@ interactive agent shell.
 ```bash
 sd gateway start
 sd gateway status
+sd gateway rest serve --port 8787
 sd gateway services list
 sd gateway services run session-index
 sd gateway channels ensure local:demo
@@ -69,8 +70,9 @@ types, agent runtime descriptors, durable jobs, leases, logs, and Wasmtime
 budget exits. The npm facade can register external runtimes such as `sd`,
 Codex, Hermes Agent, Pi Agent, or custom workers; it also exposes world
 snapshots and a dependency-free local REST/SSE facade for integration and UI
-work. Distributed clustering and Iroh transport are intentionally deferred until
-local semantics are solid.
+work. `sd gateway rest serve` exposes that facade on a loopback address for
+local UI previews and external adapters. Distributed clustering and Iroh
+transport are intentionally deferred until local semantics are solid.
 
 ## sd Extensions
 
