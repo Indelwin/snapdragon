@@ -11,8 +11,10 @@ import { gatewayEventRootForConfig } from './gateway-events-types.js';
 type EventHandler = (rest: string[], args: SdCliArgs) => Promise<string>;
 
 const EVENT_HANDLERS: Record<string, EventHandler> = {
+  delete: (rest, args) => cancelEvent(rest[0], args),
   enqueue: (rest, args) => enqueueEvent(rest, args),
   list: (_rest, args) => listEventFiles(args),
+  remove: (rest, args) => cancelEvent(rest[0], args),
   cancel: (rest, args) => cancelEvent(rest[0], args),
   run: (_rest, args) => runGatewayDaemonAlias('run-once', args),
 };

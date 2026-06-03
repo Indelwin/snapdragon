@@ -6,8 +6,10 @@ import { gatewayErrorMessage, rustGatewayClientForConfig } from './gateway-comma
 type JobsHandler = (rest: string[], args: SdCliArgs) => Promise<string>;
 
 const JOB_HANDLERS: Record<string, JobsHandler> = {
+  delete: (rest, args) => cancelJob(rest[0], args),
   enqueue: enqueueJob,
   list: (_rest, args) => listJobs(args),
+  remove: (rest, args) => cancelJob(rest[0], args),
   show: (rest, args) => showJob(rest[0], args),
   cancel: (rest, args) => cancelJob(rest[0], args),
   retry: (rest, args) => retryJob(rest[0], args),

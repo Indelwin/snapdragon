@@ -21,6 +21,7 @@ export function createGatewayRestServer(
   const context = {
     pathPrefix: normalizePrefix(options.pathPrefix ?? '/v1'),
     streamIntervalMs: options.streamIntervalMs ?? 1_000,
+    streamHeartbeatMs: options.streamHeartbeatMs ?? 15_000,
   };
   const server = createServer((request, response) => {
     handleRequest(client, request, response, context).catch((error) => {
@@ -53,11 +54,26 @@ async function handleRequest(
     return;
   }
   if (route.method === 'GET' && route.parts[0] === 'stream') {
-    await sendStream(client, response, context.streamIntervalMs);
+    await sendStream(client, response, streamOptions(route, context));
     return;
   }
   const result = await dispatchRoute(client, route, request);
   sendJson(response, result.status, result.body);
+}
+
+function streamOptions(
+  route: RestRoute,
+  context: RestRequestContext,
+): Parameters<typeof sendStream>[2] {
+  return {
+    heartbeatMs: positiveInt(route.searchParams.get('heartbeatMs'), context.streamHeartbeatMs),
+    snapshotIntervalMs: positiveInt(route.searchParams.get('intervalMs'), context.streamIntervalMs),
+  };
+}
+
+function positiveInt(value: string | null, fallback: number): number {
+  const parsed = value ? Number(value) : NaN;
+  return Number.isFinite(parsed) && parsed > 0 ? Math.floor(parsed) : fallback;
 }
 
 function listen(

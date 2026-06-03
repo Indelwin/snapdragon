@@ -1,10 +1,13 @@
 import type { IncomingMessage, Server, ServerResponse } from 'node:http';
+import type { GatewayRuntime } from './types-core.js';
+import type { GatewayWorldSnapshot } from './types-runtime.js';
 
 export interface GatewayRestServerOptions {
   hostname?: string;
   port?: number;
   pathPrefix?: string;
   streamIntervalMs?: number;
+  streamHeartbeatMs?: number;
 }
 
 export interface GatewayRestServer {
@@ -27,10 +30,37 @@ export interface RestRouteResult {
 export interface RestRequestContext {
   pathPrefix: string;
   streamIntervalMs: number;
+  streamHeartbeatMs: number;
 }
 
 export type RestRequest = IncomingMessage;
 export type RestResponse = ServerResponse;
+
+export interface GatewayRestStreamSnapshotEvent {
+  id: number;
+  type: 'snapshot';
+  atMs: number;
+  snapshot: GatewayWorldSnapshot;
+}
+
+export interface GatewayRestStreamHeartbeatEvent {
+  id: number;
+  type: 'heartbeat';
+  atMs: number;
+  runtime: GatewayRuntime;
+}
+
+export interface GatewayRestStreamErrorEvent {
+  id: number;
+  type: 'error';
+  atMs: number;
+  error: string;
+}
+
+export type GatewayRestStreamEvent =
+  | GatewayRestStreamSnapshotEvent
+  | GatewayRestStreamHeartbeatEvent
+  | GatewayRestStreamErrorEvent;
 
 export async function readJson<T>(request: IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];

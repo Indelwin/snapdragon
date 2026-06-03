@@ -57,6 +57,7 @@ sd gateway events list
 sd gateway events cancel 20260506_event
 sd gateway jobs enqueue agent.run '{"prompt":"check the repo"}'
 sd gateway jobs list
+sd gateway jobs delete <job_id>
 sd gateway jobs retry <job_id>
 sd gateway agents enqueue "run the release checks"
 sd gateway agents register-pi
@@ -102,7 +103,9 @@ skills, memory, and TODOs without starting Ink.
 Gateway jobs are attempt-aware. Worker failures and expired leases requeue work
 while attempts remain; exhausted jobs become `failed` and can be put back on the
 queue with `sd gateway jobs retry <job_id>`. Cancellation stays terminal so a
-cancelled job is never resurrected by retry or by late worker completion.
+cancelled job is never resurrected by retry or by late worker completion. The
+`delete` and `remove` aliases also cancel jobs, matching the REST `DELETE`
+resource semantics used by management clients.
 
 `sd gateway workers` manages durable worker entities. Use `register` and
 `heartbeat` when an external runtime wants to announce itself, attach capability
@@ -115,7 +118,8 @@ daemon.
 
 `sd gateway rest serve` starts a foreground local REST/SSE facade over the
 gateway client. By default it binds `127.0.0.1:8787` with `/v1` routes; use
-`--port`, `--host`, `--prefix`, and `--stream-ms` to tune it. It refuses
+`--port`, `--host`, `--prefix`, `--stream-ms`, and `--stream-heartbeat-ms` to
+tune it. It refuses
 non-loopback hosts unless `--allow-remote` is passed, keeping auth-less preview
 servers local by default. Add `--start` to start the Rust gateway daemon first.
 

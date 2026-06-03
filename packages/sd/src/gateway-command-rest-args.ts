@@ -2,6 +2,7 @@ export interface RestServeArgs {
   hostname: string;
   port: number;
   pathPrefix: string;
+  streamHeartbeatMs: number;
   streamIntervalMs: number;
   start: boolean;
   once: boolean;
@@ -15,6 +16,7 @@ const DEFAULT_REST_SERVE_ARGS: RestServeArgs = {
   hostname: '127.0.0.1',
   port: 8787,
   pathPrefix: '/v1',
+  streamHeartbeatMs: 15_000,
   streamIntervalMs: 1_000,
   start: false,
   once: false,
@@ -29,6 +31,8 @@ const valueParsers: Record<string, ValueParser> = {
   '--path-prefix': (out, rest, index) => assignString(out, 'pathPrefix', rest, index),
   '--port': (out, rest, index) => assignNumber(out, 'port', rest, index),
   '--prefix': (out, rest, index) => assignString(out, 'pathPrefix', rest, index),
+  '--stream-heartbeat-ms': (out, rest, index) =>
+    assignNumber(out, 'streamHeartbeatMs', rest, index),
   '--stream-interval-ms': (out, rest, index) => assignNumber(out, 'streamIntervalMs', rest, index),
   '--stream-ms': (out, rest, index) => assignNumber(out, 'streamIntervalMs', rest, index),
 };
@@ -77,7 +81,7 @@ function assignString<Key extends 'hostname' | 'pathPrefix'>(
   return index + 1;
 }
 
-function assignNumber<Key extends 'port' | 'streamIntervalMs'>(
+function assignNumber<Key extends 'port' | 'streamHeartbeatMs' | 'streamIntervalMs'>(
   out: RestServeArgs,
   key: Key,
   rest: string[],

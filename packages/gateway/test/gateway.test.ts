@@ -209,7 +209,9 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(event.state, 'pending');
     assert.equal((await getJson(`${baseUrl}/events`))[0]?.id, event.id);
-    assert.equal((await postJson(`${baseUrl}/events/${event.id}/cancel`, {})).state, 'cancelled');
+    assert.equal((await getJson(`${baseUrl}/events/${event.id}`)).id, event.id);
+    assert.equal((await deleteJson(`${baseUrl}/events/${event.id}`)).state, 'cancelled');
+    assert.equal(await statusForPost(`${baseUrl}/events/missing/cancel`, {}), 404);
 
     const job = await postJson(`${baseUrl}/jobs`, {
       spec: { kind: 'agent.run', payload: { prompt: 'from REST' } },
@@ -238,7 +240,8 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(invalidLog.status, 400);
     assert.match(await invalidLog.text(), /missing log message/);
-    assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/cancel`, {})).state, 'cancelled');
+    assert.equal((await deleteJson(`${baseUrl}/jobs/${job.id}`)).state, 'cancelled');
+    assert.equal(await statusForPost(`${baseUrl}/jobs/missing/cancel`, {}), 404);
 
     const sandbox = await postJson(`${baseUrl}/sandboxes`, {
       id: 'rest-sandbox',
@@ -254,6 +257,18 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.equal(world.agentRuntimes[0]?.id, 'codex');
     assert.equal(Array.isArray(world.logs), true);
     assert.equal(world.sandboxes[0]?.id, sandbox.id);
+    const messages = await readSseMessages(`${baseUrl}/stream?intervalMs=100&heartbeatMs=10`, 2);
+    const snapshotMessage = messages.find((message) => message.event === 'snapshot');
+    const heartbeatMessage = messages.find((message) => message.event === 'heartbeat');
+    assert.ok(snapshotMessage);
+    assert.ok(heartbeatMessage);
+    const snapshot = JSON.parse(snapshotMessage.data);
+    const heartbeat = JSON.parse(heartbeatMessage.data);
+    assert.equal(snapshot.type, 'snapshot');
+    assert.equal(snapshot.snapshot.runtime, 'inline-ts');
+    assert.equal(heartbeat.type, 'heartbeat');
+    assert.equal(heartbeat.runtime, 'inline-ts');
+    assert.equal(messages[0]?.id, '1');
     assert.equal((await deleteJson(`${baseUrl}/workers/rest-worker`)).id, 'rest-worker');
     assert.equal((await getJson(`${baseUrl}/workers`)).length, 0);
     assert.equal((await deleteJson(`${baseUrl}/agents/codex`)).id, 'codex');
@@ -760,10 +775,79 @@ async function postJson(url: string, body: unknown): Promise<any> {
   return response.json();
 }
 
+async function statusForPost(url: string, body: unknown): Promise<number> {
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  return response.status;
+}
+
 async function deleteJson(url: string): Promise<any> {
   const response = await fetch(url, { method: 'DELETE' });
   assert.equal(response.ok, true);
   return response.json();
+}
+
+interface SseMessage {
+  data: string;
+  event?: string;
+  id?: string;
+}
+
+async function readSseMessages(url: string, expectedMessages: number): Promise<SseMessage[]> {
+  const controller = new AbortController();
+  const response = await fetch(url, {
+    headers: { accept: 'text/event-stream' },
+    signal: controller.signal,
+  });
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get('content-type') ?? '', /text\/event-stream/);
+  const reader = response.body?.getReader();
+  assert.ok(reader);
+  const decoder = new TextDecoder();
+  let text = '';
+  try {
+    while (parseSseMessages(text).length < expectedMessages) {
+      const chunk = await Promise.race([reader.read(), timeout(1_000)]);
+      if (chunk.done) break;
+      text += decoder.decode(chunk.value, { stream: true });
+    }
+  } finally {
+    await reader.cancel().catch(() => {});
+    controller.abort();
+  }
+  const messages = parseSseMessages(text);
+  assert.equal(messages.length >= expectedMessages, true);
+  return messages;
+}
+
+function parseSseMessages(text: string): SseMessage[] {
+  return text
+    .split('\n\n')
+    .map(parseSseMessage)
+    .filter((message): message is SseMessage => !!message?.data);
+}
+
+function parseSseMessage(block: string): Partial<SseMessage> | undefined {
+  if (!block.trim()) return undefined;
+  const message: Partial<SseMessage> = {};
+  for (const line of block.split('\n')) {
+    const separator = line.indexOf(':');
+    const key = separator >= 0 ? line.slice(0, separator) : line;
+    const value = separator >= 0 ? line.slice(separator + 1).trimStart() : '';
+    if (key === 'data') message.data = value;
+    if (key === 'event') message.event = value;
+    if (key === 'id') message.id = value;
+  }
+  return message;
+}
+
+function timeout(ms: number): Promise<never> {
+  return new Promise((_, reject) =>
+    setTimeout(() => reject(new Error('timed out waiting for SSE')), ms),
+  );
 }
 
 function wireServiceStatus(name: string): unknown {
