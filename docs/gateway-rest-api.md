@@ -47,7 +47,7 @@ not yet install auth middleware.
 | `GET` | `/v1/health` | Runtime liveness and runtime kind. |
 | `GET` | `/v1/status` | Low-cost daemon/operator status. |
 | `GET` | `/v1/world` | Full world snapshot for UI and agent inspection. |
-| `GET` | `/v1/stream` | Server-Sent Events stream of world snapshots. |
+| `GET` | `/v1/stream` | Server-Sent Events stream of typed gateway snapshot and heartbeat events. |
 | `GET` | `/v1/services` | List service statuses. |
 | `POST` | `/v1/services` | Register a service spec. |
 | `POST` | `/v1/services/:name/run` | Run a service immediately. |
@@ -67,10 +67,13 @@ not yet install auth middleware.
 | `GET` | `/v1/jobs` | List durable jobs. |
 | `POST` | `/v1/jobs` | Enqueue a durable job. |
 | `GET` | `/v1/jobs/:id` | Show one job. |
+| `DELETE` | `/v1/jobs/:id` | Cancel one job. |
 | `POST` | `/v1/jobs/:id/cancel` | Cancel one job. |
 | `POST` | `/v1/jobs/:id/retry` | Requeue a failed job. |
 | `GET` | `/v1/events` | List gateway events. |
 | `POST` | `/v1/events` | Append an event. |
+| `GET` | `/v1/events/:id` | Show one event. |
+| `DELETE` | `/v1/events/:id` | Cancel one event. |
 | `POST` | `/v1/events/:id/cancel` | Cancel one event. |
 | `GET` | `/v1/logs` | Tail logs, with optional `target` and `limit`. |
 | `POST` | `/v1/logs` | Append an inspectable runtime breadcrumb. |
@@ -291,12 +294,18 @@ content-type: application/json
 Watch world snapshots:
 
 ```http
-GET /v1/stream
+GET /v1/stream?intervalMs=1000&heartbeatMs=15000
 accept: text/event-stream
 ```
 
-Each SSE message uses `event: snapshot` and a JSON `GatewayWorldSnapshot` body.
-Errors are emitted as `event: error` with a small JSON error object.
+Each SSE frame includes `id`, `event`, `retry`, and a JSON envelope in `data`.
+Snapshot frames use `event: snapshot` and carry
+`{ "type": "snapshot", "id": 1, "atMs": 0, "snapshot": GatewayWorldSnapshot }`.
+Heartbeat frames use `event: heartbeat` with the runtime kind so clients can
+distinguish a quiet world from a dead connection. Errors are emitted as
+`event: error` with `{ "type": "error", "id": 2, "atMs": 0, "error": "..." }`.
+Clients can override the snapshot and heartbeat cadence per connection with
+`intervalMs` and `heartbeatMs` query params.
 
 ## Response Shapes
 
@@ -308,3 +317,8 @@ leases.
 
 The API intentionally returns the same camelCase TypeScript shapes exposed by
 `@snapdragon-ai/gateway`. Rust IPC wire casing stays behind the facade.
+
+Missing resource mutation responses are explicit. Cancelling or retrying an
+unknown job returns `404 { "error": "job not found" }`; cancelling an unknown
+event returns `404 { "error": "event not found" }`. This keeps operator UIs and
+agent scripts from mistaking a no-op for successful cancellation.

@@ -197,6 +197,11 @@ the next action obvious:
 - Stable ids and correlation ids across jobs, events, logs, and artifacts.
 - World snapshots that explain queue depth, active leases, workers, runtimes,
   and recent failures.
+- SSE streams publish typed snapshot, heartbeat, and error envelopes with
+  sequence ids, so quiet gateways, broken streams, and failed snapshot reads are
+  distinguishable without scraping logs.
+- Cancellation routes return concrete records or explicit 404s, so agents do
+  not mistake a no-op for successful cleanup.
 - Workers can register, heartbeat, show their current lease, unregister stale
   identities, report progress in logs, fail clearly, and be cancelled without
   hidden state or manual file hunting.
