@@ -62,12 +62,14 @@ sd gateway agents enqueue "run the release checks"
 sd gateway agents register-pi
 sd gateway agents register-pi --save --agent-dir ~/.pi-agent
 sd gateway agents list
+sd gateway agents unregister pi
 sd gateway agents enqueue --runtime pi "ask my Pi agent to triage the workspace"
 sd gateway agents run "summarize the current workspace"
 sd gateway workers register pi-worker-1 --runtime pi --capability agent.run --status ready
 sd gateway workers heartbeat pi-worker-1 --state idle --status "waiting for work"
 sd gateway workers list
 sd gateway workers show pi-worker-1
+sd gateway workers unregister pi-worker-1
 sd gateway rest serve --start --port 8787
 sd gateway learn enqueue-eval ./eval-dataset.json
 sd gateway logs tail
@@ -105,9 +107,11 @@ cancelled job is never resurrected by retry or by late worker completion.
 `sd gateway workers` manages durable worker entities. Use `register` and
 `heartbeat` when an external runtime wants to announce itself, attach capability
 or runtime metadata, and keep its current state inspectable. `list` and `show`
-display the worker queue, state, status, current job, and current lease. The
-singular `sd gateway worker` command remains the internal headless service
-worker runner used by the Rust daemon.
+display the worker queue, state, status, current job, and current lease.
+`unregister` removes stale or retired worker records from the management
+surface without deleting job or log history. The singular `sd gateway worker`
+command remains the internal headless service worker runner used by the Rust
+daemon.
 
 `sd gateway rest serve` starts a foreground local REST/SSE facade over the
 gateway client. By default it binds `127.0.0.1:8787` with `/v1` routes; use
@@ -124,6 +128,9 @@ RPC mode, preserving the user's Pi configuration, extensions, skills, sessions,
 and provider credentials. `sd gateway agents list` and `show` include saved
 runtimes even when the daemon is unavailable, which keeps the management surface
 inspectable before background services are running.
+`sd gateway agents unregister <runtime-id>` removes a retired live runtime from
+the gateway and durable store; saved config entries remain explicit userland
+configuration and are not edited implicitly.
 
 While a Pi job runs, the `agent-jobs` worker mirrors selected Pi lifecycle
 events into gateway logs targeted at the job id. `sd gateway logs tail <job_id>`

@@ -254,6 +254,10 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.equal(world.agentRuntimes[0]?.id, 'codex');
     assert.equal(Array.isArray(world.logs), true);
     assert.equal(world.sandboxes[0]?.id, sandbox.id);
+    assert.equal((await deleteJson(`${baseUrl}/workers/rest-worker`)).id, 'rest-worker');
+    assert.equal((await getJson(`${baseUrl}/workers`)).length, 0);
+    assert.equal((await deleteJson(`${baseUrl}/agents/codex`)).id, 'codex');
+    assert.equal((await getJson(`${baseUrl}/agents`)).length, 0);
     assert.equal((await postJson(`${baseUrl}/sandboxes/${sandbox.id}/release`, {})).id, sandbox.id);
     assert.equal((await getJson(`${baseUrl}/sandboxes`)).length, 0);
   } finally {
@@ -374,6 +378,7 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
     );
     assert.equal((await gateway.listAgentRuntimes())[0]?.id, 'sd');
     assert.equal((await gateway.showAgentRuntime('sd'))?.protocol, 'embedded');
+    assert.equal((await gateway.unregisterAgentRuntime('sd'))?.id, 'sd');
     assert.equal(
       (await gateway.registerWorker({ id: 'worker', queue: 'default', runtimeId: 'sd' })).state,
       'idle',
@@ -384,6 +389,7 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
     );
     assert.equal((await gateway.listWorkers())[0]?.id, 'worker');
     assert.equal((await gateway.showWorker('worker'))?.runtimeId, 'sd');
+    assert.equal((await gateway.unregisterWorker('worker'))?.id, 'worker');
     assert.equal(await gateway.createTable('state', { id: 'worker' }, 'private'), true);
     assert.deepEqual(await gateway.tableNames(), ['state']);
     assert.deepEqual(await gateway.tableSnapshot('state'), {
@@ -430,10 +436,12 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'agents.register',
       'agents.list',
       'agents.show',
+      'agents.unregister',
       'workers.register',
       'workers.heartbeat',
       'workers.list',
       'workers.show',
+      'workers.unregister',
       'tables.create',
       'tables.list',
       'tables.show',
@@ -569,6 +577,9 @@ function responseFor(request: any): unknown {
   if (request.method === 'agents.show') {
     return { id: request.id, ok: true, result: wireAgentRuntime(request.params.id) };
   }
+  if (request.method === 'agents.unregister') {
+    return { id: request.id, ok: true, result: wireAgentRuntime(request.params.id) };
+  }
   if (request.method === 'workers.register') {
     return { id: request.id, ok: true, result: wireWorker(request.params.worker) };
   }
@@ -586,6 +597,13 @@ function responseFor(request: any): unknown {
     return { id: request.id, ok: true, result: [wireWorker()] };
   }
   if (request.method === 'workers.show') {
+    return {
+      id: request.id,
+      ok: true,
+      result: wireWorker({ id: request.params.id, runtime_id: 'sd' }),
+    };
+  }
+  if (request.method === 'workers.unregister') {
     return {
       id: request.id,
       ok: true,
@@ -738,6 +756,12 @@ async function postJson(url: string, body: unknown): Promise<any> {
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
   });
+  assert.equal(response.ok, true);
+  return response.json();
+}
+
+async function deleteJson(url: string): Promise<any> {
+  const response = await fetch(url, { method: 'DELETE' });
   assert.equal(response.ok, true);
   return response.json();
 }

@@ -150,6 +150,15 @@ fn store_persists_jobs_events_logs_and_services() {
         .unwrap();
     assert_eq!(worker.runtime_id.as_deref(), Some("pi"));
     assert_eq!(store.list_workers().unwrap().len(), 2);
+    assert_eq!(
+        store
+            .unregister_worker("pi-worker", 18)
+            .unwrap()
+            .unwrap()
+            .id,
+        "pi-worker"
+    );
+    assert!(store.worker("pi-worker").unwrap().is_none());
     let runtime = store
         .persist_agent_runtime(
             &GatewayAgentRuntimeDescriptor {
@@ -174,6 +183,8 @@ fn store_persists_jobs_events_logs_and_services() {
         .unwrap();
     assert_eq!(runtime.id, "pi");
     assert_eq!(store.agent_runtime_snapshots().unwrap()[0].id, "pi");
+    assert_eq!(store.remove_agent_runtime("pi").unwrap().unwrap().id, "pi");
+    assert!(store.agent_runtime_snapshots().unwrap().is_empty());
     let sandbox = store
         .lease_sandbox(
             GatewaySandboxSpec {

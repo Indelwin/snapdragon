@@ -1,4 +1,4 @@
-import { normalizeGatewayAgentRuntimeDescriptor } from './agent-runtime-validation.js';
+import { InlineAgentRuntimeStore } from './inline-agent-runtimes.js';
 import { InlineEventStore } from './inline-events.js';
 import { inlineId } from './inline-job-helpers.js';
 import { InlineJobStore } from './inline-jobs.js';
@@ -17,16 +17,15 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   #mailboxes = new InlineMailboxStore();
   #services = new InlineServiceStore();
   #capabilities = new InlineCapabilityRegistry();
-  #agentRuntimes = new Map<string, T.GatewayAgentRuntimeDescriptor>();
   #tables = new InlineTableStore();
   #storeLog = (level: string, target: string | undefined, message: string, data?: unknown) =>
     this.#log(level, target, message, data);
+  #agentRuntimes = new InlineAgentRuntimeStore(this.#storeLog);
   #jobs = new InlineJobStore({ log: this.#storeLog });
   #sandboxes = new InlineSandboxStore(this.#storeLog);
   #workers = new InlineWorkerStore(this.#storeLog);
   #events = new InlineEventStore(this.#storeLog);
   #logs: T.GatewayLogRecord[] = [];
-
   async send(envelope: T.GatewayEnvelope): Promise<void> {
     this.#mailboxes.send(envelope);
   }
@@ -87,21 +86,19 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async registerAgentRuntime(
     descriptor: T.GatewayAgentRuntimeDescriptor,
   ): Promise<T.GatewayAgentRuntimeDescriptor> {
-    const normalized = normalizeGatewayAgentRuntimeDescriptor(descriptor);
-    this.#agentRuntimes.set(normalized.id, normalized);
-    this.#log('info', normalized.id, 'agent runtime registered', {
-      kind: normalized.kind,
-      protocol: normalized.protocol,
-    });
-    return normalized;
+    return this.#agentRuntimes.register(descriptor);
   }
 
   async listAgentRuntimes(): Promise<T.GatewayAgentRuntimeDescriptor[]> {
-    return [...this.#agentRuntimes.values()].sort((a, b) => a.id.localeCompare(b.id));
+    return this.#agentRuntimes.list();
   }
 
   async showAgentRuntime(id: string): Promise<T.GatewayAgentRuntimeDescriptor | undefined> {
-    return this.#agentRuntimes.get(id);
+    return this.#agentRuntimes.show(id);
+  }
+
+  async unregisterAgentRuntime(id: string): Promise<T.GatewayAgentRuntimeDescriptor | undefined> {
+    return this.#agentRuntimes.unregister(id);
   }
 
   async registerWorker(worker: T.GatewayWorkerRegistration): Promise<T.GatewayWorkerRecord> {
@@ -120,6 +117,10 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
 
   async showWorker(id: string): Promise<T.GatewayWorkerRecord | undefined> {
     return this.#workers.show(id);
+  }
+
+  async unregisterWorker(id: string): Promise<T.GatewayWorkerRecord | undefined> {
+    return this.#workers.unregister(id);
   }
 
   async createTable(

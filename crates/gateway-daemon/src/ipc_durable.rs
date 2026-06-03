@@ -117,6 +117,10 @@ pub(crate) async fn dispatch_workers(
             let params = parse::<WorkerIdParams>(params)?;
             ok_json(daemon.worker(&params.id).await?)
         }
+        "workers.unregister" => {
+            let params = parse::<WorkerIdParams>(params)?;
+            ok_json(daemon.unregister_worker(&params.id).await?)
+        }
         _ => Err(format!("unknown gateway method: {method}")),
     }
 }

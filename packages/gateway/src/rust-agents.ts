@@ -32,3 +32,10 @@ export async function showRustAgentRuntime(
 ): Promise<GatewayAgentRuntimeDescriptor | undefined> {
   return fromWireAgentRuntimeDescriptor((await call('agents.show', { id })) as any);
 }
+
+export async function unregisterRustAgentRuntime(
+  call: RustGatewayCall,
+  id: string,
+): Promise<GatewayAgentRuntimeDescriptor | undefined> {
+  return fromWireAgentRuntimeDescriptor((await call('agents.unregister', { id })) as any);
+}

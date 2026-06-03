@@ -36,6 +36,17 @@ async fn daemon_tracks_agent_runtime_descriptors() {
         .unwrap();
     assert_eq!(daemon.agent_runtime("sd").await.unwrap().id, "sd");
     assert_eq!(daemon.status().await.agent_runtimes.len(), 1);
+    assert_eq!(
+        daemon
+            .unregister_agent_runtime("sd")
+            .await
+            .unwrap()
+            .unwrap()
+            .id,
+        "sd"
+    );
+    assert!(daemon.agent_runtime("sd").await.is_none());
+    assert!(daemon.status().await.agent_runtimes.is_empty());
 }
 
 #[tokio::test]

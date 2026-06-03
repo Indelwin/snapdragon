@@ -11,7 +11,9 @@ const workerRouteHandlers: Record<string, WorkerRouteHandler> = {
   'GET  ': listWorkers,
   'POST  ': registerWorkerRoute,
   'GET :id ': showWorkerRoute,
+  'DELETE :id ': unregisterWorkerRoute,
   'POST :id heartbeat': heartbeatWorkerRoute,
+  'POST :id unregister': unregisterWorkerRoute,
 };
 
 export async function dispatchWorkers(
@@ -58,6 +60,13 @@ async function heartbeatWorkerRoute(
   return heartbeatWorker(client, route.parts[1] ?? '', request);
 }
 
+async function unregisterWorkerRoute(
+  client: GatewayClient,
+  route: RestRoute,
+): Promise<RestRouteResult> {
+  return unregisterWorker(client, route.parts[1] ?? '');
+}
+
 async function showWorker(client: GatewayClient, id: string): Promise<RestRouteResult> {
   const worker = await client.showWorker(id);
   return worker
@@ -94,6 +103,13 @@ async function heartbeatWorker(
 ): Promise<RestRouteResult> {
   const body = request ? await readJson<Record<string, unknown>>(request) : {};
   const worker = await client.heartbeatWorker({ id, ...body });
+  return worker
+    ? { status: 200, body: worker }
+    : { status: 404, body: { error: 'worker not found' } };
+}
+
+async function unregisterWorker(client: GatewayClient, id: string): Promise<RestRouteResult> {
+  const worker = await client.unregisterWorker(id);
   return worker
     ? { status: 200, body: worker }
     : { status: 404, body: { error: 'worker not found' } };

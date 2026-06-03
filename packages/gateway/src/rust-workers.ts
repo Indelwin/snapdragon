@@ -44,3 +44,10 @@ export async function showRustWorker(
 ): Promise<GatewayWorkerRecord | undefined> {
   return fromWireWorkerRecord((await call('workers.show', { id })) as any);
 }
+
+export async function unregisterRustWorker(
+  call: RustGatewayCall,
+  id: string,
+): Promise<GatewayWorkerRecord | undefined> {
+  return fromWireWorkerRecord((await call('workers.unregister', { id })) as any);
+}

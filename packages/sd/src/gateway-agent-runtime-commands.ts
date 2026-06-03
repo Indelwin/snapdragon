@@ -42,6 +42,22 @@ export async function showAgentRuntime(id: string | undefined, args: SdCliArgs):
   }
 }
 
+export async function unregisterAgentRuntime(
+  id: string | undefined,
+  args: SdCliArgs,
+): Promise<string> {
+  if (!id) return 'gateway agents unregister requires <runtime-id>\n';
+  const config = await loadSdConfig(args.configPath);
+  try {
+    const runtime = await rustGatewayClientForConfig(config).unregisterAgentRuntime(id);
+    return runtime
+      ? `unregistered agent runtime ${runtime.id}\n`
+      : `Unknown agent runtime: ${id}\n`;
+  } catch (error) {
+    return `Rust gateway unavailable: ${gatewayErrorMessage(error)}\n`;
+  }
+}
+
 export async function registerPiRuntime(rest: string[], args: SdCliArgs): Promise<string> {
   const config = await loadSdConfig(args.configPath);
   const { options, save } = parsePiRuntimeRegistrationArgs(rest);

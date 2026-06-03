@@ -230,9 +230,11 @@ Initial routes cover:
 - `GET /v1/stream` for Server-Sent Events world snapshots.
 - `GET /v1/services`, `POST /v1/services/:name/run`, and
   `POST /v1/services/:name/enable`.
-- `GET /v1/agents`, `POST /v1/agents/register`, and `GET /v1/agents/:id`.
+- `GET /v1/agents`, `POST /v1/agents/register`, `GET /v1/agents/:id`,
+  `DELETE /v1/agents/:id`, and `POST /v1/agents/:id/unregister`.
 - `GET /v1/workers`, `POST /v1/workers`, `GET /v1/workers/:id`,
-  `POST /v1/workers/:id/heartbeat`, and `GET /v1/worker-processes`.
+  `POST /v1/workers/:id/heartbeat`, `DELETE /v1/workers/:id`,
+  `POST /v1/workers/:id/unregister`, and `GET /v1/worker-processes`.
 - `GET /v1/jobs`, `POST /v1/jobs`, `GET /v1/jobs/:id`,
   `POST /v1/jobs/:id/cancel`, and `POST /v1/jobs/:id/retry`.
 - `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
@@ -271,6 +273,9 @@ are spawned with explicit timeout enforcement, so budget expiry kills the child
 process and records a `timed_out` worker process state. The daemon also expires
 stale job leases during status/watchdog passes so stuck jobs can become visible
 and recoverable without requiring a foreground TUI process.
+Stale or retired runtimes and workers can be unregistered through the client,
+REST facade, or IPC, which keeps management surfaces clean without deleting job,
+log, or process history.
 
 ## Current Boundaries
 

@@ -87,6 +87,24 @@ impl GatewayStore {
         })
     }
 
+    pub fn unregister_worker(
+        &self,
+        id: &str,
+        now_ms: u64,
+    ) -> Result<Option<GatewayWorkerRecord>, String> {
+        let id = validate_worker_id(id)?;
+        let worker = self.worker(&id)?;
+        if worker.is_some() {
+            self.with_conn(|conn| {
+                conn.execute("delete from gateway_workers where id=?1", params![id])
+                    .map(|_| ())
+                    .map_err(|error| error.to_string())
+            })?;
+            self.append_log(now_ms, "warn", Some(&id), "worker unregistered", None)?;
+        }
+        Ok(worker)
+    }
+
     pub(crate) fn mark_worker_leased(
         &self,
         worker: &str,
