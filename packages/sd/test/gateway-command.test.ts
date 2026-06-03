@@ -35,6 +35,21 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
       await runGatewayCommand({ ...args, gatewayArgs: ['registry', 'whereis', 'memory.read'] }),
       /worker/,
     );
+    assert.match(await runGatewayCommand({ ...args, gatewayArgs: ['workers', 'list'] }), /worker/);
+    assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['workers', 'register', 'pi-worker', '--queue', 'default', '--runtime', 'pi'],
+      }),
+      /registered worker pi-worker/,
+    );
+    assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['workers', 'heartbeat', 'pi-worker', '--status', 'ready'],
+      }),
+      /heartbeat worker pi-worker/,
+    );
     assert.match(await runGatewayCommand({ ...args, gatewayArgs: ['tables', 'list'] }), /state/);
     assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['tables', 'show', 'state'] }),
@@ -425,6 +440,19 @@ function responseFor(request: any): unknown {
   if (request.method === 'registry.whereis_capability') {
     return { id: request.id, ok: true, result: ['worker'] };
   }
+  if (request.method === 'workers.list') {
+    return { id: request.id, ok: true, result: [wireWorker()] };
+  }
+  if (request.method === 'workers.register') {
+    return { id: request.id, ok: true, result: wireWorker(request.params.worker) };
+  }
+  if (request.method === 'workers.heartbeat') {
+    return {
+      id: request.id,
+      ok: true,
+      result: { ...wireWorker({ id: request.params.heartbeat.id }), status: 'ready' },
+    };
+  }
   if (request.method === 'tables.list') return { id: request.id, ok: true, result: ['state'] };
   if (request.method === 'tables.show') {
     return {
@@ -506,6 +534,25 @@ function wireAgentRuntime(id: string): unknown {
     capabilities: [],
     isolation: 'profile',
     health: null,
+    metadata: null,
+  };
+}
+
+function wireWorker(worker: any = {}): unknown {
+  return {
+    id: worker.id ?? 'worker',
+    queue: worker.queue ?? 'default',
+    runtime_id: worker.runtime_id ?? worker.runtimeId ?? null,
+    service: worker.service ?? null,
+    capabilities: worker.capabilities ?? [],
+    state: worker.state ?? 'idle',
+    registered_at_ms: 10,
+    heartbeat_at_ms: 20,
+    current_job_id: null,
+    current_lease_id: null,
+    lease_expires_at_ms: null,
+    status: worker.status ?? null,
+    last_error: null,
     metadata: null,
   };
 }

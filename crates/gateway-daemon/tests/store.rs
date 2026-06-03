@@ -4,7 +4,8 @@ use serde_json::Value;
 use snapdragon_gateway_core::{
     GatewayAgentRuntimeCommand, GatewayAgentRuntimeDescriptor, GatewayAgentRuntimeKind,
     GatewayAgentRuntimeProtocol, GatewayEventRecord, GatewayEventState, GatewayJobSpec,
-    GatewayJobState, GatewayProjectRef, GatewaySandboxSpec,
+    GatewayJobState, GatewayProjectRef, GatewaySandboxSpec, GatewayWorkerRegistration,
+    GatewayWorkerState,
 };
 use snapdragon_gateway_daemon::GatewayStore;
 
@@ -39,6 +40,10 @@ fn store_persists_jobs_events_logs_and_services() {
         .unwrap()
         .unwrap();
     assert_eq!(running.state, GatewayJobState::Running);
+    assert_eq!(
+        store.worker("worker-1").unwrap().unwrap().state,
+        GatewayWorkerState::Running
+    );
     assert_eq!(store.active_leases(11).unwrap().len(), 1);
     assert_eq!(
         store
@@ -47,6 +52,10 @@ fn store_persists_jobs_events_logs_and_services() {
             .unwrap()
             .state,
         GatewayJobState::Pending
+    );
+    assert_eq!(
+        store.worker("worker-1").unwrap().unwrap().state,
+        GatewayWorkerState::Idle
     );
     assert!(store.active_leases(12).unwrap().is_empty());
     let (running, _) = store
@@ -89,6 +98,10 @@ fn store_persists_jobs_events_logs_and_services() {
         GatewayJobState::Cancelled
     );
     assert_eq!(
+        store.worker("worker-1").unwrap().unwrap().state,
+        GatewayWorkerState::Idle
+    );
+    assert_eq!(
         store
             .complete_job("job_1", Some(serde_json::json!({"late": true})), 20)
             .unwrap()
@@ -121,6 +134,22 @@ fn store_persists_jobs_events_logs_and_services() {
         store.cancel_event("event_1", 16).unwrap().unwrap().state,
         GatewayEventState::Cancelled
     );
+    let worker = store
+        .register_worker(
+            GatewayWorkerRegistration {
+                id: "pi-worker".into(),
+                queue: Some("default".into()),
+                runtime_id: Some("pi".into()),
+                service: None,
+                capabilities: vec!["llm.chat".into()],
+                status: Some("ready".into()),
+                metadata: None,
+            },
+            17,
+        )
+        .unwrap();
+    assert_eq!(worker.runtime_id.as_deref(), Some("pi"));
+    assert_eq!(store.list_workers().unwrap().len(), 2);
     let runtime = store
         .persist_agent_runtime(
             &GatewayAgentRuntimeDescriptor {

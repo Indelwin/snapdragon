@@ -64,6 +64,10 @@ sd gateway agents register-pi --save --agent-dir ~/.pi-agent
 sd gateway agents list
 sd gateway agents enqueue --runtime pi "ask my Pi agent to triage the workspace"
 sd gateway agents run "summarize the current workspace"
+sd gateway workers register pi-worker-1 --runtime pi --capability agent.run --status ready
+sd gateway workers heartbeat pi-worker-1 --state idle --status "waiting for work"
+sd gateway workers list
+sd gateway workers show pi-worker-1
 sd gateway learn enqueue-eval ./eval-dataset.json
 sd gateway logs tail
 sd gateway sandboxes lease . --ref ../reference-repo --ttl-ms 3600000
@@ -86,14 +90,23 @@ and the optional one-shot background chat helper. It does not load the Ink TUI
 or run the interactive `sd` controller.
 
 The Rust daemon stores durable jobs, events, service snapshots, leases, and logs
-in a SQLite WAL database under the gateway root. Agent jobs use the same
-headless runtime as service workers, so scheduled channel work can use tools,
-sessions, skills, memory, and TODOs without starting Ink.
+in a SQLite WAL database under the gateway root. It also stores durable worker
+records, heartbeats, and current lease metadata so runtime adapters are
+inspectable even when the TUI is not running. Agent jobs use the same headless
+runtime as service workers, so scheduled channel work can use tools, sessions,
+skills, memory, and TODOs without starting Ink.
 
 Gateway jobs are attempt-aware. Worker failures and expired leases requeue work
 while attempts remain; exhausted jobs become `failed` and can be put back on the
 queue with `sd gateway jobs retry <job_id>`. Cancellation stays terminal so a
 cancelled job is never resurrected by retry or by late worker completion.
+
+`sd gateway workers` manages durable worker entities. Use `register` and
+`heartbeat` when an external runtime wants to announce itself, attach capability
+or runtime metadata, and keep its current state inspectable. `list` and `show`
+display the worker queue, state, status, current job, and current lease. The
+singular `sd gateway worker` command remains the internal headless service
+worker runner used by the Rust daemon.
 
 Agent jobs can also target external runtimes. `sd gateway agents register-pi`
 adds a Pi JSONL runtime descriptor for the installed `pi` command; adding

@@ -77,13 +77,15 @@ runtime pieces they need, instead of loading Ink or the full interactive CLI.
 This keeps command-only paths such as help, status, and service runs from
 accidentally paying the TUI/runtime cost.
 
-The local gateway now has durable jobs, events, leases, logs, service snapshots,
-agent runtime descriptors, world snapshots, and headless agent jobs. `sd`
+The local gateway now has durable jobs, events, worker records and heartbeats,
+leases, logs, service snapshots, agent runtime descriptors, world snapshots, and
+headless agent jobs. `sd`
 consumes those contracts for memory, skill, session-index, channel-event, learn,
 and agent-job services. Service supervision now covers restart policy, restart
 intensity, backoff, stale lease expiry, queue depth reporting, active lease
-visibility, recent failure logs, worker process snapshots, and timeout-triggered
-child kills. The built-in sandbox backend is local git worktrees with
+visibility, registered worker status, recent failure logs, worker process
+snapshots, and timeout-triggered child kills. The built-in sandbox backend is
+local git worktrees with
 reference-root links; Iroh clustering, appliance resource routing, richer
 sandbox backends, and learn/RL process management are next layers on the same
 contracts, not responsibilities of the interactive TUI.
@@ -95,8 +97,9 @@ surface ergonomic while Rust remains the durable source of truth.
 
 - Inline mode is an in-memory harness for tests and lightweight embedders.
 - Rust mode speaks JSONL IPC to the daemon over a local Unix socket.
-- World snapshots gather services, agent runtimes, workers, jobs, events, logs,
-  registry entries, leases, queue depths, tables, and sandbox leases.
+- World snapshots gather services, agent runtimes, durable worker records,
+  worker process diagnostics, jobs, events, logs, registry entries, leases, queue
+  depths, tables, and sandbox leases.
 - The REST/SSE facade wraps any `GatewayClient` without replacing local IPC.
 
 ```mermaid
@@ -112,8 +115,9 @@ flowchart LR
 REST is the integration surface for external apps, dashboards, and future auth.
 The first routes are local-only and cover health, status, world snapshots,
 services, agents, workers, jobs, events, logs, registry, capabilities, and
-sandbox listing. Auth and policy enforcement are explicit extension points, not
-silent assumptions.
+sandbox listing. `workers` are durable registered worker entities; daemon-spawned
+process diagnostics live under `worker-processes`. Auth and policy enforcement
+are explicit extension points, not silent assumptions.
 
 ## External Agents and Executive Agents
 
