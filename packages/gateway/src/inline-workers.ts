@@ -1,3 +1,4 @@
+import { optionalWorkerField, workerField, workerId } from './inline-worker-validation.js';
 import type {
   GatewayLease,
   GatewayWorkerHeartbeat,
@@ -61,6 +62,15 @@ export class InlineWorkerStore {
     return this.#workers.get(workerId(id));
   }
 
+  unregister(id: string): GatewayWorkerRecord | undefined {
+    const normalized = workerId(id);
+    const worker = this.#workers.get(normalized);
+    if (!worker) return undefined;
+    this.#workers.delete(normalized);
+    this.log('warn', worker.id, 'worker unregistered');
+    return worker;
+  }
+
   markLeased(workerIdValue: string, queue: string, lease: GatewayLease): void {
     const id = workerId(workerIdValue);
     const worker = this.#workers.get(id) ?? this.register({ id, queue });
@@ -82,23 +92,4 @@ export class InlineWorkerStore {
     worker.leaseExpiresAtMs = undefined;
     worker.heartbeatAtMs = Date.now();
   }
-}
-
-function workerId(value: string): string {
-  const id = value.trim();
-  if (!id) throw new Error('gateway worker id must be non-empty');
-  if (!/^[A-Za-z0-9._:-]+$/.test(id)) {
-    throw new Error('gateway worker id must contain only letters, numbers, ".", "_", "-", or ":"');
-  }
-  return id;
-}
-
-function optionalWorkerField(field: string, value: string | undefined): string | undefined {
-  return value === undefined ? undefined : workerField(field, value);
-}
-
-function workerField(field: string, value: string): string {
-  const normalized = value.trim();
-  if (!normalized) throw new Error(`gateway worker ${field} must be non-empty`);
-  return normalized;
 }

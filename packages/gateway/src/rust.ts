@@ -1,8 +1,4 @@
-import {
-  listRustAgentRuntimes,
-  registerRustAgentRuntime,
-  showRustAgentRuntime,
-} from './rust-agents.js';
+import * as Agents from './rust-agents.js';
 import type { RustGatewayCall } from './rust-call.js';
 import {
   appendRustEvent,
@@ -125,17 +121,17 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
   async registerAgentRuntime(
     descriptor: T.GatewayAgentRuntimeDescriptor,
   ): Promise<T.GatewayAgentRuntimeDescriptor> {
-    return registerRustAgentRuntime(this.#gatewayCall, descriptor);
+    return Agents.registerRustAgentRuntime(this.#gatewayCall, descriptor);
   }
-
   async listAgentRuntimes(): Promise<T.GatewayAgentRuntimeDescriptor[]> {
-    return listRustAgentRuntimes(this.#gatewayCall);
+    return Agents.listRustAgentRuntimes(this.#gatewayCall);
   }
-
   async showAgentRuntime(id: string): Promise<T.GatewayAgentRuntimeDescriptor | undefined> {
-    return showRustAgentRuntime(this.#gatewayCall, id);
+    return Agents.showRustAgentRuntime(this.#gatewayCall, id);
   }
-
+  async unregisterAgentRuntime(id: string): Promise<T.GatewayAgentRuntimeDescriptor | undefined> {
+    return Agents.unregisterRustAgentRuntime(this.#gatewayCall, id);
+  }
   async registerWorker(worker: T.GatewayWorkerRegistration): Promise<T.GatewayWorkerRecord> {
     return Workers.registerRustWorker(this.#gatewayCall, worker);
   }
@@ -152,6 +148,10 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
 
   async showWorker(id: string): Promise<T.GatewayWorkerRecord | undefined> {
     return Workers.showRustWorker(this.#gatewayCall, id);
+  }
+
+  async unregisterWorker(id: string): Promise<T.GatewayWorkerRecord | undefined> {
+    return Workers.unregisterRustWorker(this.#gatewayCall, id);
   }
 
   async createTable(
@@ -210,6 +210,7 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
   async showSandboxLease(id: string): Promise<T.GatewaySandboxLease | undefined> {
     return showRustSandbox(this.#gatewayCall, id);
   }
+
   async releaseSandbox(id: string): Promise<T.GatewaySandboxLease | undefined> {
     return releaseRustSandbox(this.#gatewayCall, id);
   }

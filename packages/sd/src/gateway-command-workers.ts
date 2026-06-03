@@ -1,7 +1,11 @@
-import type { GatewayWorkerRecord, GatewayWorkerRegistration } from '@snapdragon-ai/gateway';
 import type { SdCliArgs } from './args-types.js';
 import { loadSdConfig } from './config.js';
 import { gatewayErrorMessage, rustGatewayClientForConfig } from './gateway-command-client.js';
+import {
+  formatWorker,
+  workerHeartbeatFromParts,
+  workerRegistrationFromParts,
+} from './gateway-command-worker-args.js';
 
 type WorkersHandler = (rest: string[], args: SdCliArgs) => Promise<string>;
 
@@ -10,6 +14,8 @@ const WORKER_HANDLERS: Record<string, WorkersHandler> = {
   show: (rest, args) => showWorker(rest[0], args),
   register: registerWorker,
   heartbeat: (rest, args) => heartbeatWorker(rest, args),
+  remove: (rest, args) => unregisterWorker(rest[0], args),
+  unregister: (rest, args) => unregisterWorker(rest[0], args),
 };
 
 export async function workersCommand(
@@ -51,30 +57,20 @@ async function registerWorker(rest: string[], args: SdCliArgs): Promise<string> 
 async function heartbeatWorker(rest: string[], args: SdCliArgs): Promise<string> {
   const [id, ...parts] = rest;
   if (!id) return 'gateway workers heartbeat requires <id>\n';
-  const options = optionsFromParts(parts);
   return withGateway(args, async (client) => {
-    const worker = await client.heartbeatWorker({
-      id,
-      state: optionValue(options, 'state') as GatewayWorkerRecord['state'] | undefined,
-      queue: optionValue(options, 'queue'),
-      status: optionValue(options, 'status'),
-    });
+    const worker = await client.heartbeatWorker(workerHeartbeatFromParts(id, parts));
     return worker
       ? `heartbeat worker ${worker.id}\tstate=${worker.state}\n`
       : `Unknown gateway worker: ${id}\n`;
   });
 }
 
-function workerRegistrationFromParts(id: string, parts: string[]): GatewayWorkerRegistration {
-  const options = optionsFromParts(parts);
-  return {
-    id,
-    queue: optionValue(options, 'queue'),
-    runtimeId: optionValue(options, 'runtime'),
-    service: optionValue(options, 'service'),
-    capabilities: options.capability ?? options.capabilities ?? [],
-    status: optionValue(options, 'status'),
-  };
+async function unregisterWorker(id: string | undefined, args: SdCliArgs): Promise<string> {
+  if (!id) return 'gateway workers unregister requires <id>\n';
+  return withGateway(args, async (client) => {
+    const worker = await client.unregisterWorker(id);
+    return worker ? `unregistered worker ${worker.id}\n` : `Unknown gateway worker: ${id}\n`;
+  });
 }
 
 async function withGateway(
@@ -87,29 +83,4 @@ async function withGateway(
   } catch (error) {
     return `Rust gateway unavailable: ${gatewayErrorMessage(error)}\n`;
   }
-}
-
-function optionsFromParts(parts: string[]): Record<string, string[]> {
-  const options: Record<string, string[]> = {};
-  for (let i = 0; i < parts.length; i += 1) {
-    const part = parts[i];
-    if (!part?.startsWith('--')) continue;
-    const key = part.slice(2);
-    const value = parts[i + 1];
-    if (!value || value.startsWith('--')) continue;
-    options[key] = [...(options[key] ?? []), value];
-    i += 1;
-  }
-  return options;
-}
-
-function optionValue(options: Record<string, string[]>, key: string): string | undefined {
-  return options[key]?.[0];
-}
-
-function formatWorker(worker: GatewayWorkerRecord): string {
-  const current = worker.currentJobId ? ` job=${worker.currentJobId}` : '';
-  const runtime = worker.runtimeId ? ` runtime=${worker.runtimeId}` : '';
-  const status = worker.status ? ` status=${worker.status}` : '';
-  return `${worker.id}\t${worker.state}\tqueue=${worker.queue}${runtime}${current}${status}`;
 }

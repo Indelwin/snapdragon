@@ -94,6 +94,10 @@ impl GatewayDaemon {
     pub async fn worker(&self, id: &str) -> Result<Option<GatewayWorkerRecord>, String> {
         self.require_store()?.worker(id)
     }
+
+    pub async fn unregister_worker(&self, id: &str) -> Result<Option<GatewayWorkerRecord>, String> {
+        self.require_store()?.unregister_worker(id, unix_time_ms())
+    }
 }
 
 fn unix_time_ms() -> u64 {

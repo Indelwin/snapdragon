@@ -101,6 +101,27 @@ async fn ipc_serves_status_and_service_registration() {
 
     let status = request(&path, json!({ "id": 10, "method": "status" })).await;
     assert_eq!(status["result"]["agent_runtimes"][0]["id"], "sd");
+    let agent = request(
+        &path,
+        json!({
+            "id": 11,
+            "method": "agents.unregister",
+            "params": { "id": "sd" }
+        }),
+    )
+    .await;
+    assert_eq!(agent["result"]["id"], "sd");
+
+    let agent = request(
+        &path,
+        json!({
+            "id": 12,
+            "method": "agents.show",
+            "params": { "id": "sd" }
+        }),
+    )
+    .await;
+    assert!(agent["result"].is_null());
     server.abort();
     let _ = std::fs::remove_file(path);
 }
@@ -261,6 +282,28 @@ async fn ipc_persists_jobs_events_and_logs() {
     )
     .await;
     assert!(workers["result"].as_array().unwrap().len() >= 2);
+
+    let worker = request(
+        &path,
+        json!({
+            "id": 20,
+            "method": "workers.unregister",
+            "params": { "id": "pi-worker" }
+        }),
+    )
+    .await;
+    assert_eq!(worker["result"]["id"], "pi-worker");
+
+    let worker = request(
+        &path,
+        json!({
+            "id": 21,
+            "method": "workers.show",
+            "params": { "id": "pi-worker" }
+        }),
+    )
+    .await;
+    assert!(worker["result"].is_null());
 
     let event = request(
         &path,

@@ -197,9 +197,11 @@ the next action obvious:
 - Stable ids and correlation ids across jobs, events, logs, and artifacts.
 - World snapshots that explain queue depth, active leases, workers, runtimes,
   and recent failures.
-- Workers can register, heartbeat, show their current lease, report progress in
-  logs, fail clearly, and be cancelled without hidden state or manual file
-  hunting.
+- Workers can register, heartbeat, show their current lease, unregister stale
+  identities, report progress in logs, fail clearly, and be cancelled without
+  hidden state or manual file hunting.
+- Agent runtimes can be registered, inspected, and unregistered with durable
+  effects so management surfaces do not accumulate stale adapters.
 - Concrete public nouns: jobs, services, agents, workers, capabilities, events,
   logs, sandboxes.
 - ECS terminology stays in architecture docs and implementation internals unless

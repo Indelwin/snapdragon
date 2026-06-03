@@ -1,4 +1,5 @@
-use snapdragon_gateway_core::GatewayAgentRuntimeDescriptor;
+use rusqlite::{OptionalExtension, params};
+use snapdragon_gateway_core::{GatewayAgentRuntimeDescriptor, validate_agent_runtime_id};
 
 use crate::store::{GatewayStore, json_parse, json_string};
 
@@ -34,6 +35,31 @@ impl GatewayStore {
                 .map_err(|error| error.to_string())?;
             rows.map(|row| json_parse(&row.map_err(|error| error.to_string())?))
                 .collect()
+        })
+    }
+
+    pub fn remove_agent_runtime(
+        &self,
+        id: &str,
+    ) -> Result<Option<GatewayAgentRuntimeDescriptor>, String> {
+        let id = validate_agent_runtime_id(id)?;
+        self.with_conn(|conn| {
+            let json = conn
+                .query_row(
+                    "select descriptor_json from gateway_agent_runtimes where id=?1",
+                    params![id],
+                    |row| row.get::<_, String>(0),
+                )
+                .optional()
+                .map_err(|error| error.to_string())?;
+            if json.is_some() {
+                conn.execute(
+                    "delete from gateway_agent_runtimes where id=?1",
+                    params![id],
+                )
+                .map_err(|error| error.to_string())?;
+            }
+            json.map(|value| json_parse(&value)).transpose()
         })
     }
 }

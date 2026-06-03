@@ -1,9 +1,11 @@
-use crate::{GatewayAgentRuntimeDescriptor, GatewayAgentRuntimeProtocol};
+use crate::{
+    GatewayAgentRuntimeDescriptor, GatewayAgentRuntimeProtocol, validate_agent_runtime_id,
+};
 
 pub(crate) fn validate_agent_runtime_descriptor(
     descriptor: &GatewayAgentRuntimeDescriptor,
 ) -> Result<(), String> {
-    validate_runtime_id(&descriptor.id)?;
+    validate_agent_runtime_id(&descriptor.id)?;
     if requires_command(descriptor.protocol)
         && descriptor
             .command
@@ -23,29 +25,6 @@ pub(crate) fn validate_agent_runtime_descriptor(
         validate_non_empty_list_value("capabilities", value)?;
     }
     validate_health(descriptor)
-}
-
-fn validate_runtime_id(id: &str) -> Result<(), String> {
-    let mut chars = id.chars();
-    let Some(first) = chars.next() else {
-        return Err("gateway agent runtime id must be non-empty".into());
-    };
-    if !first.is_ascii_alphanumeric() {
-        return Err("gateway agent runtime id must start with a letter or number".into());
-    }
-    if chars.any(|value| {
-        !(value.is_ascii_alphanumeric()
-            || value == '.'
-            || value == '_'
-            || value == '-'
-            || value == ':')
-    }) {
-        return Err(
-            "gateway agent runtime id may only contain letters, numbers, '.', '_', '-', or ':'"
-                .into(),
-        );
-    }
-    Ok(())
 }
 
 fn requires_command(protocol: GatewayAgentRuntimeProtocol) -> bool {

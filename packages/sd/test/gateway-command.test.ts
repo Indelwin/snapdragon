@@ -50,6 +50,10 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
       }),
       /heartbeat worker pi-worker/,
     );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['workers', 'unregister', 'pi-worker'] }),
+      /unregistered worker pi-worker/,
+    );
     assert.match(await runGatewayCommand({ ...args, gatewayArgs: ['tables', 'list'] }), /state/);
     assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['tables', 'show', 'state'] }),
@@ -86,6 +90,10 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
     assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['agents', 'show', 'pi'] }),
       /"protocol": "jsonl"/,
+    );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['agents', 'unregister', 'pi'] }),
+      /unregistered agent runtime pi/,
     );
     assert.match(
       await runGatewayCommand({
@@ -521,6 +529,13 @@ function responseFor(request: any): unknown {
       result: { ...wireWorker({ id: request.params.heartbeat.id }), status: 'ready' },
     };
   }
+  if (request.method === 'workers.unregister') {
+    return {
+      id: request.id,
+      ok: true,
+      result: wireWorker({ id: request.params.id }),
+    };
+  }
   if (request.method === 'tables.list') return { id: request.id, ok: true, result: ['state'] };
   if (request.method === 'tables.show') {
     return {
@@ -548,6 +563,9 @@ function responseFor(request: any): unknown {
     return { id: request.id, ok: true, result: [wireAgentRuntime('pi')] };
   }
   if (request.method === 'agents.show') {
+    return { id: request.id, ok: true, result: wireAgentRuntime(request.params.id) };
+  }
+  if (request.method === 'agents.unregister') {
     return { id: request.id, ok: true, result: wireAgentRuntime(request.params.id) };
   }
   if (request.method === 'logs.tail') {
