@@ -127,7 +127,7 @@ async fn ipc_persists_jobs_events_and_logs() {
                     "queue": "default",
                     "payload": { "prompt": "test" },
                     "priority": 0,
-                    "max_attempts": 1
+                    "max_attempts": 2
                 }
             }
         }),
@@ -146,10 +146,54 @@ async fn ipc_persists_jobs_events_and_logs() {
     .await;
     assert_eq!(lease["result"]["lease"]["worker"], "worker");
 
-    let completed = request(
+    let failed = request(
         &path,
         json!({
             "id": 3,
+            "method": "jobs.fail",
+            "params": { "id": "job_1", "error": "try again" }
+        }),
+    )
+    .await;
+    assert_eq!(failed["result"]["state"], "Pending");
+
+    let lease = request(
+        &path,
+        json!({
+            "id": 4,
+            "method": "jobs.acquire",
+            "params": { "queue": "default", "worker": "worker", "lease_ms": 1000 }
+        }),
+    )
+    .await;
+    assert_eq!(lease["result"]["job"]["attempts"], 2);
+
+    let failed = request(
+        &path,
+        json!({
+            "id": 5,
+            "method": "jobs.fail",
+            "params": { "id": "job_1", "error": "done trying" }
+        }),
+    )
+    .await;
+    assert_eq!(failed["result"]["state"], "Failed");
+
+    let retried = request(
+        &path,
+        json!({
+            "id": 6,
+            "method": "jobs.retry",
+            "params": { "id": "job_1" }
+        }),
+    )
+    .await;
+    assert_eq!(retried["result"]["state"], "Pending");
+
+    let completed = request(
+        &path,
+        json!({
+            "id": 7,
             "method": "jobs.complete",
             "params": { "id": "job_1", "result": { "ok": true } }
         }),
@@ -160,7 +204,7 @@ async fn ipc_persists_jobs_events_and_logs() {
     let event = request(
         &path,
         json!({
-            "id": 4,
+            "id": 8,
             "method": "events.append",
             "params": { "id": "event_1", "kind": "channel.run", "payload": {} }
         }),
@@ -171,7 +215,7 @@ async fn ipc_persists_jobs_events_and_logs() {
     let logs = request(
         &path,
         json!({
-            "id": 5,
+            "id": 9,
             "method": "logs.append",
             "params": {
                 "at_ms": 20,
@@ -187,7 +231,7 @@ async fn ipc_persists_jobs_events_and_logs() {
 
     let logs = request(
         &path,
-        json!({ "id": 6, "method": "logs.tail", "params": { "target": "job_1" } }),
+        json!({ "id": 10, "method": "logs.tail", "params": { "target": "job_1" } }),
     )
     .await;
     assert!(logs["result"].as_array().unwrap().len() >= 2);
@@ -195,7 +239,7 @@ async fn ipc_persists_jobs_events_and_logs() {
     let sandbox = request(
         &path,
         json!({
-            "id": 7,
+            "id": 11,
             "method": "sandboxes.lease",
             "params": {
                 "spec": {
@@ -213,7 +257,7 @@ async fn ipc_persists_jobs_events_and_logs() {
 
     let sandboxes = request(
         &path,
-        json!({ "id": 8, "method": "sandboxes.list", "params": {} }),
+        json!({ "id": 12, "method": "sandboxes.list", "params": {} }),
     )
     .await;
     assert_eq!(sandboxes["result"][0]["sandbox_id"], "sandbox_1");
@@ -221,7 +265,7 @@ async fn ipc_persists_jobs_events_and_logs() {
     let sandbox = request(
         &path,
         json!({
-            "id": 9,
+            "id": 13,
             "method": "sandboxes.show",
             "params": { "id": "lease_sandbox_1" }
         }),
@@ -232,7 +276,7 @@ async fn ipc_persists_jobs_events_and_logs() {
     let sandbox = request(
         &path,
         json!({
-            "id": 10,
+            "id": 14,
             "method": "sandboxes.release",
             "params": { "id": "lease_sandbox_1" }
         }),

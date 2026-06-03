@@ -160,6 +160,10 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
     return this.#jobs.cancel(id);
   }
 
+  async retryJob(id: string): Promise<GatewayJobStatus | undefined> {
+    return this.#jobs.retry(id);
+  }
+
   async acquireJob(
     queue: string,
     worker: string,

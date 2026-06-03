@@ -57,6 +57,7 @@ sd gateway events list
 sd gateway events cancel 20260506_event
 sd gateway jobs enqueue agent.run '{"prompt":"check the repo"}'
 sd gateway jobs list
+sd gateway jobs retry <job_id>
 sd gateway agents enqueue "run the release checks"
 sd gateway agents register-pi
 sd gateway agents register-pi --save --agent-dir ~/.pi-agent
@@ -88,6 +89,11 @@ The Rust daemon stores durable jobs, events, service snapshots, leases, and logs
 in a SQLite WAL database under the gateway root. Agent jobs use the same
 headless runtime as service workers, so scheduled channel work can use tools,
 sessions, skills, memory, and TODOs without starting Ink.
+
+Gateway jobs are attempt-aware. Worker failures and expired leases requeue work
+while attempts remain; exhausted jobs become `failed` and can be put back on the
+queue with `sd gateway jobs retry <job_id>`. Cancellation stays terminal so a
+cancelled job is never resurrected by retry or by late worker completion.
 
 Agent jobs can also target external runtimes. `sd gateway agents register-pi`
 adds a Pi JSONL runtime descriptor for the installed `pi` command; adding

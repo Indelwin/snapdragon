@@ -3,8 +3,8 @@ use serde_json::Value;
 use snapdragon_gateway_core::{GatewayJobSpec, GatewayJobState, GatewayJobStatus, GatewayLease};
 
 use crate::{
-    store::{GatewayStore, json_parse, json_string},
-    store_job_types::{expired_state, job_log_data, job_state, pending_job_status},
+    store::{GatewayStore, json_parse},
+    store_job_types::{job_log_data, pending_job_status, retry_or_failed_state},
 };
 
 impl GatewayStore {
@@ -62,12 +62,32 @@ impl GatewayStore {
         status.lease_id = None;
         status.lease_expires_at_ms = None;
         self.upsert_job(&status)?;
-        self.with_conn(|conn| {
-            conn.execute("delete from gateway_leases where job_id=?1", params![id])
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        })?;
+        self.delete_job_leases(id)?;
         self.append_log(now_ms, "warn", Some(id), "job cancelled", None)?;
+        Ok(Some(status))
+    }
+
+    pub fn retry_job(&self, id: &str, now_ms: u64) -> Result<Option<GatewayJobStatus>, String> {
+        let Some(mut status) = self.job(id)? else {
+            return Ok(None);
+        };
+        if status.state != GatewayJobState::Failed {
+            return Ok(Some(status));
+        }
+        status.state = GatewayJobState::Pending;
+        status.updated_at_ms = now_ms;
+        status.result = None;
+        status.lease_id = None;
+        status.lease_expires_at_ms = None;
+        self.upsert_job(&status)?;
+        self.delete_job_leases(id)?;
+        self.append_log(
+            now_ms,
+            "info",
+            Some(id),
+            "job retry requested",
+            Some(job_log_data(&status)),
+        )?;
         Ok(Some(status))
     }
 
@@ -119,7 +139,7 @@ impl GatewayStore {
 
     pub fn expire_leases(&self, now_ms: u64) -> Result<u64, String> {
         for mut status in self.expired_running_jobs(now_ms)? {
-            status.state = expired_state(&status);
+            status.state = retry_or_failed_state(&status);
             status.updated_at_ms = now_ms;
             status.last_error = Some("lease expired".into());
             status.lease_id = None;
@@ -133,33 +153,6 @@ impl GatewayStore {
                 params![now_ms],
             )
             .map(|count| count as u64)
-            .map_err(|error| error.to_string())
-        })
-    }
-
-    fn upsert_job(&self, status: &GatewayJobStatus) -> Result<(), String> {
-        self.with_conn(|conn| {
-            conn.execute(
-                "insert into gateway_jobs(id, kind, queue, state, priority, status_json, updated_at_ms)
-                 values (?1, ?2, ?3, ?4, ?5, ?6, ?7)
-                 on conflict(id) do update set
-                   kind=excluded.kind,
-                   queue=excluded.queue,
-                   state=excluded.state,
-                   priority=excluded.priority,
-                   status_json=excluded.status_json,
-                   updated_at_ms=excluded.updated_at_ms",
-                params![
-                    status.id,
-                    status.spec.kind,
-                    status.spec.queue,
-                    job_state(&status.state),
-                    status.spec.priority,
-                    json_string(status)?,
-                    status.updated_at_ms
-                ],
-            )
-            .map(|_| ())
             .map_err(|error| error.to_string())
         })
     }
@@ -178,77 +171,44 @@ impl GatewayStore {
         if status.state == GatewayJobState::Cancelled {
             return Ok(Some(status));
         }
-        status.state = state;
+        status.state = finish_state(&status, state);
         status.updated_at_ms = now_ms;
         status.result = result;
         status.last_error = error;
         status.lease_id = None;
         status.lease_expires_at_ms = None;
         self.upsert_job(&status)?;
-        self.with_conn(|conn| {
-            conn.execute("delete from gateway_leases where job_id=?1", params![id])
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        })?;
+        self.delete_job_leases(id)?;
         self.append_log(
             now_ms,
-            "info",
+            finish_log_level(&status),
             Some(id),
-            "job finished",
+            finish_log_message(&status),
             Some(job_log_data(&status)),
         )?;
         Ok(Some(status))
     }
+}
 
-    fn next_pending_job(&self, queue: &str) -> Result<Option<GatewayJobStatus>, String> {
-        self.with_conn(|conn| {
-            conn.query_row(
-                "select status_json from gateway_jobs
-                 where queue=?1 and state='pending'
-                 order by priority desc, updated_at_ms asc, id asc limit 1",
-                params![queue],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(|error| error.to_string())?
-            .map(|json| json_parse(&json))
-            .transpose()
-        })
+fn finish_state(status: &GatewayJobStatus, requested: GatewayJobState) -> GatewayJobState {
+    if requested == GatewayJobState::Failed {
+        retry_or_failed_state(status)
+    } else {
+        requested
     }
+}
 
-    fn expired_running_jobs(&self, now_ms: u64) -> Result<Vec<GatewayJobStatus>, String> {
-        self.with_conn(|conn| {
-            let mut stmt = conn
-                .prepare(
-                    "select status_json from gateway_jobs
-                     where state='running'
-                       and json_extract(status_json, '$.lease_expires_at_ms') <= ?1",
-                )
-                .map_err(|error| error.to_string())?;
-            let rows = stmt
-                .query_map(params![now_ms], |row| row.get::<_, String>(0))
-                .map_err(|error| error.to_string())?;
-            rows.map(|row| json_parse(&row.map_err(|error| error.to_string())?))
-                .collect()
-        })
+fn finish_log_level(status: &GatewayJobStatus) -> &'static str {
+    match status.state {
+        GatewayJobState::Pending | GatewayJobState::Failed => "warn",
+        _ => "info",
     }
+}
 
-    fn upsert_lease(&self, lease: &GatewayLease) -> Result<(), String> {
-        self.with_conn(|conn| {
-            conn.execute(
-                "insert into gateway_leases(id, job_id, worker, acquired_at_ms, expires_at_ms)
-                 values (?1, ?2, ?3, ?4, ?5)
-                 on conflict(id) do update set expires_at_ms=excluded.expires_at_ms",
-                params![
-                    lease.id,
-                    lease.job_id,
-                    lease.worker,
-                    lease.acquired_at_ms,
-                    lease.expires_at_ms
-                ],
-            )
-            .map(|_| ())
-            .map_err(|error| error.to_string())
-        })
+fn finish_log_message(status: &GatewayJobStatus) -> &'static str {
+    match status.state {
+        GatewayJobState::Pending => "job retry scheduled",
+        GatewayJobState::Failed => "job failed",
+        _ => "job finished",
     }
 }
