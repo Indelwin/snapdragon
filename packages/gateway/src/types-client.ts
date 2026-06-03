@@ -50,6 +50,7 @@ export interface GatewayClient extends GatewayTransport {
   listJobs(): Promise<GatewayJobStatus[]>;
   showJob(id: string): Promise<GatewayJobStatus | undefined>;
   cancelJob(id: string): Promise<GatewayJobStatus | undefined>;
+  retryJob(id: string): Promise<GatewayJobStatus | undefined>;
   acquireJob(queue: string, worker: string, leaseMs?: number): Promise<GatewayJobLease | undefined>;
   completeJob(id: string, result?: unknown): Promise<GatewayJobStatus | undefined>;
   failJob(id: string, error: string): Promise<GatewayJobStatus | undefined>;

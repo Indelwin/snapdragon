@@ -2,14 +2,14 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use snapdragon_gateway_core::{
-    ActorId, GatewayAgentRuntimeDescriptor, GatewayEnvelope, GatewayExitReason, GatewayJobSpec,
-    GatewayJobStatus, GatewayLogRecord, GatewaySandboxLease, GatewaySandboxSpec,
+    ActorId, GatewayAgentRuntimeDescriptor, GatewayEnvelope, GatewayExitReason,
     GatewayWorkerProcess, LinkGraph, Mailbox, ProcessRegistry, ReceiveFilter, RegistrySnapshot,
     ServiceSpec, ServiceStatus, Supervisor, TableAccess, TableRegistry, TableSnapshot,
 };
 use tokio::{sync::RwLock, task::JoinHandle};
 
 mod agent_runtimes;
+mod durable;
 pub mod ipc;
 mod ipc_core;
 mod ipc_durable;
@@ -24,6 +24,7 @@ mod status;
 mod store;
 mod store_agent_runtimes;
 mod store_events;
+mod store_job_sql;
 mod store_job_types;
 mod store_jobs;
 mod store_observability;
@@ -145,70 +146,12 @@ impl GatewayDaemon {
         self.store.as_ref()
     }
 
-    pub async fn enqueue_job(
-        &self,
-        id: String,
-        spec: GatewayJobSpec,
-        now_ms: u64,
-    ) -> Result<GatewayJobStatus, String> {
-        let store = self.require_store()?;
-        store.enqueue_job(id, spec, now_ms)
-    }
-
-    pub async fn list_jobs(&self) -> Result<Vec<GatewayJobStatus>, String> {
-        self.require_store()?.list_jobs()
-    }
-
-    pub async fn job(&self, id: &str) -> Result<Option<GatewayJobStatus>, String> {
-        self.require_store()?.job(id)
-    }
-
-    pub async fn cancel_job(
-        &self,
-        id: &str,
-        now_ms: u64,
-    ) -> Result<Option<GatewayJobStatus>, String> {
-        self.require_store()?.cancel_job(id, now_ms)
-    }
-
-    pub async fn tail_logs(
-        &self,
-        target: Option<&str>,
-        limit: u64,
-    ) -> Result<Vec<GatewayLogRecord>, String> {
-        self.require_store()?.tail_logs(target, limit)
-    }
-
-    pub async fn lease_sandbox(
-        &self,
-        spec: GatewaySandboxSpec,
-        now_ms: u64,
-    ) -> Result<GatewaySandboxLease, String> {
-        self.require_store()?.lease_sandbox(spec, now_ms)
-    }
-
-    pub async fn list_sandbox_leases(&self) -> Result<Vec<GatewaySandboxLease>, String> {
-        self.require_store()?.sandbox_leases(unix_time_ms())
-    }
-
-    pub async fn sandbox_lease(&self, id: &str) -> Result<Option<GatewaySandboxLease>, String> {
-        self.require_store()?.sandbox_lease(id, unix_time_ms())
-    }
-
-    pub async fn release_sandbox(&self, id: &str) -> Result<Option<GatewaySandboxLease>, String> {
-        self.require_store()?.release_sandbox(id, unix_time_ms())
-    }
-
     pub async fn attach_supervisor(&self, name: impl Into<String>, supervisor: Supervisor) {
         self.inner
             .write()
             .await
             .supervisors
             .insert(name.into(), supervisor);
-    }
-
-    pub async fn run_watchdogs(&self) -> Result<u64, String> {
-        self.require_store()?.expire_leases(unix_time_ms())
     }
 
     async fn recover_store(&self) -> Result<(), String> {
@@ -240,7 +183,7 @@ impl GatewayDaemon {
         Ok(())
     }
 
-    fn require_store(&self) -> Result<&GatewayStore, String> {
+    pub(crate) fn require_store(&self) -> Result<&GatewayStore, String> {
         self.store
             .as_ref()
             .ok_or_else(|| "gateway durable store is not configured".to_string())

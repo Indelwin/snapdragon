@@ -78,6 +78,19 @@ test('inline gateway leases, completes, and logs jobs', async () => {
     (await gateway.status()).recentFailures?.map((log) => log.message).join('\n') ?? '',
     /nope/,
   );
+  const retried = await gateway.enqueueJob({
+    kind: 'agent.run',
+    payload: { prompt: 'retry it' },
+    maxAttempts: 2,
+  });
+  await gateway.acquireJob('default', 'worker-1');
+  assert.equal((await gateway.failJob(retried.id, 'try again'))?.state, 'pending');
+  assert.equal((await gateway.showJob(retried.id))?.attempts, 1);
+  await gateway.acquireJob('default', 'worker-1');
+  assert.equal((await gateway.failJob(retried.id, 'out of tries'))?.state, 'failed');
+  assert.equal((await gateway.retryJob(retried.id))?.state, 'pending');
+  assert.equal((await gateway.acquireJob('default', 'worker-1'))?.job.id, retried.id);
+  assert.equal((await gateway.completeJob(retried.id, { ok: true }))?.state, 'completed');
   const cancelled = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'stop it' } });
   await gateway.acquireJob('default', 'worker-1');
   assert.equal((await gateway.cancelJob(cancelled.id))?.state, 'cancelled');
@@ -183,6 +196,9 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(job.state, 'pending');
     assert.equal((await getJson(`${baseUrl}/jobs/${job.id}`)).id, job.id);
+    await gateway.acquireJob('default', 'rest-worker');
+    assert.equal((await gateway.failJob(job.id, 'rest failure'))?.state, 'failed');
+    assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/retry`, {})).state, 'pending');
     const log = await postJson(`${baseUrl}/logs`, {
       target: job.id,
       message: 'runtime breadcrumb',
@@ -349,6 +365,8 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
     const job = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'test' } });
     assert.equal(job.id, 'job_1');
     assert.equal((await gateway.acquireJob('default', 'worker'))?.lease.worker, 'worker');
+    assert.equal((await gateway.failJob('job_1', 'try again'))?.state, 'failed');
+    assert.equal((await gateway.retryJob('job_1'))?.state, 'pending');
     assert.equal((await gateway.completeJob('job_1', { ok: true }))?.state, 'completed');
     assert.equal((await gateway.appendEvent({ kind: 'channel.run' })).state, 'pending');
     assert.equal((await gateway.cancelEvent('event_1'))?.state, 'cancelled');
@@ -387,6 +405,8 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'tables.show',
       'jobs.enqueue',
       'jobs.acquire',
+      'jobs.fail',
+      'jobs.retry',
       'jobs.complete',
       'events.append',
       'events.cancel',
@@ -568,6 +588,24 @@ function responseFor(request: any): unknown {
         state: 'Completed',
         result: request.params.result,
       },
+    };
+  }
+  if (request.method === 'jobs.fail') {
+    return {
+      id: request.id,
+      ok: true,
+      result: {
+        ...wireJobStatus(request.params.id),
+        state: 'Failed',
+        last_error: request.params.error,
+      },
+    };
+  }
+  if (request.method === 'jobs.retry') {
+    return {
+      id: request.id,
+      ok: true,
+      result: { ...wireJobStatus(request.params.id), state: 'Pending' },
     };
   }
   if (request.method === 'events.append') {

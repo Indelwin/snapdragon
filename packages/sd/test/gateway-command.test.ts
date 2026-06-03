@@ -50,6 +50,10 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
       /cancelled job_1/,
     );
     assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'retry', 'job_1'] }),
+      /retry scheduled job_1/,
+    );
+    assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['agents', 'enqueue', 'test agent'] }),
       /enqueued agent job job_1/,
     );
@@ -437,6 +441,9 @@ function responseFor(request: any): unknown {
   }
   if (request.method === 'jobs.cancel') {
     return { id: request.id, ok: true, result: wireJob(request.params.id, 'Cancelled') };
+  }
+  if (request.method === 'jobs.retry') {
+    return { id: request.id, ok: true, result: wireJob(request.params.id, 'Pending') };
   }
   if (request.method === 'agents.register') {
     return { id: request.id, ok: true, result: request.params.descriptor };
