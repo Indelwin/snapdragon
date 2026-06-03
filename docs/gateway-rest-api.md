@@ -43,7 +43,11 @@ should be added above the same route shape.
 | `GET` | `/v1/agents` | List registered agent runtimes. |
 | `POST` | `/v1/agents/register` | Register and durably store an agent runtime descriptor. |
 | `GET` | `/v1/agents/:id` | Show one runtime descriptor. |
-| `GET` | `/v1/workers` | List worker process snapshots. |
+| `GET` | `/v1/workers` | List durable registered workers. |
+| `POST` | `/v1/workers` | Register or update a durable worker record. |
+| `GET` | `/v1/workers/:id` | Show one durable worker record. |
+| `POST` | `/v1/workers/:id/heartbeat` | Update worker state, queue, status, and heartbeat time. |
+| `GET` | `/v1/worker-processes` | List diagnostic service worker process snapshots. |
 | `GET` | `/v1/jobs` | List durable jobs. |
 | `POST` | `/v1/jobs` | Enqueue a durable job. |
 | `GET` | `/v1/jobs/:id` | Show one job. |
@@ -71,6 +75,11 @@ cancellation observation without exposing raw token deltas by default.
 Runtime registration validates descriptors before storage. Runtime ids must be
 URL/config-safe, command-like protocols require a non-empty `command.command`,
 and blank supported job kinds or capabilities are rejected with `400` responses.
+
+Worker registration is separate from process snapshots. `workers` are durable
+gateway entities that external adapters and headless job runners can register,
+heartbeat, and inspect. `worker-processes` are low-level diagnostics for service
+commands spawned by the daemon.
 
 ## Request Examples
 
@@ -118,6 +127,39 @@ content-type: application/json
   }
 }
 ```
+
+Register and heartbeat a worker:
+
+```http
+POST /v1/workers
+content-type: application/json
+
+{
+  "worker": {
+    "id": "pi-worker-1",
+    "queue": "default",
+    "runtimeId": "pi",
+    "capabilities": ["agent.run", "tools.pi"],
+    "status": "ready"
+  }
+}
+```
+
+```http
+POST /v1/workers/pi-worker-1/heartbeat
+content-type: application/json
+
+{
+  "state": "idle",
+  "status": "waiting for work"
+}
+```
+
+When a worker acquires a job lease, the gateway records its `currentJobId`,
+`currentLeaseId`, and lease expiry. Completion, failure, cancellation, and lease
+expiry clear that active lease back to an idle worker record. Workers that have
+not explicitly registered are auto-created on acquire so ad-hoc adapters are
+still inspectable.
 
 Enqueue a routed agent job:
 
@@ -240,8 +282,9 @@ Errors are emitted as `event: error` with a small JSON error object.
 
 `GatewayWorldSnapshot` is the primary dashboard and agent inspection shape. It
 contains captured time, runtime kind, raw status, service statuses, agent runtime
-descriptors, worker process snapshots, durable jobs, events, logs, registry,
-leases, queue depths, table snapshots, and sandbox leases.
+descriptors, durable worker records, worker process diagnostics, durable jobs,
+events, logs, registry, leases, queue depths, table snapshots, and sandbox
+leases.
 
 The API intentionally returns the same camelCase TypeScript shapes exposed by
 `@snapdragon-ai/gateway`. Rust IPC wire casing stays behind the facade.

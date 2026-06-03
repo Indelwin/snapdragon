@@ -9,6 +9,7 @@ use crate::{
     ipc_params::{
         EventRecordParams, JobAcquireParams, JobCompleteParams, JobFailParams, JobIdParams,
         JobSpecParams, LogAppendParams, LogTailParams, SandboxIdParams, SandboxLeaseParams,
+        WorkerHeartbeatParams, WorkerIdParams, WorkerRegistrationParams,
     },
 };
 
@@ -92,6 +93,29 @@ pub(crate) async fn dispatch_sandboxes(
         "sandboxes.release" => {
             let params = parse::<SandboxIdParams>(params)?;
             ok_json(daemon.release_sandbox(&params.id).await?)
+        }
+        _ => Err(format!("unknown gateway method: {method}")),
+    }
+}
+
+pub(crate) async fn dispatch_workers(
+    daemon: &GatewayDaemon,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
+    match method {
+        "workers.register" => {
+            let params = parse::<WorkerRegistrationParams>(params)?;
+            ok_json(daemon.register_worker(params.worker).await?)
+        }
+        "workers.heartbeat" => {
+            let params = parse::<WorkerHeartbeatParams>(params)?;
+            ok_json(daemon.heartbeat_worker(params.heartbeat).await?)
+        }
+        "workers.list" => ok_json(daemon.list_workers().await?),
+        "workers.show" => {
+            let params = parse::<WorkerIdParams>(params)?;
+            ok_json(daemon.worker(&params.id).await?)
         }
         _ => Err(format!("unknown gateway method: {method}")),
     }

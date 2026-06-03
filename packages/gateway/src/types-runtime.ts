@@ -14,6 +14,7 @@ import type {
   GatewayStatus,
   GatewayTableSnapshot,
   GatewayWorkerProcess,
+  GatewayWorkerRecord,
 } from './types.js';
 
 export type {
@@ -25,6 +26,10 @@ export type {
   GatewayProjectRef,
   GatewaySandboxLease,
   GatewaySandboxSpec,
+  GatewayWorkerHeartbeat,
+  GatewayWorkerRecord,
+  GatewayWorkerRegistration,
+  GatewayWorkerState,
 } from './types.js';
 
 export interface GatewayPolicyHints {
@@ -84,7 +89,8 @@ export interface GatewayWorldSnapshot {
   status: GatewayStatus;
   services: GatewayServiceStatus[];
   agentRuntimes: GatewayAgentRuntimeDescriptor[];
-  workers: GatewayWorkerProcess[];
+  workers: GatewayWorkerRecord[];
+  workerProcesses: GatewayWorkerProcess[];
   jobs: GatewayJobStatus[];
   events: GatewayEventRecord[];
   logs: GatewayLogRecord[];

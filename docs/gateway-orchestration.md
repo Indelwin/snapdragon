@@ -13,7 +13,7 @@ ECS-shaped implementation internally.
 | Gateway noun | ECS role | Common components |
 | --- | --- | --- |
 | Agent runtime | Entity | kind, protocol, command/RPC endpoint, supported jobs, capabilities, health |
-| Worker | Entity | process state, lease, runtime id, heartbeat, current job |
+| Worker | Entity | registered worker record, queue, runtime id, service, capabilities, heartbeat, current job, current lease |
 | Job | Entity | spec, state, queue, priority, attempts, parentage, routing hints |
 | Service | Entity | schedule, enabled state, restart policy, budget, worker command |
 | Channel | Entity | target, event queue, subscribers, session refs |
@@ -25,7 +25,9 @@ Systems act when entities match their conditions:
 
 - Scheduler systems enqueue due service runs and event work.
 - Lease systems acquire pending jobs, expire stale leases, and release failed
-  workers.
+  workers back to idle.
+- Worker registry systems validate registrations, record heartbeats, and keep
+  current leases visible to agents and dashboards.
 - Sandbox lease systems record project-scoped execution spaces, expose active
   leases in world snapshots, and release or hide expired sandboxes.
 - Dispatch systems route jobs to matching agent runtimes or native services.
@@ -80,6 +82,13 @@ Every job should have enough context for agent experience: kind, queue, payload,
 priority, parent job id, correlation id, target runtime id, project/channel refs,
 sandbox lease, policy hints, attempts, last error, result, and logs.
 
+Every worker should have enough context for orchestration experience: stable id,
+queue, runtime id, service name when applicable, capabilities, heartbeat time,
+state, current job id, current lease id, lease expiry, status text, last error,
+and adapter metadata. Lease acquisition auto-creates a minimal worker record when
+an ad-hoc adapter has not registered first, but managed runtimes should register
+and heartbeat explicitly so their control surface is descriptive.
+
 Sandbox leases are gateway entities, not local implementation details. The
 first local backend records `git worktree` leases with cwd, project ref, branch,
 TTL, and reference roots. The Rust gateway stores the active lease registry and
@@ -108,6 +117,12 @@ The `sd` facade can also save descriptors under `gateway.agent_runtimes`; saved
 descriptors are visible in `sd gateway agents list/show` even before the daemon
 is available, and job workers can re-register them before dispatch. This gives
 operators one stable setup step instead of a hidden in-memory runtime table.
+
+Worker records are also durable. Runtime registration answers "what kind of
+agent can be invoked?" while worker registration answers "which concrete worker
+is available or currently holding work?" Pi, Codex, Hermes, `sd`, and custom
+adapters can all use the same `workers.register`, `workers.heartbeat`, and job
+lease flow.
 
 ```mermaid
 sequenceDiagram
@@ -160,6 +175,8 @@ Failures should be explicit and inspectable:
 
 - A crashed worker records process state, last error, and recent logs.
 - A timed-out worker is killed by the daemon and recorded as `timed_out`.
+- A registered worker that has not failed can heartbeat itself `offline`, which
+  keeps it inspectable without advertising that it is ready for work.
 - A worker-reported failure requeues the job while attempts remain, then marks
   it failed once attempts are exhausted.
 - A stale lease expires during watchdog/status passes and follows the same
@@ -180,6 +197,9 @@ the next action obvious:
 - Stable ids and correlation ids across jobs, events, logs, and artifacts.
 - World snapshots that explain queue depth, active leases, workers, runtimes,
   and recent failures.
+- Workers can register, heartbeat, show their current lease, report progress in
+  logs, fail clearly, and be cancelled without hidden state or manual file
+  hunting.
 - Concrete public nouns: jobs, services, agents, workers, capabilities, events,
   logs, sandboxes.
 - ECS terminology stays in architecture docs and implementation internals unless

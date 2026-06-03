@@ -19,6 +19,8 @@ The public TypeScript API is intentionally small and serializable:
   daemon.
 - `GatewayAgentRuntimeDescriptor` for external runtimes such as `sd`, Codex,
   Hermes Agent, Pi Agent, and custom workers.
+- `GatewayWorkerRegistration`, `GatewayWorkerHeartbeat`, and
+  `GatewayWorkerRecord` for durable worker registry state.
 - `GatewayJobSpec`, `GatewayJobStatus`, and `GatewayLease` for durable work
   queues.
 - `GatewayEventRecord` and `GatewayLogRecord` for inspectable orchestration
@@ -57,6 +59,29 @@ await gateway.registerAgentRuntime({
 const snapshot = await gateway.worldSnapshot();
 console.log(snapshot.agentRuntimes.map((runtime) => runtime.id));
 ```
+
+Workers register as durable entities before or while they claim work:
+
+```ts
+await gateway.registerWorker({
+  id: 'pi-worker-1',
+  queue: 'default',
+  runtimeId: 'pi',
+  capabilities: ['agent.run', 'tools.pi'],
+  status: 'ready',
+});
+
+await gateway.heartbeatWorker({
+  id: 'pi-worker-1',
+  state: 'idle',
+  status: 'waiting for work',
+});
+```
+
+The daemon also auto-creates a worker record when an unregistered worker acquires
+a job lease. That keeps ad-hoc adapters visible in world snapshots while still
+letting managed runtimes provide richer runtime, service, capability, and status
+metadata.
 
 ## Pi RPC Runtime Adapter
 
@@ -146,7 +171,8 @@ dependencies a service needs.
 ## Durable Jobs
 
 The Rust daemon can be started with a SQLite store path. In that mode it keeps
-jobs, events, service state, leases, and logs under the gateway root:
+jobs, events, service state, worker records, leases, and logs under the gateway
+root:
 
 ```ts
 const job = await gateway.enqueueJob({
@@ -167,6 +193,12 @@ the attempt count visible in snapshots. Once a job reaches its attempt limit it
 becomes `failed`; operators or executive agents can call `retryJob(id)` to move
 that failed job back to `pending` without losing its last error. Cancellation
 remains terminal and is not undone by late worker writes or manual retry.
+
+Lease acquisition marks the worker `running` with the current job and lease ids.
+Completion, failure, cancellation, and stale lease expiry return the worker to
+`idle`; explicit heartbeats can mark it `offline` or refresh status text and
+metadata. This is the agent-facing control surface for “who is doing what right
+now?” without requiring process inspection.
 
 The inline client implements the same lifecycle in memory for tests and small
 embedders, including automatic requeue and manual retry behavior.
@@ -193,16 +225,18 @@ Initial routes cover:
 - `GET /v1/services`, `POST /v1/services/:name/run`, and
   `POST /v1/services/:name/enable`.
 - `GET /v1/agents`, `POST /v1/agents/register`, and `GET /v1/agents/:id`.
-- `GET /v1/workers`, `GET /v1/jobs`, `POST /v1/jobs`,
-  `GET /v1/jobs/:id`, `POST /v1/jobs/:id/cancel`, and
-  `POST /v1/jobs/:id/retry`.
+- `GET /v1/workers`, `POST /v1/workers`, `GET /v1/workers/:id`,
+  `POST /v1/workers/:id/heartbeat`, and `GET /v1/worker-processes`.
+- `GET /v1/jobs`, `POST /v1/jobs`, `GET /v1/jobs/:id`,
+  `POST /v1/jobs/:id/cancel`, and `POST /v1/jobs/:id/retry`.
 - `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
   `GET /v1/logs`, `POST /v1/logs`, `GET /v1/registry`,
   `GET /v1/capabilities`, `GET /v1/sandboxes`, `POST /v1/sandboxes`,
   `GET /v1/sandboxes/:id`, and `POST /v1/sandboxes/:id/release`.
 
 World snapshots include active sandbox leases alongside jobs, events, logs,
-services, workers, runtimes, capabilities, queue depths, and tables.
+services, durable worker records, worker process diagnostics, runtimes,
+capabilities, queue depths, and tables.
 
 The default listener binds to `127.0.0.1`. Authentication, policy enforcement,
 and remote exposure are later layers on the same route shape.
@@ -224,11 +258,13 @@ release sandboxes without scanning local lease files.
 
 `gateway.status()` exposes the operator snapshot used by `sd gateway status`:
 registered service tasks, queue depths, active leases, recent failures, tables,
-process count, worker process snapshots, pid, and uptime. Service workers are
-spawned with explicit timeout enforcement, so budget expiry kills the child
-process and records a `timed_out` worker state. The daemon also expires stale
-job leases during status/watchdog passes so stuck jobs can become visible and
-recoverable without requiring a foreground TUI process.
+process count, worker process snapshots, pid, and uptime. `worldSnapshot()` adds
+durable worker records so dashboards and agents can inspect registered workers,
+heartbeats, current leases, and runtime metadata in one shape. Service workers
+are spawned with explicit timeout enforcement, so budget expiry kills the child
+process and records a `timed_out` worker process state. The daemon also expires
+stale job leases during status/watchdog passes so stuck jobs can become visible
+and recoverable without requiring a foreground TUI process.
 
 ## Current Boundaries
 

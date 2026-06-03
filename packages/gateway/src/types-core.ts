@@ -35,6 +35,7 @@ export type GatewayServiceState = 'starting' | 'running' | 'stopped' | 'failed';
 export type GatewayJobState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type GatewayEventState = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
 export type GatewayWorkerProcessState = 'running' | 'exited' | 'timed_out' | 'failed';
+export type GatewayWorkerState = 'idle' | 'running' | 'offline';
 export type GatewayAgentRuntimeKind = 'sd' | 'codex' | 'hermes' | 'pi' | 'custom';
 export type GatewayAgentRuntimeProtocol = 'embedded' | 'command' | 'jsonl' | 'http' | 'stdio';
 export type GatewayAgentRuntimeIsolation = 'inherit' | 'profile' | 'channel' | 'sandbox';
@@ -130,6 +131,42 @@ export interface GatewayWorkerProcess {
   exitCode?: number;
   signal?: string;
   lastError?: string;
+}
+
+export interface GatewayWorkerRegistration {
+  id: string;
+  queue?: string;
+  runtimeId?: string;
+  service?: string;
+  capabilities?: string[];
+  status?: string;
+  metadata?: unknown;
+}
+
+export interface GatewayWorkerHeartbeat {
+  id: string;
+  state?: GatewayWorkerState;
+  queue?: string;
+  status?: string;
+  lastError?: string;
+  metadata?: unknown;
+}
+
+export interface GatewayWorkerRecord {
+  id: string;
+  queue: string;
+  runtimeId?: string;
+  service?: string;
+  capabilities: string[];
+  state: GatewayWorkerState;
+  registeredAtMs: number;
+  heartbeatAtMs: number;
+  currentJobId?: string;
+  currentLeaseId?: string;
+  leaseExpiresAtMs?: number;
+  status?: string;
+  lastError?: string;
+  metadata?: unknown;
 }
 
 export interface GatewayRegistrySnapshot {

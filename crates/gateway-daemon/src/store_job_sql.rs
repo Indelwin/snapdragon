@@ -42,6 +42,22 @@ impl GatewayStore {
         })
     }
 
+    pub(crate) fn job_leases(&self, id: &str) -> Result<Vec<GatewayLease>, String> {
+        self.with_conn(|conn| {
+            let mut stmt = conn
+                .prepare(
+                    "select id, job_id, worker, acquired_at_ms, expires_at_ms
+                     from gateway_leases where job_id=?1 order by id",
+                )
+                .map_err(|error| error.to_string())?;
+            let rows = stmt
+                .query_map(params![id], lease_from_row)
+                .map_err(|error| error.to_string())?;
+            rows.map(|row| row.map_err(|error| error.to_string()))
+                .collect()
+        })
+    }
+
     pub(crate) fn next_pending_job(&self, queue: &str) -> Result<Option<GatewayJobStatus>, String> {
         self.with_conn(|conn| {
             conn.query_row(
@@ -96,4 +112,14 @@ impl GatewayStore {
             .map_err(|error| error.to_string())
         })
     }
+}
+
+fn lease_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GatewayLease> {
+    Ok(GatewayLease {
+        id: row.get(0)?,
+        job_id: row.get(1)?,
+        worker: row.get(2)?,
+        acquired_at_ms: row.get(3)?,
+        expires_at_ms: row.get(4)?,
+    })
 }
