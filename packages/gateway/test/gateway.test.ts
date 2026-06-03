@@ -115,6 +115,8 @@ test('inline gateway registers agent runtimes and snapshots the world', async ()
     isolation: 'profile',
   });
   await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'map the world' } });
+  await gateway.registerWorker({ id: 'worker-1', queue: 'default', runtimeId: 'sd' });
+  await gateway.acquireJob('default', 'worker-1');
   await gateway.leaseSandbox({
     id: 'test-sandbox',
     cwd: '/tmp/sandbox',
@@ -123,6 +125,9 @@ test('inline gateway registers agent runtimes and snapshots the world', async ()
   });
   const snapshot = await gateway.worldSnapshot();
   assert.equal(snapshot.agentRuntimes[0]?.id, 'sd');
+  assert.equal(snapshot.workers[0]?.id, 'worker-1');
+  assert.equal(snapshot.workers[0]?.currentJobId, snapshot.jobs[0]?.id);
+  assert.equal(snapshot.workerProcesses.length, 0);
   assert.equal(snapshot.jobs[0]?.spec.kind, 'agent.run');
   assert.equal(snapshot.status.agentRuntimes?.[0]?.protocol, 'embedded');
   assert.equal(snapshot.sandboxes[0]?.id, 'lease_test-sandbox');
@@ -176,6 +181,21 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(invalidRuntime.status, 400);
     assert.match(await invalidRuntime.text(), /runtime id/);
+
+    const worker = await postJson(`${baseUrl}/workers`, {
+      id: 'rest-worker',
+      queue: 'default',
+      runtimeId: 'codex',
+      capabilities: ['repo.inspect'],
+    });
+    assert.equal(worker.id, 'rest-worker');
+    assert.equal((await getJson(`${baseUrl}/workers/rest-worker`)).runtimeId, 'codex');
+    assert.equal(
+      (await postJson(`${baseUrl}/workers/rest-worker/heartbeat`, { status: 'ready' })).status,
+      'ready',
+    );
+    assert.equal((await getJson(`${baseUrl}/workers`))[0]?.id, 'rest-worker');
+    assert.deepEqual(await getJson(`${baseUrl}/worker-processes`), []);
 
     const service = await postJson(`${baseUrl}/services`, { spec: { name: 'pulse' } });
     assert.equal(service.name, 'pulse');
@@ -354,6 +374,16 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
     );
     assert.equal((await gateway.listAgentRuntimes())[0]?.id, 'sd');
     assert.equal((await gateway.showAgentRuntime('sd'))?.protocol, 'embedded');
+    assert.equal(
+      (await gateway.registerWorker({ id: 'worker', queue: 'default', runtimeId: 'sd' })).state,
+      'idle',
+    );
+    assert.equal(
+      (await gateway.heartbeatWorker({ id: 'worker', status: 'ready' }))?.status,
+      'ready',
+    );
+    assert.equal((await gateway.listWorkers())[0]?.id, 'worker');
+    assert.equal((await gateway.showWorker('worker'))?.runtimeId, 'sd');
     assert.equal(await gateway.createTable('state', { id: 'worker' }, 'private'), true);
     assert.deepEqual(await gateway.tableNames(), ['state']);
     assert.deepEqual(await gateway.tableSnapshot('state'), {
@@ -400,6 +430,10 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'agents.register',
       'agents.list',
       'agents.show',
+      'workers.register',
+      'workers.heartbeat',
+      'workers.list',
+      'workers.show',
       'tables.create',
       'tables.list',
       'tables.show',
@@ -534,6 +568,29 @@ function responseFor(request: any): unknown {
   }
   if (request.method === 'agents.show') {
     return { id: request.id, ok: true, result: wireAgentRuntime(request.params.id) };
+  }
+  if (request.method === 'workers.register') {
+    return { id: request.id, ok: true, result: wireWorker(request.params.worker) };
+  }
+  if (request.method === 'workers.heartbeat') {
+    return {
+      id: request.id,
+      ok: true,
+      result: {
+        ...wireWorker({ id: request.params.heartbeat.id }),
+        status: request.params.heartbeat.status,
+      },
+    };
+  }
+  if (request.method === 'workers.list') {
+    return { id: request.id, ok: true, result: [wireWorker()] };
+  }
+  if (request.method === 'workers.show') {
+    return {
+      id: request.id,
+      ok: true,
+      result: wireWorker({ id: request.params.id, runtime_id: 'sd' }),
+    };
   }
   if (request.method === 'tables.list') return { id: request.id, ok: true, result: ['state'] };
   if (request.method === 'tables.show') {
@@ -744,6 +801,25 @@ function wireAgentRuntime(id = 'sd'): unknown {
     isolation: null,
     health: null,
     metadata: null,
+  };
+}
+
+function wireWorker(worker: any = {}): unknown {
+  return {
+    id: worker.id ?? 'worker',
+    queue: worker.queue ?? 'default',
+    runtime_id: worker.runtime_id ?? worker.runtimeId ?? null,
+    service: worker.service ?? null,
+    capabilities: worker.capabilities ?? [],
+    state: worker.state ?? 'idle',
+    registered_at_ms: 10,
+    heartbeat_at_ms: 20,
+    current_job_id: worker.current_job_id ?? null,
+    current_lease_id: worker.current_lease_id ?? null,
+    lease_expires_at_ms: worker.lease_expires_at_ms ?? null,
+    status: worker.status ?? null,
+    last_error: worker.last_error ?? null,
+    metadata: worker.metadata ?? null,
   };
 }
 

@@ -2,7 +2,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use snapdragon_gateway_core::{
     ActorId, GatewayAgentRuntimeDescriptor, GatewayEnvelope, GatewayJobSpec, GatewaySandboxSpec,
-    ReceiveFilter, ServiceSpec, TableAccess,
+    GatewayWorkerHeartbeat, GatewayWorkerRegistration, ReceiveFilter, ServiceSpec, TableAccess,
 };
 
 #[derive(Debug, Deserialize)]
@@ -140,5 +140,20 @@ pub(crate) struct SandboxLeaseParams {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct SandboxIdParams {
+    pub(crate) id: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct WorkerRegistrationParams {
+    pub(crate) worker: GatewayWorkerRegistration,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct WorkerHeartbeatParams {
+    pub(crate) heartbeat: GatewayWorkerHeartbeat,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct WorkerIdParams {
     pub(crate) id: String,
 }

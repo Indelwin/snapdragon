@@ -61,7 +61,9 @@ impl GatewayStore {
         status.updated_at_ms = now_ms;
         status.lease_id = None;
         status.lease_expires_at_ms = None;
+        let leases = self.job_leases(id)?;
         self.upsert_job(&status)?;
+        self.clear_worker_leases(&leases, now_ms)?;
         self.delete_job_leases(id)?;
         self.append_log(now_ms, "warn", Some(id), "job cancelled", None)?;
         Ok(Some(status))
@@ -133,18 +135,21 @@ impl GatewayStore {
         status.lease_expires_at_ms = Some(lease.expires_at_ms);
         self.upsert_job(&status)?;
         self.upsert_lease(&lease)?;
+        self.mark_worker_leased(worker, queue, &lease, now_ms)?;
         self.append_log(now_ms, "info", Some(&status.id), "job leased", None)?;
         Ok(Some((status, lease)))
     }
 
     pub fn expire_leases(&self, now_ms: u64) -> Result<u64, String> {
         for mut status in self.expired_running_jobs(now_ms)? {
+            let leases = self.job_leases(&status.id)?;
             status.state = retry_or_failed_state(&status);
             status.updated_at_ms = now_ms;
             status.last_error = Some("lease expired".into());
             status.lease_id = None;
             status.lease_expires_at_ms = None;
             self.upsert_job(&status)?;
+            self.clear_worker_leases(&leases, now_ms)?;
             self.append_log(now_ms, "warn", Some(&status.id), "job lease expired", None)?;
         }
         self.with_conn(|conn| {
@@ -177,7 +182,9 @@ impl GatewayStore {
         status.last_error = error;
         status.lease_id = None;
         status.lease_expires_at_ms = None;
+        let leases = self.job_leases(id)?;
         self.upsert_job(&status)?;
+        self.clear_worker_leases(&leases, now_ms)?;
         self.delete_job_leases(id)?;
         self.append_log(
             now_ms,
@@ -187,6 +194,13 @@ impl GatewayStore {
             Some(job_log_data(&status)),
         )?;
         Ok(Some(status))
+    }
+
+    fn clear_worker_leases(&self, leases: &[GatewayLease], now_ms: u64) -> Result<(), String> {
+        for lease in leases {
+            self.clear_worker_lease(lease, now_ms)?;
+        }
+        Ok(())
     }
 }
 

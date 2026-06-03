@@ -39,27 +39,8 @@ import {
 import { createRustTable, listRustTables, showRustTable } from './rust-tables.js';
 import { toWireServiceSpec } from './rust-wire.js';
 import { fromWireServiceStatus, fromWireStatus } from './rust-wire-status.js';
-import type {
-  ActorId,
-  GatewayAgentRuntimeDescriptor,
-  GatewayEnvelope,
-  GatewayEventRecord,
-  GatewayJobLease,
-  GatewayJobSpec,
-  GatewayJobStatus,
-  GatewayLogInput,
-  GatewayLogRecord,
-  GatewayReceiveFilter,
-  GatewayRegistrySnapshot,
-  GatewaySandboxLease,
-  GatewaySandboxSpec,
-  GatewayServiceRunner,
-  GatewayServiceSpec,
-  GatewayServiceStatus,
-  GatewayStatus,
-  GatewayTableAccess,
-  GatewayTableSnapshot,
-} from './types.js';
+import * as Workers from './rust-workers.js';
+import type * as T from './types.js';
 import type { GatewayOrchestrationClient } from './types-runtime.js';
 import { buildGatewayWorldSnapshot } from './world.js';
 
@@ -71,7 +52,7 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
   #timeoutMs: number;
   #serviceRunTimeoutMs: number;
   #nextId = 1;
-  #runners = new Map<string, GatewayServiceRunner>();
+  #runners = new Map<string, T.GatewayServiceRunner>();
   #gatewayCall: RustGatewayCall = (method, params, timeoutMs) =>
     this.#call(method, params, timeoutMs);
 
@@ -81,22 +62,22 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
     this.#serviceRunTimeoutMs = options.serviceRunTimeoutMs ?? 300_000;
   }
 
-  async send(envelope: GatewayEnvelope): Promise<void> {
+  async send(envelope: T.GatewayEnvelope): Promise<void> {
     await sendRustEnvelope(this.#gatewayCall, envelope);
   }
 
   async receive(
-    actor: ActorId,
-    filter: GatewayReceiveFilter = {},
-  ): Promise<GatewayEnvelope | undefined> {
+    actor: T.ActorId,
+    filter: T.GatewayReceiveFilter = {},
+  ): Promise<T.GatewayEnvelope | undefined> {
     return receiveRustEnvelope(this.#gatewayCall, actor, filter);
   }
 
-  async status(): Promise<GatewayStatus> {
+  async status(): Promise<T.GatewayStatus> {
     return fromWireStatus((await this.#call('status')) as any);
   }
 
-  async registerService(spec: GatewayServiceSpec, runner?: GatewayServiceRunner): Promise<void> {
+  async registerService(spec: T.GatewayServiceSpec, runner?: T.GatewayServiceRunner) {
     if (runner) this.#runners.set(spec.name, runner);
     await this.#call('services.register', { spec: toWireServiceSpec(spec) });
   }
@@ -105,7 +86,7 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
     await this.#call('services.enable', { name, enabled });
   }
 
-  async runService(name: string, signal?: AbortSignal): Promise<GatewayServiceStatus | undefined> {
+  async runService(name: string, signal?: AbortSignal) {
     const runner = this.#runners.get(name);
     if (!runner) {
       const status = await this.#call('services.run', { name }, this.#serviceRunTimeoutMs);
@@ -124,41 +105,59 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
     }
   }
 
-  async listServices(): Promise<GatewayServiceStatus[]> {
+  async listServices(): Promise<T.GatewayServiceStatus[]> {
     const services = (await this.#call('services.list')) as any[];
     return services.map(fromWireServiceStatus);
   }
 
-  async registerCapability(capability: string, actor: ActorId): Promise<void> {
+  async registerCapability(capability: string, actor: T.ActorId): Promise<void> {
     await registerRustCapability(this.#gatewayCall, capability, actor);
   }
 
-  async whereisCapability(capability: string): Promise<ActorId[]> {
+  async whereisCapability(capability: string): Promise<T.ActorId[]> {
     return whereisRustCapability(this.#gatewayCall, capability);
   }
 
-  async registrySnapshot(): Promise<GatewayRegistrySnapshot> {
+  async registrySnapshot(): Promise<T.GatewayRegistrySnapshot> {
     return rustRegistrySnapshot(this.#gatewayCall);
   }
 
   async registerAgentRuntime(
-    descriptor: GatewayAgentRuntimeDescriptor,
-  ): Promise<GatewayAgentRuntimeDescriptor> {
+    descriptor: T.GatewayAgentRuntimeDescriptor,
+  ): Promise<T.GatewayAgentRuntimeDescriptor> {
     return registerRustAgentRuntime(this.#gatewayCall, descriptor);
   }
 
-  async listAgentRuntimes(): Promise<GatewayAgentRuntimeDescriptor[]> {
+  async listAgentRuntimes(): Promise<T.GatewayAgentRuntimeDescriptor[]> {
     return listRustAgentRuntimes(this.#gatewayCall);
   }
 
-  async showAgentRuntime(id: string): Promise<GatewayAgentRuntimeDescriptor | undefined> {
+  async showAgentRuntime(id: string): Promise<T.GatewayAgentRuntimeDescriptor | undefined> {
     return showRustAgentRuntime(this.#gatewayCall, id);
+  }
+
+  async registerWorker(worker: T.GatewayWorkerRegistration): Promise<T.GatewayWorkerRecord> {
+    return Workers.registerRustWorker(this.#gatewayCall, worker);
+  }
+
+  async heartbeatWorker(
+    heartbeat: T.GatewayWorkerHeartbeat,
+  ): Promise<T.GatewayWorkerRecord | undefined> {
+    return Workers.heartbeatRustWorker(this.#gatewayCall, heartbeat);
+  }
+
+  async listWorkers(): Promise<T.GatewayWorkerRecord[]> {
+    return Workers.listRustWorkers(this.#gatewayCall);
+  }
+
+  async showWorker(id: string): Promise<T.GatewayWorkerRecord | undefined> {
+    return Workers.showRustWorker(this.#gatewayCall, id);
   }
 
   async createTable(
     name: string,
-    owner: ActorId,
-    access: GatewayTableAccess = 'protected',
+    owner: T.ActorId,
+    access: T.GatewayTableAccess = 'protected',
   ): Promise<boolean> {
     return createRustTable(this.#gatewayCall, name, owner, access);
   }
@@ -167,51 +166,51 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
     return listRustTables(this.#gatewayCall);
   }
 
-  async tableSnapshot(name: string): Promise<GatewayTableSnapshot | undefined> {
+  async tableSnapshot(name: string): Promise<T.GatewayTableSnapshot | undefined> {
     return showRustTable(this.#gatewayCall, name);
   }
 
-  async enqueueJob(spec: GatewayJobSpec, id?: string): Promise<GatewayJobStatus> {
+  async enqueueJob(spec: T.GatewayJobSpec, id?: string): Promise<T.GatewayJobStatus> {
     return enqueueRustJob(this.#gatewayCall, spec, id);
   }
-  async listJobs(): Promise<GatewayJobStatus[]> {
+  async listJobs(): Promise<T.GatewayJobStatus[]> {
     return listRustJobs(this.#gatewayCall);
   }
-  async showJob(id: string): Promise<GatewayJobStatus | undefined> {
+  async showJob(id: string): Promise<T.GatewayJobStatus | undefined> {
     return showRustJob(this.#gatewayCall, id);
   }
-  async cancelJob(id: string): Promise<GatewayJobStatus | undefined> {
+  async cancelJob(id: string): Promise<T.GatewayJobStatus | undefined> {
     return cancelRustJob(this.#gatewayCall, id);
   }
-  async retryJob(id: string): Promise<GatewayJobStatus | undefined> {
+  async retryJob(id: string): Promise<T.GatewayJobStatus | undefined> {
     return retryRustJob(this.#gatewayCall, id);
   }
   async acquireJob(
     queue: string,
     worker: string,
     leaseMs = 300_000,
-  ): Promise<GatewayJobLease | undefined> {
+  ): Promise<T.GatewayJobLease | undefined> {
     return acquireRustJob(this.#gatewayCall, queue, worker, leaseMs);
   }
 
-  async completeJob(id: string, result?: unknown): Promise<GatewayJobStatus | undefined> {
+  async completeJob(id: string, result?: unknown): Promise<T.GatewayJobStatus | undefined> {
     return completeRustJob(this.#gatewayCall, id, result);
   }
 
-  async failJob(id: string, error: string): Promise<GatewayJobStatus | undefined> {
+  async failJob(id: string, error: string): Promise<T.GatewayJobStatus | undefined> {
     return failRustJob(this.#gatewayCall, id, error);
   }
 
-  async leaseSandbox(spec: GatewaySandboxSpec): Promise<GatewaySandboxLease> {
+  async leaseSandbox(spec: T.GatewaySandboxSpec): Promise<T.GatewaySandboxLease> {
     return leaseRustSandbox(this.#gatewayCall, spec);
   }
-  async listSandboxLeases(): Promise<GatewaySandboxLease[]> {
+  async listSandboxLeases(): Promise<T.GatewaySandboxLease[]> {
     return listRustSandboxes(this.#gatewayCall);
   }
-  async showSandboxLease(id: string): Promise<GatewaySandboxLease | undefined> {
+  async showSandboxLease(id: string): Promise<T.GatewaySandboxLease | undefined> {
     return showRustSandbox(this.#gatewayCall, id);
   }
-  async releaseSandbox(id: string): Promise<GatewaySandboxLease | undefined> {
+  async releaseSandbox(id: string): Promise<T.GatewaySandboxLease | undefined> {
     return releaseRustSandbox(this.#gatewayCall, id);
   }
 
@@ -220,23 +219,23 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
     kind: string;
     target?: string;
     payload?: unknown;
-  }): Promise<GatewayEventRecord> {
+  }): Promise<T.GatewayEventRecord> {
     return appendRustEvent(this.#gatewayCall, input);
   }
 
-  async listEvents(): Promise<GatewayEventRecord[]> {
+  async listEvents(): Promise<T.GatewayEventRecord[]> {
     return listRustEvents(this.#gatewayCall);
   }
 
-  async cancelEvent(id: string): Promise<GatewayEventRecord | undefined> {
+  async cancelEvent(id: string): Promise<T.GatewayEventRecord | undefined> {
     return cancelRustEvent(this.#gatewayCall, id);
   }
 
-  async appendLog(input: GatewayLogInput): Promise<GatewayLogRecord> {
+  async appendLog(input: T.GatewayLogInput): Promise<T.GatewayLogRecord> {
     return appendRustLog(this.#gatewayCall, input);
   }
 
-  async tailLogs(options: { target?: string; limit?: number } = {}): Promise<GatewayLogRecord[]> {
+  async tailLogs(options: { target?: string; limit?: number } = {}): Promise<T.GatewayLogRecord[]> {
     return tailRustLogs(this.#gatewayCall, options);
   }
 

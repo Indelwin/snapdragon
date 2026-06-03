@@ -4,12 +4,13 @@ import type { GatewayWorldSnapshot } from './types-runtime.js';
 export async function buildGatewayWorldSnapshot(
   client: GatewayClient,
 ): Promise<GatewayWorldSnapshot> {
-  const [status, registry, services, agentRuntimes, jobs, events, logs, sandboxes] =
+  const [status, registry, services, agentRuntimes, workers, jobs, events, logs, sandboxes] =
     await Promise.all([
       client.status(),
       client.registrySnapshot(),
       client.listServices(),
       client.listAgentRuntimes(),
+      client.listWorkers(),
       client.listJobs(),
       client.listEvents(),
       client.tailLogs({ limit: 50 }),
@@ -22,7 +23,8 @@ export async function buildGatewayWorldSnapshot(
     status,
     services,
     agentRuntimes,
-    workers: status.workerProcesses ?? [],
+    workers,
+    workerProcesses: status.workerProcesses ?? [],
     jobs,
     events,
     logs,
