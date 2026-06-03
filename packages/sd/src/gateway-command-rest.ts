@@ -38,6 +38,7 @@ async function serveRest(
     hostname: parsed.hostname,
     port: parsed.port,
     pathPrefix: parsed.pathPrefix,
+    streamHeartbeatMs: parsed.streamHeartbeatMs,
     streamIntervalMs: parsed.streamIntervalMs,
   });
   const url = await server.listen();

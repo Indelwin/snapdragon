@@ -227,7 +227,8 @@ sd gateway rest serve --start --port 8787
 Initial routes cover:
 
 - `GET /v1/health`, `GET /v1/status`, and `GET /v1/world`.
-- `GET /v1/stream` for Server-Sent Events world snapshots.
+- `GET /v1/stream` for typed Server-Sent Events snapshots, heartbeats, and
+  gateway-side stream errors.
 - `GET /v1/services`, `POST /v1/services/:name/run`, and
   `POST /v1/services/:name/enable`.
 - `GET /v1/agents`, `POST /v1/agents/register`, `GET /v1/agents/:id`,
@@ -236,15 +237,20 @@ Initial routes cover:
   `POST /v1/workers/:id/heartbeat`, `DELETE /v1/workers/:id`,
   `POST /v1/workers/:id/unregister`, and `GET /v1/worker-processes`.
 - `GET /v1/jobs`, `POST /v1/jobs`, `GET /v1/jobs/:id`,
-  `POST /v1/jobs/:id/cancel`, and `POST /v1/jobs/:id/retry`.
-- `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
-  `GET /v1/logs`, `POST /v1/logs`, `GET /v1/registry`,
+  `DELETE /v1/jobs/:id`, `POST /v1/jobs/:id/cancel`, and
+  `POST /v1/jobs/:id/retry`.
+- `GET /v1/events`, `POST /v1/events`, `GET /v1/events/:id`,
+  `DELETE /v1/events/:id`, `POST /v1/events/:id/cancel`, `GET /v1/logs`,
+  `POST /v1/logs`, `GET /v1/registry`,
   `GET /v1/capabilities`, `GET /v1/sandboxes`, `POST /v1/sandboxes`,
   `GET /v1/sandboxes/:id`, and `POST /v1/sandboxes/:id/release`.
 
 World snapshots include active sandbox leases alongside jobs, events, logs,
 services, durable worker records, worker process diagnostics, runtimes,
 capabilities, queue depths, and tables.
+Cancellation routes return the cancelled record when they succeed and a 404
+error body when the target job or event is unknown, so agent scripts can treat
+cleanup as an observable state transition instead of a silent no-op.
 
 The default listener binds to `127.0.0.1`. Authentication, policy enforcement,
 and remote exposure are later layers on the same route shape.

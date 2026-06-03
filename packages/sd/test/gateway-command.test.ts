@@ -69,6 +69,10 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
       /cancelled job_1/,
     );
     assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'delete', 'job_1'] }),
+      /cancelled job_1/,
+    );
+    assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'retry', 'job_1'] }),
       /retry scheduled job_1/,
     );
@@ -277,7 +281,19 @@ test('gateway rest serve exposes the local REST facade until stopped', async () 
 
   try {
     const running = runGatewayCommand(
-      { configPath, gatewayArgs: ['rest', 'serve', '--port', '0', '--prefix', '/api'] } as any,
+      {
+        configPath,
+        gatewayArgs: [
+          'rest',
+          'serve',
+          '--port',
+          '0',
+          '--prefix',
+          '/api',
+          '--stream-heartbeat-ms',
+          '50',
+        ],
+      } as any,
       {
         signal: controller.signal,
         stdout: { write: (chunk) => writes.push(String(chunk)) },
