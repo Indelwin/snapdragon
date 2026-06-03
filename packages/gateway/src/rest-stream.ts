@@ -1,31 +1,76 @@
-import type { RestResponse } from './rest-types.js';
+import type {
+  GatewayRestStreamErrorEvent,
+  GatewayRestStreamEvent,
+  GatewayRestStreamHeartbeatEvent,
+  GatewayRestStreamSnapshotEvent,
+  RestResponse,
+} from './rest-types.js';
 import type { GatewayOrchestrationClient } from './types-runtime.js';
+
+type PendingStreamEvent =
+  | Omit<GatewayRestStreamSnapshotEvent, 'id' | 'atMs'>
+  | Omit<GatewayRestStreamHeartbeatEvent, 'id' | 'atMs'>
+  | Omit<GatewayRestStreamErrorEvent, 'id' | 'atMs'>;
+
+export interface GatewayRestStreamOptions {
+  heartbeatMs: number;
+  snapshotIntervalMs: number;
+}
 
 export async function sendStream(
   client: GatewayOrchestrationClient,
   response: RestResponse,
-  intervalMs: number,
+  options: GatewayRestStreamOptions,
 ): Promise<void> {
   response.writeHead(200, {
     'cache-control': 'no-cache',
     connection: 'keep-alive',
     'content-type': 'text/event-stream',
+    'x-accel-buffering': 'no',
   });
-  await writeSnapshot(client, response);
-  const interval = setInterval(() => {
-    writeSnapshot(client, response).catch((error) => writeStreamError(response, error));
-  }, intervalMs);
-  response.on('close', () => clearInterval(interval));
+  let closed = false;
+  let inFlight = false;
+  let sequence = 0;
+  const write = (event: PendingStreamEvent) => {
+    if (closed || response.destroyed || response.writableEnded) return;
+    sequence += 1;
+    const envelope = { ...event, id: sequence, atMs: Date.now() } as GatewayRestStreamEvent;
+    response.write(formatSse(envelope, options.snapshotIntervalMs));
+  };
+  const writeSnapshot = async () => {
+    if (inFlight) return;
+    inFlight = true;
+    try {
+      write({ type: 'snapshot', snapshot: await client.worldSnapshot() });
+    } catch (error) {
+      write({ type: 'error', error: errorMessage(error) });
+    } finally {
+      inFlight = false;
+    }
+  };
+  await writeSnapshot();
+  const snapshotTimer = setInterval(() => void writeSnapshot(), options.snapshotIntervalMs);
+  const heartbeatTimer = setInterval(() => {
+    write({ type: 'heartbeat', runtime: client.runtime });
+  }, options.heartbeatMs);
+  response.on('close', () => {
+    closed = true;
+    clearInterval(snapshotTimer);
+    clearInterval(heartbeatTimer);
+  });
 }
 
-async function writeSnapshot(
-  client: GatewayOrchestrationClient,
-  response: RestResponse,
-): Promise<void> {
-  const snapshot = await client.worldSnapshot();
-  response.write(`event: snapshot\ndata: ${JSON.stringify(snapshot)}\n\n`);
+function formatSse(event: GatewayRestStreamEvent, retryMs: number): string {
+  return [
+    `id: ${event.id}`,
+    `event: ${event.type}`,
+    `retry: ${retryMs}`,
+    `data: ${JSON.stringify(event)}`,
+    '',
+    '',
+  ].join('\n');
 }
 
-function writeStreamError(response: RestResponse, error: unknown): void {
-  response.write(`event: error\ndata: ${JSON.stringify({ error: String(error) })}\n\n`);
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
