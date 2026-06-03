@@ -146,6 +146,18 @@ async fn ipc_persists_jobs_events_and_logs() {
     .await;
     assert_eq!(lease["result"]["lease"]["worker"], "worker");
 
+    let worker = request(
+        &path,
+        json!({
+            "id": 15,
+            "method": "workers.show",
+            "params": { "id": "worker" }
+        }),
+    )
+    .await;
+    assert_eq!(worker["result"]["state"], "running");
+    assert_eq!(worker["result"]["current_job_id"], "job_1");
+
     let failed = request(
         &path,
         json!({
@@ -156,6 +168,17 @@ async fn ipc_persists_jobs_events_and_logs() {
     )
     .await;
     assert_eq!(failed["result"]["state"], "Pending");
+
+    let worker = request(
+        &path,
+        json!({
+            "id": 16,
+            "method": "workers.show",
+            "params": { "id": "worker" }
+        }),
+    )
+    .await;
+    assert_eq!(worker["result"]["state"], "idle");
 
     let lease = request(
         &path,
@@ -200,6 +223,44 @@ async fn ipc_persists_jobs_events_and_logs() {
     )
     .await;
     assert_eq!(completed["result"]["state"], "Completed");
+
+    let worker = request(
+        &path,
+        json!({
+            "id": 17,
+            "method": "workers.register",
+            "params": {
+                "worker": {
+                    "id": "pi-worker",
+                    "queue": "default",
+                    "runtime_id": "pi",
+                    "capabilities": ["llm.chat"]
+                }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(worker["result"]["runtime_id"], "pi");
+
+    let worker = request(
+        &path,
+        json!({
+            "id": 18,
+            "method": "workers.heartbeat",
+            "params": {
+                "heartbeat": { "id": "pi-worker", "status": "ready" }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(worker["result"]["status"], "ready");
+
+    let workers = request(
+        &path,
+        json!({ "id": 19, "method": "workers.list", "params": {} }),
+    )
+    .await;
+    assert!(workers["result"].as_array().unwrap().len() >= 2);
 
     let event = request(
         &path,

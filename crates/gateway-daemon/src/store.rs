@@ -8,6 +8,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::store_sandboxes::SANDBOX_SCHEMA;
+use crate::store_workers::WORKER_SCHEMA;
 
 #[derive(Clone)]
 pub struct GatewayStore {
@@ -35,6 +36,7 @@ impl GatewayStore {
         self.with_conn(|conn| {
             conn.execute_batch(SCHEMA)
                 .and_then(|_| conn.execute_batch(SANDBOX_SCHEMA))
+                .and_then(|_| conn.execute_batch(WORKER_SCHEMA))
                 .map(|_| ())
                 .map_err(|error| error.to_string())
         })

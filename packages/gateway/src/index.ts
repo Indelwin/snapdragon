@@ -47,8 +47,12 @@ export type {
   GatewayTableAccess,
   GatewayTableSnapshot,
   GatewayTransport,
+  GatewayWorkerHeartbeat,
   GatewayWorkerProcess,
   GatewayWorkerProcessState,
+  GatewayWorkerRecord,
+  GatewayWorkerRegistration,
+  GatewayWorkerState,
 } from './types.js';
 export type {
   GatewayAgentRunSpec,

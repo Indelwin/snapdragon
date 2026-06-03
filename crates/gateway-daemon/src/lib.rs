@@ -30,6 +30,7 @@ mod store_jobs;
 mod store_observability;
 mod store_sandboxes;
 mod store_services;
+mod store_workers;
 
 pub use status::GatewayStatusSnapshot;
 pub use store::GatewayStore;

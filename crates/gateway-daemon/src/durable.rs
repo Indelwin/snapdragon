@@ -1,5 +1,6 @@
 use snapdragon_gateway_core::{
     GatewayJobSpec, GatewayJobStatus, GatewayLogRecord, GatewaySandboxLease, GatewaySandboxSpec,
+    GatewayWorkerHeartbeat, GatewayWorkerRecord, GatewayWorkerRegistration,
 };
 
 use crate::GatewayDaemon;
@@ -68,6 +69,30 @@ impl GatewayDaemon {
 
     pub async fn run_watchdogs(&self) -> Result<u64, String> {
         self.require_store()?.expire_leases(unix_time_ms())
+    }
+
+    pub async fn register_worker(
+        &self,
+        registration: GatewayWorkerRegistration,
+    ) -> Result<GatewayWorkerRecord, String> {
+        self.require_store()?
+            .register_worker(registration, unix_time_ms())
+    }
+
+    pub async fn heartbeat_worker(
+        &self,
+        heartbeat: GatewayWorkerHeartbeat,
+    ) -> Result<Option<GatewayWorkerRecord>, String> {
+        self.require_store()?
+            .heartbeat_worker(heartbeat, unix_time_ms())
+    }
+
+    pub async fn list_workers(&self) -> Result<Vec<GatewayWorkerRecord>, String> {
+        self.require_store()?.list_workers()
+    }
+
+    pub async fn worker(&self, id: &str) -> Result<Option<GatewayWorkerRecord>, String> {
+        self.require_store()?.worker(id)
     }
 }
 

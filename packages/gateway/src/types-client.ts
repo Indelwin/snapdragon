@@ -16,6 +16,9 @@ import type {
   GatewayStatus,
   GatewayTableAccess,
   GatewayTableSnapshot,
+  GatewayWorkerHeartbeat,
+  GatewayWorkerRecord,
+  GatewayWorkerRegistration,
 } from './types-core.js';
 import type { GatewaySandboxLease, GatewaySandboxSpec } from './types-sandboxes.js';
 
@@ -40,6 +43,10 @@ export interface GatewayClient extends GatewayTransport {
   ): Promise<GatewayAgentRuntimeDescriptor>;
   listAgentRuntimes(): Promise<GatewayAgentRuntimeDescriptor[]>;
   showAgentRuntime(id: string): Promise<GatewayAgentRuntimeDescriptor | undefined>;
+  registerWorker(worker: GatewayWorkerRegistration): Promise<GatewayWorkerRecord>;
+  heartbeatWorker(heartbeat: GatewayWorkerHeartbeat): Promise<GatewayWorkerRecord | undefined>;
+  listWorkers(): Promise<GatewayWorkerRecord[]>;
+  showWorker(id: string): Promise<GatewayWorkerRecord | undefined>;
   registerCapability(capability: string, actor: ActorId): Promise<void>;
   whereisCapability(capability: string): Promise<ActorId[]>;
   registrySnapshot(): Promise<GatewayRegistrySnapshot>;
