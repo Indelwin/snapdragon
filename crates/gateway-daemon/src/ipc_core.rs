@@ -112,6 +112,10 @@ pub(crate) async fn dispatch_agents(
             let params = parse::<AgentRuntimeIdParams>(params)?;
             ok_json(daemon.agent_runtime(&params.id).await)
         }
+        "agents.unregister" => {
+            let params = parse::<AgentRuntimeIdParams>(params)?;
+            ok_json(daemon.unregister_agent_runtime(&params.id).await?)
+        }
         _ => Err(format!("unknown gateway method: {method}")),
     }
 }

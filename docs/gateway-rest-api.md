@@ -55,10 +55,14 @@ not yet install auth middleware.
 | `GET` | `/v1/agents` | List registered agent runtimes. |
 | `POST` | `/v1/agents/register` | Register and durably store an agent runtime descriptor. |
 | `GET` | `/v1/agents/:id` | Show one runtime descriptor. |
+| `DELETE` | `/v1/agents/:id` | Unregister one runtime descriptor. |
+| `POST` | `/v1/agents/:id/unregister` | Unregister one runtime descriptor for clients that avoid `DELETE`. |
 | `GET` | `/v1/workers` | List durable registered workers. |
 | `POST` | `/v1/workers` | Register or update a durable worker record. |
 | `GET` | `/v1/workers/:id` | Show one durable worker record. |
 | `POST` | `/v1/workers/:id/heartbeat` | Update worker state, queue, status, and heartbeat time. |
+| `DELETE` | `/v1/workers/:id` | Unregister one durable worker record. |
+| `POST` | `/v1/workers/:id/unregister` | Unregister one durable worker record for clients that avoid `DELETE`. |
 | `GET` | `/v1/worker-processes` | List diagnostic service worker process snapshots. |
 | `GET` | `/v1/jobs` | List durable jobs. |
 | `POST` | `/v1/jobs` | Enqueue a durable job. |
@@ -87,11 +91,15 @@ cancellation observation without exposing raw token deltas by default.
 Runtime registration validates descriptors before storage. Runtime ids must be
 URL/config-safe, command-like protocols require a non-empty `command.command`,
 and blank supported job kinds or capabilities are rejected with `400` responses.
+`DELETE /v1/agents/:id` removes a stale or retired runtime from the live gateway
+and durable store; userland config entries remain separate so `sd --config`
+files are never mutated by the REST facade.
 
 Worker registration is separate from process snapshots. `workers` are durable
 gateway entities that external adapters and headless job runners can register,
 heartbeat, and inspect. `worker-processes` are low-level diagnostics for service
-commands spawned by the daemon.
+commands spawned by the daemon. `DELETE /v1/workers/:id` removes stale or
+retired worker identities without deleting job, log, or process history.
 
 ## Request Examples
 

@@ -7,6 +7,7 @@ import {
   probePiRuntime,
   registerPiRuntime,
   showAgentRuntime,
+  unregisterAgentRuntime,
 } from './gateway-agent-runtime-commands.js';
 import { registerSavedAgentRuntime } from './gateway-agent-runtime-resolve.js';
 import { gatewayErrorMessage, rustGatewayClientForConfig } from './gateway-command-client.js';
@@ -19,9 +20,11 @@ const agentCommandHandlers: Record<string, AgentCommandHandler> = {
   list: (_rest, args) => listAgentRuntimes(args),
   'probe-pi': (rest) => probePiRuntime(rest),
   'register-pi': registerPiRuntime,
+  remove: (rest, args) => unregisterAgentRuntime(rest[0], args),
   run: runAgent,
   show: (rest, args) => showAgentRuntime(rest[0], args),
   status: (rest, args) => agentStatus(rest[0], args),
+  unregister: (rest, args) => unregisterAgentRuntime(rest[0], args),
 };
 
 export async function agentsCommand(
