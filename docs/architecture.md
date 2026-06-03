@@ -117,7 +117,9 @@ The first routes are local-only and cover health, status, world snapshots,
 services, agents, workers, jobs, events, logs, registry, capabilities, and
 sandbox listing. `workers` are durable registered worker entities; daemon-spawned
 process diagnostics live under `worker-processes`. Auth and policy enforcement
-are explicit extension points, not silent assumptions.
+are explicit extension points, not silent assumptions. Operators can expose this
+local surface with `sd gateway rest serve`, which binds loopback by default for
+UI and adapter previews.
 
 ## External Agents and Executive Agents
 

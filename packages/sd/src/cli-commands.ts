@@ -67,7 +67,7 @@ async function runDaemonCommand(args: SdCliArgs): Promise<void> {
 
 async function runGatewayCommand(args: SdCliArgs): Promise<void> {
   const { runGatewayCommand: executeGatewayCommand } = await import('./gateway-command.js');
-  stdout.write(await executeGatewayCommand(args));
+  stdout.write(await executeGatewayCommand(args, { stdout }));
 }
 
 async function listSessions(configPath: string): Promise<void> {
