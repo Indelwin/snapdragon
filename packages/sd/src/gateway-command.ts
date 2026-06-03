@@ -10,7 +10,9 @@ import { eventsCommand } from './gateway-command-events.js';
 import { jobsCommand } from './gateway-command-jobs.js';
 import { learnCommand } from './gateway-command-learn.js';
 import { logsCommand } from './gateway-command-logs.js';
+import type { GatewayCommandOptions } from './gateway-command-options.js';
 import { registryCommand } from './gateway-command-registry.js';
+import { restCommand } from './gateway-command-rest.js';
 import { sandboxesCommand } from './gateway-command-sandboxes.js';
 import { servicesCommand } from './gateway-command-services.js';
 import { tablesCommand } from './gateway-command-tables.js';
@@ -20,6 +22,7 @@ type GatewayTopicHandler = (
   action: string | undefined,
   rest: string[],
   args: SdCliArgs,
+  options: GatewayCommandOptions,
 ) => Promise<string>;
 
 const gatewayTopicHandlers: Record<string, GatewayTopicHandler> = {
@@ -30,6 +33,7 @@ const gatewayTopicHandlers: Record<string, GatewayTopicHandler> = {
   learn: (action, rest, args) => learnCommand(action ?? 'enqueue-eval', rest, args),
   logs: (action, rest, args) => logsCommand(action ?? 'tail', rest, args),
   registry: (action, rest, args) => registryCommand(action ?? 'list', rest, args),
+  rest: (action, rest, args, options) => restCommand(action ?? 'serve', rest, args, options),
   sandboxes: (action, rest, args) => sandboxesCommand(action ?? 'list', rest, args),
   services: (action, rest, args) => servicesCommand(action ?? 'list', rest, args),
   tables: (action, rest, args) => tablesCommand(action ?? 'list', rest, args),
@@ -40,12 +44,15 @@ const gatewayTopicHandlers: Record<string, GatewayTopicHandler> = {
   },
 };
 
-export async function runGatewayCommand(args: SdCliArgs): Promise<string> {
+export async function runGatewayCommand(
+  args: SdCliArgs,
+  options: GatewayCommandOptions = {},
+): Promise<string> {
   const [topic = 'status', action, ...rest] = args.gatewayArgs ?? [];
   if (isGatewayDaemonAlias(topic)) return runGatewayDaemonAlias(topic, args);
   if (topic === 'restart') return restartGateway(args);
   if (topic === 'ps') return runGatewayDaemonAlias('status', args);
   const handler = gatewayTopicHandlers[topic];
-  if (handler) return handler(action, rest, args);
+  if (handler) return handler(action, rest, args, options);
   return `Unknown gateway command: ${topic}\n`;
 }

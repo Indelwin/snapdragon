@@ -28,6 +28,18 @@ By default the server binds to `127.0.0.1` and uses `/v1` as its path prefix.
 Remote exposure, authentication, and policy enforcement are future layers and
 should be added above the same route shape.
 
+`sd` can serve the same facade for operators, UI previews, and external local
+adapters:
+
+```sh
+sd gateway rest serve --start --port 8787
+```
+
+The command binds `127.0.0.1:8787` by default, announces the full base URL, and
+keeps running until interrupted. It refuses non-loopback hosts unless
+`--allow-remote` is explicit, because this first surface is local-only and does
+not yet install auth middleware.
+
 ## Routes
 
 | Method | Path | Purpose |
