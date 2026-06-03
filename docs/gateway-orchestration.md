@@ -64,10 +64,13 @@ stateDiagram-v2
   [*] --> pending
   pending --> running: acquire lease
   running --> completed: complete
+  running --> pending: fail with attempts left
   running --> failed: fail with no attempts left
   running --> pending: lease expires with attempts left
+  running --> failed: lease expires with no attempts left
   pending --> cancelled: cancel
   running --> cancelled: cancel
+  failed --> pending: manual retry
   completed --> [*]
   failed --> [*]
   cancelled --> [*]
@@ -157,7 +160,12 @@ Failures should be explicit and inspectable:
 
 - A crashed worker records process state, last error, and recent logs.
 - A timed-out worker is killed by the daemon and recorded as `timed_out`.
-- A stale lease expires during watchdog/status passes.
+- A worker-reported failure requeues the job while attempts remain, then marks
+  it failed once attempts are exhausted.
+- A stale lease expires during watchdog/status passes and follows the same
+  attempt-aware retry or failure path.
+- Manual retry requeues failed jobs for operator or executive-agent recovery
+  without clearing the attempt history or last error.
 - Retry decisions are controlled by job attempts and service restart intensity.
 - Cancellation updates the durable record, removes active leases, aborts
   cooperative runtime workers, and stops future dispatch.

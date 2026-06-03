@@ -161,8 +161,15 @@ const lease = await gateway.acquireJob('default', 'worker-1');
 if (lease) await gateway.completeJob(lease.job.id, { ok: true });
 ```
 
+Workers can also report a failure instead of completion. The daemon requeues the
+job while attempts remain, records the failure as job-targeted logs, and leaves
+the attempt count visible in snapshots. Once a job reaches its attempt limit it
+becomes `failed`; operators or executive agents can call `retryJob(id)` to move
+that failed job back to `pending` without losing its last error. Cancellation
+remains terminal and is not undone by late worker writes or manual retry.
+
 The inline client implements the same lifecycle in memory for tests and small
-embedders.
+embedders, including automatic requeue and manual retry behavior.
 
 ## REST and SSE Facade
 
@@ -187,7 +194,8 @@ Initial routes cover:
   `POST /v1/services/:name/enable`.
 - `GET /v1/agents`, `POST /v1/agents/register`, and `GET /v1/agents/:id`.
 - `GET /v1/workers`, `GET /v1/jobs`, `POST /v1/jobs`,
-  `GET /v1/jobs/:id`, and `POST /v1/jobs/:id/cancel`.
+  `GET /v1/jobs/:id`, `POST /v1/jobs/:id/cancel`, and
+  `POST /v1/jobs/:id/retry`.
 - `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
   `GET /v1/logs`, `POST /v1/logs`, `GET /v1/registry`,
   `GET /v1/capabilities`, `GET /v1/sandboxes`, `POST /v1/sandboxes`,

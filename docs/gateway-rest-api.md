@@ -48,6 +48,7 @@ should be added above the same route shape.
 | `POST` | `/v1/jobs` | Enqueue a durable job. |
 | `GET` | `/v1/jobs/:id` | Show one job. |
 | `POST` | `/v1/jobs/:id/cancel` | Cancel one job. |
+| `POST` | `/v1/jobs/:id/retry` | Requeue a failed job. |
 | `GET` | `/v1/events` | List gateway events. |
 | `POST` | `/v1/events` | Append an event. |
 | `POST` | `/v1/events/:id/cancel` | Cancel one event. |
@@ -155,6 +156,22 @@ The durable gateway treats cancellation as terminal. Cooperative workers observe
 the cancelled job record, abort their runtime signal, clear active leases, and
 leave subsequent late `complete` or `fail` writes as no-ops against the
 cancelled status.
+
+Retry a failed job:
+
+```http
+POST /v1/jobs/job_123/retry
+content-type: application/json
+
+{}
+```
+
+Explicit worker failures and expired leases both requeue a job while it still
+has attempts remaining. Once attempts are exhausted, the job becomes `failed`
+and can be manually requeued with `POST /v1/jobs/:id/retry`. Manual retry keeps
+the attempt count and last error visible for inspection, clears the active
+lease/result, and returns the job in `pending` state. Completed, pending,
+running, and cancelled jobs are not resurrected by retry.
 
 Append and inspect a runtime breadcrumb:
 

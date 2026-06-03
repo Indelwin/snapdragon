@@ -41,13 +41,56 @@ fn store_persists_jobs_events_logs_and_services() {
     assert_eq!(running.state, GatewayJobState::Running);
     assert_eq!(store.active_leases(11).unwrap().len(), 1);
     assert_eq!(
-        store.cancel_job("job_1", 12).unwrap().unwrap().state,
-        GatewayJobState::Cancelled
+        store
+            .fail_job("job_1", "first failure".into(), 12)
+            .unwrap()
+            .unwrap()
+            .state,
+        GatewayJobState::Pending
     );
     assert!(store.active_leases(12).unwrap().is_empty());
+    let (running, _) = store
+        .acquire_job("default", "worker-1", 1_000, 13)
+        .unwrap()
+        .unwrap();
+    assert_eq!(running.attempts, 2);
     assert_eq!(
         store
-            .complete_job("job_1", Some(serde_json::json!({"late": true})), 13)
+            .fail_job("job_1", "second failure".into(), 14)
+            .unwrap()
+            .unwrap()
+            .state,
+        GatewayJobState::Pending
+    );
+    let (running, _) = store
+        .acquire_job("default", "worker-1", 1_000, 15)
+        .unwrap()
+        .unwrap();
+    assert_eq!(running.attempts, 3);
+    assert_eq!(
+        store
+            .fail_job("job_1", "final failure".into(), 16)
+            .unwrap()
+            .unwrap()
+            .state,
+        GatewayJobState::Failed
+    );
+    assert_eq!(
+        store.retry_job("job_1", 17).unwrap().unwrap().state,
+        GatewayJobState::Pending
+    );
+    let (running, _) = store
+        .acquire_job("default", "worker-1", 1_000, 18)
+        .unwrap()
+        .unwrap();
+    assert_eq!(running.attempts, 4);
+    assert_eq!(
+        store.cancel_job("job_1", 19).unwrap().unwrap().state,
+        GatewayJobState::Cancelled
+    );
+    assert_eq!(
+        store
+            .complete_job("job_1", Some(serde_json::json!({"late": true})), 20)
             .unwrap()
             .unwrap()
             .state,
@@ -55,7 +98,7 @@ fn store_persists_jobs_events_logs_and_services() {
     );
     assert_eq!(
         store
-            .fail_job("job_1", "late failure".into(), 14)
+            .fail_job("job_1", "late failure".into(), 21)
             .unwrap()
             .unwrap()
             .state,
