@@ -20,7 +20,7 @@ pub(crate) fn pending_job_status(
     }
 }
 
-pub(crate) fn expired_state(status: &GatewayJobStatus) -> GatewayJobState {
+pub(crate) fn retry_or_failed_state(status: &GatewayJobStatus) -> GatewayJobState {
     if status.attempts >= status.spec.max_attempts {
         GatewayJobState::Failed
     } else {
@@ -29,7 +29,14 @@ pub(crate) fn expired_state(status: &GatewayJobStatus) -> GatewayJobState {
 }
 
 pub(crate) fn job_log_data(status: &GatewayJobStatus) -> Value {
-    serde_json::json!({ "kind": status.spec.kind, "queue": status.spec.queue })
+    serde_json::json!({
+        "kind": status.spec.kind,
+        "queue": status.spec.queue,
+        "attempts": status.attempts,
+        "max_attempts": status.spec.max_attempts,
+        "state": job_state(&status.state),
+        "last_error": status.last_error,
+    })
 }
 
 pub(crate) fn job_state(state: &GatewayJobState) -> &'static str {
