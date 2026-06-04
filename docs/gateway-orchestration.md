@@ -197,6 +197,9 @@ the next action obvious:
 - Stable ids and correlation ids across jobs, events, logs, and artifacts.
 - World snapshots that explain queue depth, active leases, workers, runtimes,
   and recent failures.
+- Focused world projections for agents and UIs that only need one job, runtime,
+  worker, queue, or section set, without forcing each caller to fetch and filter
+  the entire dashboard payload.
 - SSE streams publish typed snapshot, heartbeat, and error envelopes with
   sequence ids, so quiet gateways, broken streams, and failed snapshot reads are
   distinguishable without scraping logs.

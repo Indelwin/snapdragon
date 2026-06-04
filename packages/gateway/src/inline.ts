@@ -9,7 +9,11 @@ import { InlineServiceStore } from './inline-services.js';
 import { InlineTableStore } from './inline-tables.js';
 import { InlineWorkerStore } from './inline-workers.js';
 import type * as T from './types.js';
-import type { GatewayOrchestrationClient, GatewayWorldSnapshot } from './types-runtime.js';
+import type {
+  GatewayOrchestrationClient,
+  GatewayWorldSnapshot,
+  GatewayWorldSnapshotOptions,
+} from './types-runtime.js';
 import { buildGatewayWorldSnapshot } from './world.js';
 
 export class InlineGatewayClient implements GatewayOrchestrationClient {
@@ -78,7 +82,6 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async whereisCapability(capability: string): Promise<T.ActorId[]> {
     return this.#capabilities.whereis(capability);
   }
-
   async registrySnapshot(): Promise<T.GatewayRegistrySnapshot> {
     return this.#capabilities.snapshot();
   }
@@ -92,7 +95,6 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async listAgentRuntimes(): Promise<T.GatewayAgentRuntimeDescriptor[]> {
     return this.#agentRuntimes.list();
   }
-
   async showAgentRuntime(id: string): Promise<T.GatewayAgentRuntimeDescriptor | undefined> {
     return this.#agentRuntimes.show(id);
   }
@@ -114,7 +116,6 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async listWorkers(): Promise<T.GatewayWorkerRecord[]> {
     return this.#workers.list();
   }
-
   async showWorker(id: string): Promise<T.GatewayWorkerRecord | undefined> {
     return this.#workers.show(id);
   }
@@ -134,7 +135,6 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async tableNames(): Promise<string[]> {
     return this.#tables.names();
   }
-
   async tableSnapshot(name: string): Promise<T.GatewayTableSnapshot | undefined> {
     return this.#tables.snapshot(name);
   }
@@ -249,8 +249,8 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
     return logs.slice(-(options.limit ?? 20));
   }
 
-  async worldSnapshot(): Promise<GatewayWorldSnapshot> {
-    return buildGatewayWorldSnapshot(this);
+  async worldSnapshot(options?: GatewayWorldSnapshotOptions): Promise<GatewayWorldSnapshot> {
+    return buildGatewayWorldSnapshot(this, options);
   }
 
   #leaseForJob(id: string) {
