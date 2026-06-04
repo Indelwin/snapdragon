@@ -5,7 +5,7 @@ import type {
   GatewayRestStreamSnapshotEvent,
   RestResponse,
 } from './rest-types.js';
-import type { GatewayOrchestrationClient } from './types-runtime.js';
+import type { GatewayOrchestrationClient, GatewayWorldSnapshotOptions } from './types-runtime.js';
 
 type PendingStreamEvent =
   | Omit<GatewayRestStreamSnapshotEvent, 'id' | 'atMs'>
@@ -14,6 +14,7 @@ type PendingStreamEvent =
 
 export interface GatewayRestStreamOptions {
   heartbeatMs: number;
+  snapshotOptions?: GatewayWorldSnapshotOptions;
   snapshotIntervalMs: number;
 }
 
@@ -41,7 +42,7 @@ export async function sendStream(
     if (inFlight) return;
     inFlight = true;
     try {
-      write({ type: 'snapshot', snapshot: await client.worldSnapshot() });
+      write({ type: 'snapshot', snapshot: await client.worldSnapshot(options.snapshotOptions) });
     } catch (error) {
       write({ type: 'error', error: errorMessage(error) });
     } finally {

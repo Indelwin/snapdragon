@@ -114,9 +114,10 @@ test('inline gateway registers agent runtimes and snapshots the world', async ()
     capabilities: ['tools.shell'],
     isolation: 'profile',
   });
-  await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'map the world' } });
+  const job = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'map the world' } });
   await gateway.registerWorker({ id: 'worker-1', queue: 'default', runtimeId: 'sd' });
   await gateway.acquireJob('default', 'worker-1');
+  await gateway.appendLog({ target: job.id, message: 'focused breadcrumb' });
   await gateway.leaseSandbox({
     id: 'test-sandbox',
     cwd: '/tmp/sandbox',
@@ -132,6 +133,17 @@ test('inline gateway registers agent runtimes and snapshots the world', async ()
   assert.equal(snapshot.status.agentRuntimes?.[0]?.protocol, 'embedded');
   assert.equal(snapshot.sandboxes[0]?.id, 'lease_test-sandbox');
   assert.deepEqual(snapshot.sandboxes[0]?.referenceRoots, ['/tmp/reference']);
+  const focused = await gateway.worldSnapshot({
+    sections: ['jobs', 'logs', 'workers'],
+    target: job.id,
+    runtimeId: 'sd',
+    logLimit: 1,
+  });
+  assert.equal(focused.agentRuntimes.length, 0);
+  assert.equal(focused.jobs[0]?.id, job.id);
+  assert.equal(focused.logs[0]?.message, 'focused breadcrumb');
+  assert.equal(focused.workers[0]?.id, 'worker-1');
+  assert.equal(focused.sandboxes.length, 0);
 });
 
 test('gateway validates agent runtime descriptors before registration', async () => {
@@ -195,6 +207,10 @@ test('gateway REST server exposes local orchestration routes', async () => {
       'ready',
     );
     assert.equal((await getJson(`${baseUrl}/workers`))[0]?.id, 'rest-worker');
+    assert.equal(
+      (await getJson(`${baseUrl}/workers?runtime=codex&state=idle`))[0]?.id,
+      'rest-worker',
+    );
     assert.deepEqual(await getJson(`${baseUrl}/worker-processes`), []);
 
     const service = await postJson(`${baseUrl}/services`, { spec: { name: 'pulse' } });
@@ -202,6 +218,7 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.equal((await postJson(`${baseUrl}/services/pulse/run`, {})).runs, 1);
     const services = await postJson(`${baseUrl}/services/pulse/enable`, { enabled: false });
     assert.equal(services.find((status: any) => status.name === 'pulse')?.enabled, false);
+    assert.equal((await getJson(`${baseUrl}/services?enabled=false`))[0]?.name, 'pulse');
 
     const event = await postJson(`${baseUrl}/events`, {
       kind: 'channel.run',
@@ -211,6 +228,10 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.equal((await getJson(`${baseUrl}/events`))[0]?.id, event.id);
     assert.equal((await getJson(`${baseUrl}/events/${event.id}`)).id, event.id);
     assert.equal((await deleteJson(`${baseUrl}/events/${event.id}`)).state, 'cancelled');
+    assert.equal(
+      (await getJson(`${baseUrl}/events?state=cancelled&eventKind=channel.run`))[0]?.id,
+      event.id,
+    );
     assert.equal(await statusForPost(`${baseUrl}/events/missing/cancel`, {}), 404);
 
     const job = await postJson(`${baseUrl}/jobs`, {
@@ -218,6 +239,7 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(job.state, 'pending');
     assert.equal((await getJson(`${baseUrl}/jobs/${job.id}`)).id, job.id);
+    assert.equal((await getJson(`${baseUrl}/jobs?state=pending&kind=agent.run`))[0]?.id, job.id);
     await gateway.acquireJob('default', 'rest-worker');
     assert.equal((await gateway.failJob(job.id, 'rest failure'))?.state, 'failed');
     assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/retry`, {})).state, 'pending');
@@ -241,6 +263,10 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.equal(invalidLog.status, 400);
     assert.match(await invalidLog.text(), /missing log message/);
     assert.equal((await deleteJson(`${baseUrl}/jobs/${job.id}`)).state, 'cancelled');
+    assert.equal(
+      (await getJson(`${baseUrl}/jobs?state=cancelled&target=${job.id}`))[0]?.id,
+      job.id,
+    );
     assert.equal(await statusForPost(`${baseUrl}/jobs/missing/cancel`, {}), 404);
 
     const sandbox = await postJson(`${baseUrl}/sandboxes`, {
@@ -257,7 +283,25 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.equal(world.agentRuntimes[0]?.id, 'codex');
     assert.equal(Array.isArray(world.logs), true);
     assert.equal(world.sandboxes[0]?.id, sandbox.id);
-    const messages = await readSseMessages(`${baseUrl}/stream?intervalMs=100&heartbeatMs=10`, 2);
+    const focusedWorld = await getJson(
+      `${baseUrl}/world?sections=jobs,logs,workers&target=${job.id}&runtime=codex&state=cancelled&logLimit=5`,
+    );
+    assert.equal(focusedWorld.jobs[0]?.id, job.id);
+    assert.equal(
+      focusedWorld.logs.every((record: any) => record.target === job.id),
+      true,
+    );
+    assert.equal(
+      focusedWorld.logs.some((record: any) => record.message === 'runtime breadcrumb'),
+      true,
+    );
+    assert.equal(focusedWorld.workers[0]?.id, 'rest-worker');
+    assert.equal(focusedWorld.services.length, 0);
+    assert.equal(focusedWorld.sandboxes.length, 0);
+    const messages = await readSseMessages(
+      `${baseUrl}/stream?sections=jobs,logs&target=${job.id}&intervalMs=100&heartbeatMs=10&logLimit=5`,
+      2,
+    );
     const snapshotMessage = messages.find((message) => message.event === 'snapshot');
     const heartbeatMessage = messages.find((message) => message.event === 'heartbeat');
     assert.ok(snapshotMessage);
@@ -266,6 +310,12 @@ test('gateway REST server exposes local orchestration routes', async () => {
     const heartbeat = JSON.parse(heartbeatMessage.data);
     assert.equal(snapshot.type, 'snapshot');
     assert.equal(snapshot.snapshot.runtime, 'inline-ts');
+    assert.equal(snapshot.snapshot.jobs[0]?.id, job.id);
+    assert.equal(
+      snapshot.snapshot.logs.every((record: any) => record.target === job.id),
+      true,
+    );
+    assert.equal(snapshot.snapshot.workers.length, 0);
     assert.equal(heartbeat.type, 'heartbeat');
     assert.equal(heartbeat.runtime, 'inline-ts');
     assert.equal(messages[0]?.id, '1');
