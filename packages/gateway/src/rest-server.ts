@@ -1,5 +1,6 @@
 import { createServer } from 'node:http';
 import type { AddressInfo } from 'node:net';
+import { worldSnapshotOptionsFromSearch } from './rest-query.js';
 import { dispatchRoute } from './rest-routes.js';
 import { sendStream } from './rest-stream.js';
 import {
@@ -67,6 +68,7 @@ function streamOptions(
 ): Parameters<typeof sendStream>[2] {
   return {
     heartbeatMs: positiveInt(route.searchParams.get('heartbeatMs'), context.streamHeartbeatMs),
+    snapshotOptions: worldSnapshotOptionsFromSearch(route.searchParams),
     snapshotIntervalMs: positiveInt(route.searchParams.get('intervalMs'), context.streamIntervalMs),
   };
 }

@@ -1,3 +1,5 @@
+import { filterEvents } from './query-filters.js';
+import { worldSnapshotOptionsFromSearch } from './rest-query.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient } from './types.js';
 
@@ -24,8 +26,14 @@ export async function dispatchEvents(
   return handler ? handler(client, route, request) : notFound();
 }
 
-async function listEventsRoute(client: GatewayClient): Promise<RestRouteResult> {
-  return { status: 200, body: await client.listEvents() };
+async function listEventsRoute(client: GatewayClient, route: RestRoute): Promise<RestRouteResult> {
+  return {
+    status: 200,
+    body: filterEvents(
+      await client.listEvents(),
+      worldSnapshotOptionsFromSearch(route.searchParams),
+    ),
+  };
 }
 
 async function showEventRoute(client: GatewayClient, route: RestRoute): Promise<RestRouteResult> {

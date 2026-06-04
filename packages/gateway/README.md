@@ -248,6 +248,12 @@ Initial routes cover:
 World snapshots include active sandbox leases alongside jobs, events, logs,
 services, durable worker records, worker process diagnostics, runtimes,
 capabilities, queue depths, and tables.
+`gateway.worldSnapshot(options)`, `GET /v1/world`, and `GET /v1/stream` share a
+focused projection vocabulary for UI and agent reads. Callers can request
+sections such as `jobs,logs,workers` and filter by target job, queue, runtime,
+service, worker, capability, state, kind, log limit, or table names without
+changing the response shape. Unrequested sections return empty collections while
+`status`, `runtime`, and `capturedAtMs` remain available for liveness.
 Cancellation routes return the cancelled record when they succeed and a 404
 error body when the target job or event is unknown, so agent scripts can treat
 cleanup as an observable state transition instead of a silent no-op.
@@ -274,7 +280,9 @@ release sandboxes without scanning local lease files.
 registered service tasks, queue depths, active leases, recent failures, tables,
 process count, worker process snapshots, pid, and uptime. `worldSnapshot()` adds
 durable worker records so dashboards and agents can inspect registered workers,
-heartbeats, current leases, and runtime metadata in one shape. Service workers
+heartbeats, current leases, and runtime metadata in one shape. Focused snapshot
+options let long-running agents poll only the world sections they need while
+retaining the same typed shape as the full dashboard snapshot. Service workers
 are spawned with explicit timeout enforcement, so budget expiry kills the child
 process and records a `timed_out` worker process state. The daemon also expires
 stale job leases during status/watchdog passes so stuck jobs can become visible

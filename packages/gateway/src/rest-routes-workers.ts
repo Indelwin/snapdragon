@@ -1,3 +1,5 @@
+import { filterWorkerProcesses, filterWorkers } from './query-filters.js';
+import { worldSnapshotOptionsFromSearch } from './rest-query.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient, GatewayWorkerRegistration } from './types.js';
 
@@ -32,11 +34,23 @@ export async function dispatchWorkerProcesses(
 ): Promise<RestRouteResult> {
   if (route.method !== 'GET') return notFound();
   if (route.parts[1]) return notFound();
-  return { status: 200, body: (await client.status()).workerProcesses ?? [] };
+  return {
+    status: 200,
+    body: filterWorkerProcesses(
+      (await client.status()).workerProcesses ?? [],
+      worldSnapshotOptionsFromSearch(route.searchParams),
+    ),
+  };
 }
 
-async function listWorkers(client: GatewayClient): Promise<RestRouteResult> {
-  return { status: 200, body: await client.listWorkers() };
+async function listWorkers(client: GatewayClient, route: RestRoute): Promise<RestRouteResult> {
+  return {
+    status: 200,
+    body: filterWorkers(
+      await client.listWorkers(),
+      worldSnapshotOptionsFromSearch(route.searchParams),
+    ),
+  };
 }
 
 async function showWorkerRoute(client: GatewayClient, route: RestRoute): Promise<RestRouteResult> {
