@@ -37,7 +37,7 @@ import { toWireServiceSpec } from './rust-wire.js';
 import { fromWireServiceStatus, fromWireStatus } from './rust-wire-status.js';
 import * as Workers from './rust-workers.js';
 import type * as T from './types.js';
-import type { GatewayOrchestrationClient } from './types-runtime.js';
+import type { GatewayOrchestrationClient, GatewayWorldSnapshotOptions } from './types-runtime.js';
 import { buildGatewayWorldSnapshot } from './world.js';
 
 export type { RustGatewayClientOptions } from './rust-options.js';
@@ -240,8 +240,8 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
     return tailRustLogs(this.#gatewayCall, options);
   }
 
-  async worldSnapshot() {
-    return buildGatewayWorldSnapshot(this);
+  async worldSnapshot(options?: GatewayWorldSnapshotOptions) {
+    return buildGatewayWorldSnapshot(this, options);
   }
 
   async #recordServiceRun(name: string, summary?: string) {

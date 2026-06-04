@@ -104,6 +104,49 @@ heartbeat, and inspect. `worker-processes` are low-level diagnostics for service
 commands spawned by the daemon. `DELETE /v1/workers/:id` removes stale or
 retired worker identities without deleting job, log, or process history.
 
+## Focused Reads and Streams
+
+`GET /v1/world` and `GET /v1/stream` accept the same projection and filter
+query parameters. This is the preferred surface for management UIs, executive
+agents, and adapters that need a small, stable view of one slice of the
+gateway:
+
+```http
+GET /v1/world?sections=jobs,logs,workers&target=job_123&runtime=pi&logLimit=20
+```
+
+Supported projection parameters:
+
+| Parameter | Purpose |
+| --- | --- |
+| `sections` or `section` | Comma-separated or repeated world sections. Supported values are `services`, `agentRuntimes`, `workers`, `workerProcesses`, `jobs`, `events`, `logs`, `registry`, `leases`, `queueDepths`, `tables`, and `sandboxes`. |
+| `target`, `job`, `jobId`, or `id` | Focus jobs, events, logs, leases, and sandbox leases around a target id. |
+| `queue` | Filter workers, jobs, and queue depths. |
+| `runtime` or `runtimeId` | Filter agent runtimes and workers. |
+| `service` or `serviceName` | Filter services, workers, and worker-process diagnostics. |
+| `worker` or `workerId` | Filter workers and active leases. |
+| `capability` | Filter agent runtimes and workers that advertise a capability. |
+| `state` | Shared convenience filter for list routes. It maps to the matching job, event, worker, or service state domain when valid. |
+| `jobState`, `workerState`, `serviceState`, or `eventState` | Explicit state filters for ambiguous clients. |
+| `kind` or `jobKind` | Filter jobs by job kind. |
+| `eventKind` | Filter events by event kind. |
+| `enabled` | Filter services by enabled state with `true`, `false`, `1`, or `0`. |
+| `limit` or `logLimit` | Limit log tail size. |
+| `table` or `tables` | Limit table snapshots when the `tables` section is requested. |
+
+When `sections` is present, unrequested collection fields return empty arrays
+and the unrequested registry returns empty maps. `capturedAtMs`, `runtime`, and
+`status` are still present so clients can render liveness and daemon status
+without a second request.
+
+The list routes use the same filter vocabulary where it applies:
+
+- `GET /v1/services?enabled=false&state=stopped`
+- `GET /v1/workers?runtime=pi&queue=default&capability=agent.run`
+- `GET /v1/worker-processes?service=agent-jobs`
+- `GET /v1/jobs?state=pending&kind=agent.run&queue=default`
+- `GET /v1/events?state=cancelled&eventKind=channel.run`
+
 ## Request Examples
 
 Register an external runtime:
@@ -294,7 +337,7 @@ content-type: application/json
 Watch world snapshots:
 
 ```http
-GET /v1/stream?intervalMs=1000&heartbeatMs=15000
+GET /v1/stream?sections=jobs,logs&target=job_123&intervalMs=1000&heartbeatMs=15000
 accept: text/event-stream
 ```
 
@@ -305,7 +348,9 @@ Heartbeat frames use `event: heartbeat` with the runtime kind so clients can
 distinguish a quiet world from a dead connection. Errors are emitted as
 `event: error` with `{ "type": "error", "id": 2, "atMs": 0, "error": "..." }`.
 Clients can override the snapshot and heartbeat cadence per connection with
-`intervalMs` and `heartbeatMs` query params.
+`intervalMs` and `heartbeatMs` query params. Projection and filter query params
+are applied to each snapshot frame, while heartbeat frames remain small runtime
+liveness messages.
 
 ## Response Shapes
 
@@ -313,7 +358,8 @@ Clients can override the snapshot and heartbeat cadence per connection with
 contains captured time, runtime kind, raw status, service statuses, agent runtime
 descriptors, durable worker records, worker process diagnostics, durable jobs,
 events, logs, registry, leases, queue depths, table snapshots, and sandbox
-leases.
+leases. Focused snapshots preserve the same shape but return empty collections
+for sections the caller did not request.
 
 The API intentionally returns the same camelCase TypeScript shapes exposed by
 `@snapdragon-ai/gateway`. Rust IPC wire casing stays behind the facade.

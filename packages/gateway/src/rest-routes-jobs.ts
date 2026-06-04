@@ -1,3 +1,5 @@
+import { filterJobs } from './query-filters.js';
+import { worldSnapshotOptionsFromSearch } from './rest-query.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient, GatewayJobSpec } from './types.js';
 
@@ -25,8 +27,11 @@ export async function dispatchJobs(
   return handler ? handler(client, route, request) : notFound();
 }
 
-async function listJobsRoute(client: GatewayClient): Promise<RestRouteResult> {
-  return { status: 200, body: await client.listJobs() };
+async function listJobsRoute(client: GatewayClient, route: RestRoute): Promise<RestRouteResult> {
+  return {
+    status: 200,
+    body: filterJobs(await client.listJobs(), worldSnapshotOptionsFromSearch(route.searchParams)),
+  };
 }
 
 async function showJobRoute(client: GatewayClient, route: RestRoute): Promise<RestRouteResult> {
