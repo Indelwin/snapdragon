@@ -57,6 +57,10 @@ sd gateway events list
 sd gateway events cancel 20260506_event
 sd gateway jobs enqueue agent.run '{"prompt":"check the repo"}'
 sd gateway jobs list
+sd gateway jobs acquire --worker pi-worker-1 --queue default
+sd gateway logs append <job_id> "worker claimed job" --level info
+sd gateway jobs complete <job_id> '{"summary":"done"}'
+sd gateway jobs fail <job_id> "worker failed clearly"
 sd gateway jobs delete <job_id>
 sd gateway jobs retry <job_id>
 sd gateway agents enqueue "run the release checks"
@@ -109,12 +113,15 @@ resource semantics used by management clients.
 
 `sd gateway workers` manages durable worker entities. Use `register` and
 `heartbeat` when an external runtime wants to announce itself, attach capability
-or runtime metadata, and keep its current state inspectable. `list` and `show`
-display the worker queue, state, status, current job, and current lease.
-`unregister` removes stale or retired worker records from the management
-surface without deleting job or log history. The singular `sd gateway worker`
-command remains the internal headless service worker runner used by the Rust
-daemon.
+or runtime metadata, and keep its current state inspectable. `sd gateway jobs
+acquire`, `complete`, and `fail` let an adapter claim and finish work from the
+same local CLI surface; `sd gateway logs append <job_id> ...` adds job-targeted
+progress breadcrumbs that `sd gateway inspect <job_id>` and `logs tail` can
+show. `list` and `show` display the worker queue, state, status, current job,
+and current lease. `unregister` removes stale or retired worker records from
+the management surface without deleting job or log history. The singular `sd
+gateway worker` command remains the internal headless service worker runner used
+by the Rust daemon.
 
 `sd gateway rest serve` starts a foreground local REST/SSE facade over the
 gateway client. By default it binds `127.0.0.1:8787` with `/v1` routes; use

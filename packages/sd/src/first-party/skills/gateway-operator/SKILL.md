@@ -14,7 +14,10 @@ Useful commands:
   shows a focused world snapshot with jobs, workers, runtimes, services, leases,
   sandboxes, and recent logs.
 - `sd gateway daemon start|stop|run-once` controls the Rust gateway daemon explicitly.
-- `sd gateway jobs enqueue|list|show|cancel` exercises the durable job queue.
+- `sd gateway jobs enqueue|list|show|acquire|complete|fail|cancel|retry`
+  exercises the durable job queue and worker lease lifecycle.
+- `sd gateway logs append <job-id> <message> [--level <level>]` records
+  job-targeted progress that `inspect` and `logs tail` can show.
 - `sd gateway sandboxes lease|list|release` exercises gateway-managed worktrees for isolated repo work.
 - Legacy `sd daemon status|start|stop|run-once` commands still cover the older daemon path where configured.
 - `sd --background inline ...` is best for reproducing a service bug locally.

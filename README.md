@@ -57,6 +57,8 @@ interactive agent shell.
 sd gateway start
 sd gateway status
 sd gateway inspect job_123 --runtime pi
+sd gateway jobs acquire --worker pi-worker-1 --queue default
+sd gateway logs append job_123 "worker claimed job"
 sd gateway rest serve --port 8787
 sd gateway services list
 sd gateway services run session-index
