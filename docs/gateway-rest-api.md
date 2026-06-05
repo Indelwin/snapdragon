@@ -26,7 +26,8 @@ const baseUrl = await rest.listen();
 
 By default the server binds to `127.0.0.1` and uses `/v1` as its path prefix.
 Remote exposure, authentication, and policy enforcement are future layers and
-should be added above the same route shape.
+should be added above the same route shape. The prefix is matched as a complete
+path segment, so `/v10/...` is not treated as a `/v1` route.
 
 ## Routes
 
@@ -162,3 +163,11 @@ leases, queue depths, table snapshots, and sandbox leases.
 
 The API intentionally returns the same camelCase TypeScript shapes exposed by
 `@snapdragon-ai/gateway`. Rust IPC wire casing stays behind the facade.
+
+Error responses use a small JSON object:
+
+```json
+{ "error": "invalid JSON" }
+```
+
+Malformed JSON request bodies return `400`. Unknown routes return `404`.

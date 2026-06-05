@@ -6,6 +6,7 @@ import {
   type GatewayRestServer,
   type GatewayRestServerOptions,
   normalizePrefix,
+  RestHttpError,
   type RestRequest,
   type RestRequestContext,
   type RestResponse,
@@ -24,7 +25,7 @@ export function createGatewayRestServer(
   };
   const server = createServer((request, response) => {
     handleRequest(client, request, response, context).catch((error) => {
-      sendJson(response, 500, { error: error instanceof Error ? error.message : String(error) });
+      sendRestError(response, error);
     });
   });
   return {
@@ -86,11 +87,22 @@ function close(server: GatewayRestServer['server']): Promise<void> {
 
 function routeFor(request: RestRequest, pathPrefix: string): RestRoute | undefined {
   const url = new URL(request.url ?? '/', 'http://localhost');
-  if (!url.pathname.startsWith(pathPrefix)) return undefined;
+  if (!matchesPathPrefix(url.pathname, pathPrefix)) return undefined;
   const path = url.pathname.slice(pathPrefix.length).replace(/^\/+/, '');
   return {
     method: request.method ?? 'GET',
     parts: path ? path.split('/').map(decodeURIComponent) : [],
     searchParams: url.searchParams,
   };
+}
+
+function matchesPathPrefix(pathname: string, pathPrefix: string): boolean {
+  if (!pathPrefix) return true;
+  return pathname === pathPrefix || pathname.startsWith(`${pathPrefix}/`);
+}
+
+function sendRestError(response: RestResponse, error: unknown): void {
+  const status = error instanceof RestHttpError ? error.status : 500;
+  const message = error instanceof Error ? error.message : String(error);
+  sendJson(response, status, { error: message });
 }
