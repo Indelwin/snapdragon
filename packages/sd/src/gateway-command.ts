@@ -7,6 +7,7 @@ import {
   runGatewayDaemonAlias,
 } from './gateway-command-daemon.js';
 import { eventsCommand } from './gateway-command-events.js';
+import { inspectCommand } from './gateway-command-inspect.js';
 import { jobsCommand } from './gateway-command-jobs.js';
 import { learnCommand } from './gateway-command-learn.js';
 import { logsCommand } from './gateway-command-logs.js';
@@ -29,6 +30,7 @@ const gatewayTopicHandlers: Record<string, GatewayTopicHandler> = {
   agents: (action, rest, args) => agentsCommand(action ?? 'status', rest, args),
   channels: (action, rest, args) => channelsCommand(action ?? 'list', rest, args),
   events: (action, rest, args) => eventsCommand(action ?? 'list', rest, args),
+  inspect: (action, rest, args) => inspectCommand([action, ...rest].filter(isString), args),
   jobs: (action, rest, args) => jobsCommand(action ?? 'list', rest, args),
   learn: (action, rest, args) => learnCommand(action ?? 'enqueue-eval', rest, args),
   logs: (action, rest, args) => logsCommand(action ?? 'tail', rest, args),
@@ -43,6 +45,10 @@ const gatewayTopicHandlers: Record<string, GatewayTopicHandler> = {
     return gatewayWorkerCommand(action ?? 'run', rest, args);
   },
 };
+
+function isString(value: string | undefined): value is string {
+  return typeof value === 'string';
+}
 
 export async function runGatewayCommand(
   args: SdCliArgs,

@@ -56,6 +56,7 @@ interactive agent shell.
 ```bash
 sd gateway start
 sd gateway status
+sd gateway inspect job_123 --runtime pi
 sd gateway rest serve --port 8787
 sd gateway services list
 sd gateway services run session-index

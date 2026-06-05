@@ -10,6 +10,9 @@ The gateway is the background services host. In normal interactive `sd` runs it 
 
 Useful commands:
 - `sd gateway status` shows Rust gateway daemon status, socket/store paths, worker state, service counters, and queue depth.
+- `sd gateway inspect [job-id] [--runtime <id>] [--worker <id>] [--limit <n>]`
+  shows a focused world snapshot with jobs, workers, runtimes, services, leases,
+  sandboxes, and recent logs.
 - `sd gateway daemon start|stop|run-once` controls the Rust gateway daemon explicitly.
 - `sd gateway jobs enqueue|list|show|cancel` exercises the durable job queue.
 - `sd gateway sandboxes lease|list|release` exercises gateway-managed worktrees for isolated repo work.
