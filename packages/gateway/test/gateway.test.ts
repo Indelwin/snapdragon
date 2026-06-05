@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
+  createGatewayRestClient,
   createGatewayRestServer,
   InlineGatewayClient,
   probePiRpcRuntime,
@@ -343,6 +344,77 @@ test('gateway REST server exposes local orchestration routes', async () => {
   } finally {
     await rest.close();
     await rm(dirname(piFixture), { force: true, recursive: true });
+  }
+});
+
+test('gateway REST client drives worker job lifecycle routes', async () => {
+  const gateway = new InlineGatewayClient();
+  const rest = createGatewayRestServer(gateway, { streamIntervalMs: 20 });
+  const baseUrl = await rest.listen();
+  const client = createGatewayRestClient({ baseUrl, headers: { 'x-snapdragon-test': '1' } });
+  try {
+    assert.equal(client.runtime, 'rest');
+    assert.equal((await client.status()).runtime, 'inline-ts');
+    assert.equal((await client.worldSnapshot({ sections: ['jobs'] })).services.length, 0);
+    await client.registerAgentRuntime({
+      id: 'pi',
+      kind: 'pi',
+      protocol: 'jsonl',
+      command: { command: 'pi', args: ['rpc'] },
+      supportedJobKinds: ['agent.run'],
+      capabilities: ['tools.pi'],
+    });
+    await client.registerWorker({
+      id: 'pi-worker',
+      queue: 'default',
+      runtimeId: 'pi',
+      capabilities: ['agent.run'],
+    });
+    assert.equal((await client.whereisCapability('missing')).length, 0);
+    assert.equal((await client.listWorkers({ runtimeId: 'pi' }))[0]?.id, 'pi-worker');
+    assert.equal(
+      (await client.heartbeatWorker({ id: 'pi-worker', status: 'ready' }))?.status,
+      'ready',
+    );
+
+    const job = await client.enqueueJob({
+      kind: 'agent.run',
+      payload: { prompt: 'from rest client' },
+    });
+    const lease = await client.acquireJob('default', 'pi-worker', 60_000);
+    assert.equal(lease?.job.id, job.id);
+    assert.equal(lease?.lease.worker, 'pi-worker');
+    assert.equal((await client.acquireJob('default', 'pi-worker'))?.job.id, undefined);
+    const log = await client.appendLog({ target: job.id, message: 'worker started' });
+    assert.equal(log.target, job.id);
+    assert.equal(
+      (await client.tailLogs({ target: job.id, limit: 1 }))[0]?.message,
+      'worker started',
+    );
+    const completed = await client.completeJob(job.id, { ok: true });
+    assert.equal(completed?.state, 'completed');
+    assert.deepEqual(completed?.result, { ok: true });
+
+    const failingJob = await client.enqueueJob({ kind: 'agent.run', maxAttempts: 1 });
+    await client.acquireJob('default', 'pi-worker');
+    const failed = await client.failJob(failingJob.id, 'worker failed clearly');
+    assert.equal(failed?.state, 'failed');
+    assert.equal((await client.retryJob(failingJob.id))?.state, 'pending');
+    assert.equal((await client.cancelJob(failingJob.id))?.state, 'cancelled');
+    assert.equal(await client.showJob('missing'), undefined);
+    await assert.rejects(client.failJob(failingJob.id, ''), /missing job failure error/);
+
+    const stream = client.stream({
+      heartbeatMs: 10,
+      intervalMs: 100,
+      snapshotOptions: { sections: ['jobs'], target: job.id },
+    });
+    const first = await stream.next();
+    assert.equal(first.value?.type, 'snapshot');
+    assert.equal(first.value?.snapshot.jobs[0]?.id, job.id);
+    await stream.return(undefined);
+  } finally {
+    await rest.close();
   }
 });
 

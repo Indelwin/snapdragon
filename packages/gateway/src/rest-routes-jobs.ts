@@ -1,5 +1,12 @@
 import { filterJobs } from './query-filters.js';
 import { worldSnapshotOptionsFromSearch } from './rest-query.js';
+import {
+  acquireJobRoute,
+  cancelJobRoute,
+  completeJobRoute,
+  failJobRoute,
+  retryJobRoute,
+} from './rest-routes-job-lifecycle.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient, GatewayJobSpec } from './types.js';
 
@@ -12,9 +19,12 @@ type JobRouteHandler = (
 const jobRouteHandlers: Record<string, JobRouteHandler> = {
   'GET  ': listJobsRoute,
   'POST  ': enqueueJobRoute,
+  'POST acquire ': acquireJobRoute,
   'GET :id ': showJobRoute,
   'DELETE :id ': cancelJobRoute,
   'POST :id cancel': cancelJobRoute,
+  'POST :id complete': completeJobRoute,
+  'POST :id fail': failJobRoute,
   'POST :id retry': retryJobRoute,
 };
 
@@ -53,19 +63,14 @@ async function enqueueJobRoute(
   return { status: 201, body: await client.enqueueJob(body.spec ?? body, body.id) };
 }
 
-async function cancelJobRoute(client: GatewayClient, route: RestRoute): Promise<RestRouteResult> {
-  const job = await client.cancelJob(route.parts[1] ?? '');
-  return job ? { status: 200, body: job } : notFound('job not found');
-}
-
-async function retryJobRoute(client: GatewayClient, route: RestRoute): Promise<RestRouteResult> {
-  const job = await client.retryJob(route.parts[1] ?? '');
-  return job ? { status: 200, body: job } : notFound('job not found');
-}
-
 function jobRouteKey(route: RestRoute): string {
   const [, id, action = ''] = route.parts;
-  return `${route.method} ${id ? ':id' : ''} ${action}`;
+  return `${route.method} ${jobRouteTarget(route.method, id, action)} ${action}`;
+}
+
+function jobRouteTarget(method: string, id: string | undefined, action: string): string {
+  if (method === 'POST' && id === 'acquire' && !action) return 'acquire';
+  return id ? ':id' : '';
 }
 
 function notFound(error = 'not found'): RestRouteResult {

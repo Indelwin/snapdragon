@@ -4,7 +4,7 @@ export type {
   GatewaySandboxSpec,
 } from './types-sandboxes.js';
 
-export type GatewayRuntime = 'rust' | 'inline-ts';
+export type GatewayRuntime = 'rust' | 'inline-ts' | 'rest';
 
 export interface ActorId {
   id: string;
