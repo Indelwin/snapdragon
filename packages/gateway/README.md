@@ -300,7 +300,9 @@ process count, worker process snapshots, pid, and uptime. `worldSnapshot()` adds
 durable worker records so dashboards and agents can inspect registered workers,
 heartbeats, current leases, and runtime metadata in one shape. Focused snapshot
 options let long-running agents poll only the world sections they need while
-retaining the same typed shape as the full dashboard snapshot. Service workers
+retaining the same typed shape as the full dashboard snapshot. `sd gateway
+inspect [job-id]` formats that focused snapshot as the pre-UI operator view for
+jobs, workers, runtimes, services, leases, sandboxes, and logs. Service workers
 are spawned with explicit timeout enforcement, so budget expiry kills the child
 process and records a `timed_out` worker process state. The daemon also expires
 stale job leases during status/watchdog passes so stuck jobs can become visible

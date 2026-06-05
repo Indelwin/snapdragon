@@ -200,6 +200,8 @@ the next action obvious:
 - Focused world projections for agents and UIs that only need one job, runtime,
   worker, queue, or section set, without forcing each caller to fetch and filter
   the entire dashboard payload.
+- `sd gateway inspect [job-id]` gives the same focused projection a compact CLI
+  view before the web management surface exists.
 - SSE streams publish typed snapshot, heartbeat, and error envelopes with
   sequence ids, so quiet gateways, broken streams, and failed snapshot reads are
   distinguishable without scraping logs.
