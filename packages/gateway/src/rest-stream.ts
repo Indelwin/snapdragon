@@ -11,7 +11,7 @@ export async function sendStream(
     connection: 'keep-alive',
     'content-type': 'text/event-stream',
   });
-  await writeSnapshot(client, response);
+  await writeSnapshot(client, response).catch((error) => writeStreamError(response, error));
   const interval = setInterval(() => {
     writeSnapshot(client, response).catch((error) => writeStreamError(response, error));
   }, intervalMs);
