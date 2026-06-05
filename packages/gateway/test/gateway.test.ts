@@ -172,6 +172,7 @@ test('gateway REST server exposes local orchestration routes', async () => {
   const gateway = new InlineGatewayClient();
   const rest = createGatewayRestServer(gateway, { streamIntervalMs: 20 });
   const baseUrl = await rest.listen();
+  const piFixture = await writePiRpcFixture();
   try {
     assert.equal((await getJson(`${baseUrl}/health`)).runtime, 'inline-ts');
     const runtime = await postJson(`${baseUrl}/agents/register`, {
@@ -193,6 +194,20 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(invalidRuntime.status, 400);
     assert.match(await invalidRuntime.text(), /runtime id/);
+    const probedRuntime = await postJson(`${baseUrl}/agents/probe/pi`, {
+      options: { command: process.execPath, args: [piFixture], timeoutMs: 3_000 },
+    });
+    assert.equal(probedRuntime.id, 'pi');
+    assert.equal(probedRuntime.health?.state, 'ok');
+    assert.equal(probedRuntime.metadata?.commandCount, 2);
+    assert.equal((await getJson(`${baseUrl}/agents`)).length, 1);
+    const invalidProbe = await fetch(`${baseUrl}/agents/probe`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'hermes' }),
+    });
+    assert.equal(invalidProbe.status, 400);
+    assert.match(await invalidProbe.text(), /unsupported agent runtime probe kind/);
 
     const worker = await postJson(`${baseUrl}/workers`, {
       id: 'rest-worker',
@@ -327,6 +342,7 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.equal((await getJson(`${baseUrl}/sandboxes`)).length, 0);
   } finally {
     await rest.close();
+    await rm(dirname(piFixture), { force: true, recursive: true });
   }
 });
 

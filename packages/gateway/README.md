@@ -231,8 +231,9 @@ Initial routes cover:
   gateway-side stream errors.
 - `GET /v1/services`, `POST /v1/services/:name/run`, and
   `POST /v1/services/:name/enable`.
-- `GET /v1/agents`, `POST /v1/agents/register`, `GET /v1/agents/:id`,
-  `DELETE /v1/agents/:id`, and `POST /v1/agents/:id/unregister`.
+- `GET /v1/agents`, `POST /v1/agents/probe`, `POST /v1/agents/probe/pi`,
+  `POST /v1/agents/register`, `GET /v1/agents/:id`, `DELETE /v1/agents/:id`,
+  and `POST /v1/agents/:id/unregister`.
 - `GET /v1/workers`, `POST /v1/workers`, `GET /v1/workers/:id`,
   `POST /v1/workers/:id/heartbeat`, `DELETE /v1/workers/:id`,
   `POST /v1/workers/:id/unregister`, and `GET /v1/worker-processes`.
@@ -254,6 +255,9 @@ sections such as `jobs,logs,workers` and filter by target job, queue, runtime,
 service, worker, capability, state, kind, log limit, or table names without
 changing the response shape. Unrequested sections return empty collections while
 `status`, `runtime`, and `capturedAtMs` remain available for liveness.
+Runtime probe routes are non-mutating; management surfaces can test Pi's JSONL
+RPC health and inspect the returned descriptor before deciding whether to call
+the durable register route.
 Cancellation routes return the cancelled record when they succeed and a 404
 error body when the target job or event is unknown, so agent scripts can treat
 cleanup as an observable state transition instead of a silent no-op.
