@@ -23,7 +23,7 @@ const routeHandlers: Record<string, RouteHandler> = {
   workers: (client, route) => dispatchWorkers(client, route),
   jobs: dispatchJobs,
   events: dispatchEvents,
-  logs: (client, route) => dispatchLogs(client, route),
+  logs: dispatchLogs,
   registry: (client, route) => dispatchRegistry(client, route),
   capabilities: (client, route) => dispatchCapabilities(client, route),
 };

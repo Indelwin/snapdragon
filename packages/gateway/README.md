@@ -153,6 +153,11 @@ const lease = await gateway.acquireJob('default', 'worker-1');
 if (lease) await gateway.completeJob(lease.job.id, { ok: true });
 ```
 
+REST adapters use the same lifecycle: `POST /v1/jobs/acquire` claims work,
+`POST /v1/logs` records job-targeted breadcrumbs, and
+`POST /v1/jobs/:id/complete` or `POST /v1/jobs/:id/fail` closes the lease
+visibly.
+
 The inline client implements the same lifecycle in memory for tests and small
 embedders.
 
@@ -179,10 +184,12 @@ Initial routes cover:
   `POST /v1/services/:name/enable`.
 - `GET /v1/agents`, `POST /v1/agents/register`, and `GET /v1/agents/:id`.
 - `GET /v1/workers`, `GET /v1/jobs`, `POST /v1/jobs`,
-  `GET /v1/jobs/:id`, and `POST /v1/jobs/:id/cancel`.
+  `POST /v1/jobs/acquire`, `GET /v1/jobs/:id`,
+  `POST /v1/jobs/:id/cancel`, `POST /v1/jobs/:id/complete`, and
+  `POST /v1/jobs/:id/fail`.
 - `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
-  `GET /v1/logs`, `GET /v1/registry`, `GET /v1/capabilities`, and
-  `GET /v1/sandboxes`.
+  `GET /v1/logs`, `POST /v1/logs`, `GET /v1/registry`,
+  `GET /v1/capabilities`, and `GET /v1/sandboxes`.
 
 The default listener binds to `127.0.0.1`. Authentication, policy enforcement,
 and remote exposure are later layers on the same route shape.

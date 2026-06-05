@@ -46,21 +46,25 @@ should be added above the same route shape.
 | `GET` | `/v1/workers` | List worker process snapshots. |
 | `GET` | `/v1/jobs` | List durable jobs. |
 | `POST` | `/v1/jobs` | Enqueue a durable job. |
+| `POST` | `/v1/jobs/acquire` | Acquire the next pending job for a worker. |
 | `GET` | `/v1/jobs/:id` | Show one job. |
 | `POST` | `/v1/jobs/:id/cancel` | Cancel one job. |
+| `POST` | `/v1/jobs/:id/complete` | Complete one leased job. |
+| `POST` | `/v1/jobs/:id/fail` | Fail one leased job with an error. |
 | `GET` | `/v1/events` | List gateway events. |
 | `POST` | `/v1/events` | Append an event. |
 | `POST` | `/v1/events/:id/cancel` | Cancel one event. |
 | `GET` | `/v1/logs` | Tail logs, with optional `target` and `limit`. |
+| `POST` | `/v1/logs` | Append an operator-visible log record. |
 | `GET` | `/v1/registry` | Registry names, capabilities, and channels. |
 | `GET` | `/v1/capabilities` | Capability provider map. |
 | `GET` | `/v1/sandboxes` | Sandbox lease list placeholder. |
 
-Runtime workers append job-targeted logs over local IPC while they run. REST
-clients inspect those breadcrumbs with `GET /v1/logs?target=<job_id>`. For Pi
-runtime jobs this includes lifecycle events such as `agent_start`,
-`message_end`, tool execution boundaries, extension UI requests, and
-cancellation observation without exposing raw token deltas by default.
+Runtime workers append job-targeted logs while they run. REST clients inspect
+those breadcrumbs with `GET /v1/logs?target=<job_id>`. For Pi runtime jobs this
+includes lifecycle events such as `agent_start`, `message_end`, tool execution
+boundaries, extension UI requests, and cancellation observation without exposing
+raw token deltas by default.
 
 ## Request Examples
 
@@ -142,6 +146,60 @@ The durable gateway treats cancellation as terminal. Cooperative workers observe
 the cancelled job record, abort their runtime signal, clear active leases, and
 leave subsequent late `complete` or `fail` writes as no-ops against the
 cancelled status.
+
+Claim and report work from an external worker:
+
+```http
+POST /v1/jobs/acquire
+content-type: application/json
+
+{
+  "queue": "default",
+  "worker": "pi-worker-1",
+  "leaseMs": 300000
+}
+```
+
+The response is either a `GatewayJobLease` or `null` when no pending job is
+available.
+
+Append a job breadcrumb:
+
+```http
+POST /v1/logs
+content-type: application/json
+
+{
+  "target": "job_123",
+  "level": "info",
+  "message": "agent runtime event: agent_start",
+  "data": { "runtimeId": "pi" }
+}
+```
+
+Finish the job:
+
+```http
+POST /v1/jobs/job_123/complete
+content-type: application/json
+
+{
+  "result": {
+    "summary": "Release checks passed."
+  }
+}
+```
+
+Or fail it clearly:
+
+```http
+POST /v1/jobs/job_123/fail
+content-type: application/json
+
+{
+  "error": "Pi runtime exited before producing a final message."
+}
+```
 
 Watch world snapshots:
 
