@@ -1,3 +1,4 @@
+import { mutateJob } from './rest-routes-job-mutations.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient, GatewayJobSpec } from './types.js';
 
@@ -9,9 +10,8 @@ export async function dispatchJobs(
   const [, id, action] = route.parts;
   if (route.method === 'GET' && !id) return { status: 200, body: await client.listJobs() };
   if (route.method === 'GET' && id) return showJob(client, id);
-  if (route.method === 'POST' && !id) return enqueueJob(client, request);
-  if (route.method === 'POST' && id && action === 'cancel') {
-    return { status: 200, body: await client.cancelJob(id) };
+  if (route.method === 'POST') {
+    return mutateJob(client, id, action, request, () => enqueueJob(client, request));
   }
   return { status: 404, body: { error: 'not found' } };
 }

@@ -140,7 +140,50 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(job.state, 'pending');
     assert.equal((await getJson(`${baseUrl}/jobs/${job.id}`)).id, job.id);
-    assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/cancel`, {})).state, 'cancelled');
+    const lease = await postJson(`${baseUrl}/jobs/acquire`, {
+      queue: 'default',
+      worker: 'rest-worker',
+      leaseMs: 1_000,
+    });
+    assert.equal(lease.job.id, job.id);
+    assert.equal(lease.lease.worker, 'rest-worker');
+    const breadcrumb = await postJson(`${baseUrl}/logs`, {
+      target: job.id,
+      message: 'worker claimed job over REST',
+      data: { worker: 'rest-worker' },
+    });
+    assert.equal(breadcrumb.target, job.id);
+    assert.equal(
+      (await postJson(`${baseUrl}/jobs/${job.id}/complete`, { result: { ok: true } })).state,
+      'completed',
+    );
+
+    const failedJob = await postJson(`${baseUrl}/jobs`, {
+      spec: { kind: 'agent.run', payload: { prompt: 'fail from REST' } },
+    });
+    assert.equal(
+      (await postJson(`${baseUrl}/jobs/acquire`, { worker: 'rest-worker' })).job.id,
+      failedJob.id,
+    );
+    assert.equal(
+      (await postJson(`${baseUrl}/jobs/${failedJob.id}/fail`, { error: 'rest failure' })).state,
+      'failed',
+    );
+    assert.match(
+      (await getJson(`${baseUrl}/logs?target=${failedJob.id}`))
+        .map((log: any) => log.message)
+        .join('\n'),
+      /rest failure/,
+    );
+
+    const cancelledJob = await postJson(`${baseUrl}/jobs`, {
+      spec: { kind: 'agent.run', payload: { prompt: 'cancel from REST' } },
+    });
+    assert.equal(
+      (await postJson(`${baseUrl}/jobs/${cancelledJob.id}/cancel`, {})).state,
+      'cancelled',
+    );
+    assert.equal(await postJson(`${baseUrl}/jobs/acquire`, { worker: 'rest-worker' }), null);
 
     const world = await getJson(`${baseUrl}/world`);
     assert.equal(world.agentRuntimes[0]?.id, 'codex');
