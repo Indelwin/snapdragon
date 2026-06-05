@@ -7,7 +7,11 @@ import test from 'node:test';
 import { InlineGatewayClient } from '@snapdragon-ai/gateway';
 import { stringify as stringifyYaml } from 'yaml';
 import { parseArgs } from '../src/args.ts';
-import { runGatewayAgentJob } from '../src/gateway-agent-job-service.ts';
+import {
+  gatewayAgentJobService,
+  registerAgentJobWorker,
+  runGatewayAgentJob,
+} from '../src/gateway-agent-job-service.ts';
 import { runGatewayCommand } from '../src/gateway-command.ts';
 import { configuredRustGatewayServices } from '../src/gateway-rust-config.ts';
 import { formatRustGatewayStatus } from '../src/gateway-rust-status.ts';
@@ -174,6 +178,12 @@ test('gateway agent job service records Pi runtime breadcrumbs', async () => {
   const root = await mkGatewayRoot();
   const fixture = await writePiRpcJobFixture(root);
   const gateway = new InlineGatewayClient();
+  const config = piRuntimeConfig(root, fixture);
+  await registerAgentJobWorker(gateway, config, 'test-worker');
+  const worker = await gateway.showWorker('test-worker');
+  assert.equal(worker?.service, 'agent-jobs');
+  assert.deepEqual(worker?.capabilities, ['agent.run']);
+  assert.deepEqual((worker?.metadata as any)?.supportedRuntimeIds, ['sd', 'pi']);
   const job = await gateway.enqueueJob({
     kind: 'agent.run',
     payload: { prompt: 'hello pi', targetRuntimeId: 'pi' },
@@ -184,11 +194,17 @@ test('gateway agent job service records Pi runtime breadcrumbs', async () => {
   assert.equal(lease.job.id, job.id);
 
   try {
-    const result = await runGatewayAgentJob(gateway, piRuntimeConfig(root, fixture), lease.job, {
+    const result = await runGatewayAgentJob(gateway, config, lease.job, {
       cancellationPollMs: 10,
+      workerId: 'test-worker',
     });
     assert.equal(result.metrics?.completed, 1);
     assert.equal((await gateway.showJob(job.id))?.state, 'completed');
+    const completedWorker = await gateway.showWorker('test-worker');
+    assert.equal(completedWorker?.state, 'idle');
+    assert.equal(completedWorker?.status, `completed ${job.id}`);
+    assert.equal((completedWorker?.metadata as any)?.currentRuntimeId, 'pi');
+    assert.deepEqual((completedWorker?.metadata as any)?.supportedRuntimeIds, ['sd', 'pi']);
     const logs = await gateway.tailLogs({ target: job.id, limit: 20 });
     assert.match(
       logs.map((log) => log.message).join('\n'),
@@ -203,6 +219,8 @@ test('gateway agent job service aborts Pi runtime when the job is cancelled', as
   const root = await mkGatewayRoot();
   const fixture = await writePiRpcJobFixture(root, { hang: true });
   const gateway = new InlineGatewayClient();
+  const config = piRuntimeConfig(root, fixture);
+  await registerAgentJobWorker(gateway, config, 'test-worker');
   const job = await gateway.enqueueJob({
     kind: 'agent.run',
     payload: { prompt: 'wait here', targetRuntimeId: 'pi' },
@@ -213,8 +231,9 @@ test('gateway agent job service aborts Pi runtime when the job is cancelled', as
   assert.equal(lease.job.id, job.id);
 
   try {
-    const running = runGatewayAgentJob(gateway, piRuntimeConfig(root, fixture), lease.job, {
+    const running = runGatewayAgentJob(gateway, config, lease.job, {
       cancellationPollMs: 10,
+      workerId: 'test-worker',
     });
     await waitForLog(gateway, job.id, /agent runtime event: agent_start/);
     await gateway.cancelJob(job.id);
@@ -222,9 +241,55 @@ test('gateway agent job service aborts Pi runtime when the job is cancelled', as
     assert.equal(result.metrics?.completed, 0);
     assert.equal(result.metrics?.failed, 0);
     assert.equal((await gateway.showJob(job.id))?.state, 'cancelled');
+    const cancelledWorker = await gateway.showWorker('test-worker');
+    assert.equal(cancelledWorker?.state, 'idle');
+    assert.equal(cancelledWorker?.status, `cancelled ${job.id}`);
+    assert.equal((cancelledWorker?.metadata as any)?.currentRuntimeId, 'pi');
     const logs = await gateway.tailLogs({ target: job.id, limit: 20 });
     assert.match(logs.map((log) => log.message).join('\n'), /job cancellation observed/);
   } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('gateway agent job service registers and heartbeats its worker before polling', async () => {
+  const root = await mkGatewayRoot();
+  const requests: any[] = [];
+  const server = createServer((socket) => {
+    let buffer = '';
+    socket.on('data', (chunk) => {
+      buffer += chunk.toString('utf8');
+      const lineEnd = buffer.indexOf('\n');
+      if (lineEnd < 0) return;
+      const request = JSON.parse(buffer.slice(0, lineEnd));
+      requests.push(request);
+      socket.end(`${JSON.stringify(agentJobServiceResponse(request))}\n`);
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(join(root, 'gateway.sock'), resolve));
+  try {
+    const service = gatewayAgentJobService();
+    const result = await service.runOnce({
+      config: piRuntimeConfig(root, 'pi-fixture'),
+      memory: {} as any,
+      now: () => 10,
+      log: () => undefined,
+    });
+    assert.equal(result?.summary, 'no queued agent jobs');
+    assert.deepEqual(
+      requests.map((request) => request.method),
+      ['workers.register', 'jobs.acquire', 'workers.heartbeat'],
+    );
+    const worker = requests[0]?.params.worker;
+    assert.match(worker.id, /^agent-jobs-\d+$/);
+    assert.equal(worker.queue, 'default');
+    assert.equal(worker.service, 'agent-jobs');
+    assert.deepEqual(worker.capabilities, ['agent.run']);
+    assert.deepEqual(worker.metadata.supportedRuntimeIds, ['sd', 'pi']);
+    assert.equal(requests[1]?.params.worker, worker.id);
+    assert.equal(requests[2]?.params.heartbeat.status, 'waiting for agent.run jobs');
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
     await rm(root, { force: true, recursive: true });
   }
 });
@@ -594,6 +659,18 @@ function responseFor(request: any): unknown {
   return { id: request.id, ok: true, result: true };
 }
 
+function agentJobServiceResponse(request: any): unknown {
+  if (request.method === 'workers.register') {
+    return { id: request.id, ok: true, result: wireWorker(request.params.worker) };
+  }
+  if (request.method === 'jobs.acquire') return { id: request.id, ok: true, result: null };
+  if (request.method === 'workers.heartbeat') {
+    const heartbeat = request.params.heartbeat;
+    return { id: request.id, ok: true, result: wireWorker(heartbeat) };
+  }
+  return { id: request.id, ok: true, result: true };
+}
+
 function wireService(name: string, runs: number): unknown {
   return {
     name,
@@ -655,6 +732,6 @@ function wireWorker(worker: any = {}): unknown {
     lease_expires_at_ms: null,
     status: worker.status ?? null,
     last_error: null,
-    metadata: null,
+    metadata: worker.metadata ?? null,
   };
 }
