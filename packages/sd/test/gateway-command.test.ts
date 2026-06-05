@@ -69,6 +69,43 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
     );
     assert.match(await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'list'] }), /agent\.run/);
     assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: [
+          'jobs',
+          'acquire',
+          '--worker',
+          'agent-jobs-1',
+          '--queue',
+          'default',
+          '--lease-ms',
+          '60000',
+        ],
+      }),
+      /acquired job_1\tagent\.run\tqueue=default\tworker=agent-jobs-1\tlease=lease_1/,
+    );
+    assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['logs', 'append', 'job_1', 'adapter claimed work', '--level', 'debug'],
+      }),
+      /logged job_1\tdebug\tadapter claimed work/,
+    );
+    assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['jobs', 'complete', 'job_1', '{"ok":true}'],
+      }),
+      /completed job_1/,
+    );
+    assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['jobs', 'fail', 'job_1', 'worker failed clearly'],
+      }),
+      /failure recorded job_1\tstate=failed\terror=worker failed clearly/,
+    );
+    assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'cancel', 'job_1'] }),
       /cancelled job_1/,
     );
@@ -661,6 +698,32 @@ function responseFor(request: any): unknown {
   if (request.method === 'jobs.list') {
     return { id: request.id, ok: true, result: [wireJob('job_1', 'Running')] };
   }
+  if (request.method === 'jobs.acquire') {
+    return {
+      id: request.id,
+      ok: true,
+      result: {
+        job: wireJob('job_1', 'Running'),
+        lease: {
+          id: 'lease_1',
+          job_id: 'job_1',
+          worker: request.params.worker,
+          acquired_at_ms: 10,
+          expires_at_ms: 60_010,
+        },
+      },
+    };
+  }
+  if (request.method === 'jobs.complete') {
+    return { id: request.id, ok: true, result: wireJob(request.params.id, 'Completed') };
+  }
+  if (request.method === 'jobs.fail') {
+    return {
+      id: request.id,
+      ok: true,
+      result: wireJob(request.params.id, 'Failed', request.params.error),
+    };
+  }
   if (request.method === 'jobs.cancel') {
     return { id: request.id, ok: true, result: wireJob(request.params.id, 'Cancelled') };
   }
@@ -693,6 +756,19 @@ function responseFor(request: any): unknown {
           message: 'agent runtime event: message_end',
         },
       ],
+    };
+  }
+  if (request.method === 'logs.append') {
+    return {
+      id: request.id,
+      ok: true,
+      result: {
+        id: 3,
+        at_ms: 30,
+        level: request.params.level,
+        target: request.params.target,
+        message: request.params.message,
+      },
     };
   }
   if (request.method === 'sandboxes.list') return { id: request.id, ok: true, result: [] };
@@ -762,7 +838,7 @@ function wireStatus(): unknown {
   };
 }
 
-function wireJob(id: string, state: string): unknown {
+function wireJob(id: string, state: string, error?: string): unknown {
   return {
     id,
     spec: {
@@ -779,6 +855,7 @@ function wireJob(id: string, state: string): unknown {
     updated_at_ms: 10,
     lease_id: state === 'Running' ? 'lease_1' : null,
     lease_expires_at_ms: state === 'Running' ? 120_000 : null,
+    last_error: error ?? null,
   };
 }
 

@@ -202,6 +202,10 @@ now?” without requiring process inspection.
 
 The inline client implements the same lifecycle in memory for tests and small
 embedders, including automatic requeue and manual retry behavior.
+The `sd` CLI mirrors the same lifecycle for local smoke tests and simple
+adapters: `sd gateway jobs acquire --worker <id>`, `complete`, `fail`, and
+`sd gateway logs append <job_id> ...` cover claim, progress, success, and clear
+failure reporting without requiring hand-written REST calls.
 
 ## REST and SSE Facade
 

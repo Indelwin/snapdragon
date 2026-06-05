@@ -14,12 +14,13 @@ Usage:
 
 Gateway commands:
   sd gateway inspect [job-id] [--runtime <id>] [--worker <id>] [--limit <n>]
-  sd gateway jobs enqueue|list|show|cancel
+  sd gateway jobs enqueue|list|show|acquire|complete|fail|cancel|retry
   sd gateway agents list|show|register-pi|probe-pi
   sd gateway agents run|enqueue [--runtime <id>]
   sd gateway agents status|cancel <job-id>
   sd gateway learn enqueue-eval <dataset.json> [--id <id>]
   sd gateway logs tail [target] [limit]
+  sd gateway logs append <target> <message> [--level <level>]
   sd gateway sandboxes list
   sd gateway sandboxes lease [project] [--id <id>] [--ref <path>] [--ttl-ms <ms>]
   sd gateway sandboxes release|destroy <lease-id>

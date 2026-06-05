@@ -2,12 +2,22 @@ import type { GatewayClient, GatewayJobStatus } from '@snapdragon-ai/gateway';
 import type { SdCliArgs } from './args-types.js';
 import { loadSdConfig } from './config.js';
 import { gatewayErrorMessage, rustGatewayClientForConfig } from './gateway-command-client.js';
+import {
+  acquireGatewayJob,
+  completeGatewayJob,
+  failGatewayJob,
+} from './gateway-command-job-lifecycle.js';
 
 type JobsHandler = (rest: string[], args: SdCliArgs) => Promise<string>;
 
 const JOB_HANDLERS: Record<string, JobsHandler> = {
+  acquire: acquireGatewayJob,
   delete: (rest, args) => cancelJob(rest[0], args),
   enqueue: enqueueJob,
+  claim: acquireGatewayJob,
+  complete: completeGatewayJob,
+  fail: failGatewayJob,
+  finish: completeGatewayJob,
   list: (_rest, args) => listJobs(args),
   remove: (rest, args) => cancelJob(rest[0], args),
   show: (rest, args) => showJob(rest[0], args),
