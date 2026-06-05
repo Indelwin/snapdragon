@@ -53,6 +53,8 @@ not yet install auth middleware.
 | `POST` | `/v1/services/:name/run` | Run a service immediately. |
 | `POST` | `/v1/services/:name/enable` | Enable or disable a service. |
 | `GET` | `/v1/agents` | List registered agent runtimes. |
+| `POST` | `/v1/agents/probe` | Probe a local runtime kind without registering it. |
+| `POST` | `/v1/agents/probe/pi` | Probe the local Pi JSONL RPC runtime without registering it. |
 | `POST` | `/v1/agents/register` | Register and durably store an agent runtime descriptor. |
 | `GET` | `/v1/agents/:id` | Show one runtime descriptor. |
 | `DELETE` | `/v1/agents/:id` | Unregister one runtime descriptor. |
@@ -97,6 +99,12 @@ and blank supported job kinds or capabilities are rejected with `400` responses.
 `DELETE /v1/agents/:id` removes a stale or retired runtime from the live gateway
 and durable store; userland config entries remain separate so `sd --config`
 files are never mutated by the REST facade.
+
+Runtime probes are local, non-mutating checks. A management UI can call
+`POST /v1/agents/probe/pi` to verify that the installed Pi runtime answers JSONL
+RPC, inspect the returned descriptor and health metadata, then call
+`POST /v1/agents/register` only after the operator confirms the runtime should
+be registered.
 
 Worker registration is separate from process snapshots. `workers` are durable
 gateway entities that external adapters and headless job runners can register,
@@ -172,6 +180,22 @@ content-type: application/json
 ```
 
 Register the local Pi runtime:
+
+```http
+POST /v1/agents/probe/pi
+content-type: application/json
+
+{
+  "options": {
+    "agentDir": "~/.pi-agent",
+    "timeoutMs": 3000
+  }
+}
+```
+
+The response is a `GatewayAgentRuntimeDescriptor` with `health` and `metadata`
+filled from Pi's `get_state` and `get_commands` RPC responses. The same request
+can also be sent to `POST /v1/agents/probe` with `{ "kind": "pi", "options": {} }`.
 
 ```http
 POST /v1/agents/register

@@ -1,4 +1,5 @@
 import { normalizeGatewayAgentRuntimeDescriptor } from './agent-runtime-validation.js';
+import { isAgentRuntimeProbeRoute, probeAgentRuntimeRoute } from './rest-routes-agent-probe.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayAgentRuntimeDescriptor, GatewayClient } from './types.js';
 
@@ -22,6 +23,7 @@ export async function dispatchAgents(
   route: RestRoute,
   request: RestRequest,
 ): Promise<RestRouteResult> {
+  if (isAgentRuntimeProbeRoute(route)) return probeAgentRuntimeRoute(route, request);
   const handler = agentRouteHandlers[agentRouteKey(route)];
   return handler ? handler(client, route, request) : notFound();
 }
