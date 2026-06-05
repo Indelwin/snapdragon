@@ -206,16 +206,26 @@ embedders, including automatic requeue and manual retry behavior.
 ## REST and SSE Facade
 
 `createGatewayRestServer()` wraps any `GatewayClient` with a dependency-free
-local HTTP surface. It does not replace Rust IPC; it sits above the client so
-the same route contracts work with inline tests or the Rust daemon.
+local HTTP surface. `createGatewayRestClient()` gives apps, external adapters,
+and UI code the same typed facade over that route surface. REST does not replace
+Rust IPC; it sits above the client so the same route contracts work with inline
+tests or the Rust daemon.
 
 ```ts
-import { createGatewayRestServer, RustGatewayClient } from '@snapdragon-ai/gateway';
+import {
+  createGatewayRestClient,
+  createGatewayRestServer,
+  RustGatewayClient,
+} from '@snapdragon-ai/gateway';
 
 const gateway = new RustGatewayClient({ socketPath: '/tmp/snapdragon-gateway.sock' });
 const rest = createGatewayRestServer(gateway);
 const baseUrl = await rest.listen();
 console.log(baseUrl); // http://127.0.0.1:<port>/v1
+
+const remote = createGatewayRestClient(baseUrl);
+const lease = await remote.acquireJob('default', 'pi-worker-1');
+if (lease) await remote.completeJob(lease.job.id, { ok: true });
 ```
 
 From `sd`, the same facade can be started as an operator command:
@@ -238,8 +248,9 @@ Initial routes cover:
   `POST /v1/workers/:id/heartbeat`, `DELETE /v1/workers/:id`,
   `POST /v1/workers/:id/unregister`, and `GET /v1/worker-processes`.
 - `GET /v1/jobs`, `POST /v1/jobs`, `GET /v1/jobs/:id`,
-  `DELETE /v1/jobs/:id`, `POST /v1/jobs/:id/cancel`, and
-  `POST /v1/jobs/:id/retry`.
+  `POST /v1/jobs/acquire`, `DELETE /v1/jobs/:id`,
+  `POST /v1/jobs/:id/cancel`, `POST /v1/jobs/:id/complete`,
+  `POST /v1/jobs/:id/fail`, and `POST /v1/jobs/:id/retry`.
 - `GET /v1/events`, `POST /v1/events`, `GET /v1/events/:id`,
   `DELETE /v1/events/:id`, `POST /v1/events/:id/cancel`, `GET /v1/logs`,
   `POST /v1/logs`, `GET /v1/registry`,
@@ -258,6 +269,9 @@ changing the response shape. Unrequested sections return empty collections while
 Runtime probe routes are non-mutating; management surfaces can test Pi's JSONL
 RPC health and inspect the returned descriptor before deciding whether to call
 the durable register route.
+REST worker lifecycle routes let external adapters claim work, report progress
+through logs, finish successfully, fail clearly, and keep the same worker/job
+state visible to dashboards and executive agents.
 Cancellation routes return the cancelled record when they succeed and a 404
 error body when the target job or event is unknown, so agent scripts can treat
 cleanup as an observable state transition instead of a silent no-op.

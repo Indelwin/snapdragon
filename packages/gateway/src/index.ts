@@ -12,6 +12,8 @@ export {
   runPiRpcAgentJob,
 } from './pi-rpc.js';
 export type {
+  GatewayRestClientOptions,
+  GatewayRestClientStreamOptions,
   GatewayRestServer,
   GatewayRestServerOptions,
   GatewayRestStreamErrorEvent,
@@ -19,7 +21,12 @@ export type {
   GatewayRestStreamHeartbeatEvent,
   GatewayRestStreamSnapshotEvent,
 } from './rest.js';
-export { createGatewayRestServer } from './rest.js';
+export {
+  createGatewayRestClient,
+  createGatewayRestServer,
+  GatewayRestClient,
+  GatewayRestClientError,
+} from './rest.js';
 export { RustGatewayClient, type RustGatewayClientOptions } from './rust.js';
 export type {
   ActorId,

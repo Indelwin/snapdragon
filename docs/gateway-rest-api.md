@@ -40,6 +40,28 @@ keeps running until interrupted. It refuses non-loopback hosts unless
 `--allow-remote` is explicit, because this first surface is local-only and does
 not yet install auth middleware.
 
+## TypeScript Client
+
+Apps and external adapters can use the typed REST client instead of hand-written
+`fetch` calls:
+
+```ts
+import { createGatewayRestClient } from '@snapdragon-ai/gateway';
+
+const gateway = createGatewayRestClient('http://127.0.0.1:8787/v1');
+await gateway.registerWorker({ id: 'pi-worker-1', runtimeId: 'pi', capabilities: ['agent.run'] });
+
+const lease = await gateway.acquireJob('default', 'pi-worker-1', 300_000);
+if (lease) {
+  await gateway.appendLog({ target: lease.job.id, message: 'Pi worker started' });
+  await gateway.completeJob(lease.job.id, { ok: true });
+}
+```
+
+`gateway.stream()` returns an async iterator of typed SSE snapshot, heartbeat,
+and error events. The client accepts static or dynamic headers so local auth can
+be added above the same route shape later.
+
 ## Routes
 
 | Method | Path | Purpose |
@@ -68,9 +90,12 @@ not yet install auth middleware.
 | `GET` | `/v1/worker-processes` | List diagnostic service worker process snapshots. |
 | `GET` | `/v1/jobs` | List durable jobs. |
 | `POST` | `/v1/jobs` | Enqueue a durable job. |
+| `POST` | `/v1/jobs/acquire` | Claim the next pending job for a worker. |
 | `GET` | `/v1/jobs/:id` | Show one job. |
 | `DELETE` | `/v1/jobs/:id` | Cancel one job. |
 | `POST` | `/v1/jobs/:id/cancel` | Cancel one job. |
+| `POST` | `/v1/jobs/:id/complete` | Complete a leased job with an optional result. |
+| `POST` | `/v1/jobs/:id/fail` | Fail a leased job with a visible error. |
 | `POST` | `/v1/jobs/:id/retry` | Requeue a failed job. |
 | `GET` | `/v1/events` | List gateway events. |
 | `POST` | `/v1/events` | Append an event. |
@@ -272,6 +297,43 @@ content-type: application/json
       }
     }
   }
+}
+```
+
+Claim, complete, or fail work from an external adapter:
+
+```http
+POST /v1/jobs/acquire
+content-type: application/json
+
+{
+  "queue": "default",
+  "worker": "pi-worker-1",
+  "leaseMs": 300000
+}
+```
+
+The response is a `GatewayJobLease` or `null` when no work is pending. While the
+lease is active, workers should append job-targeted logs and poll
+`GET /v1/jobs/:id` or focused world snapshots to observe cancellation.
+
+```http
+POST /v1/jobs/job_123/complete
+content-type: application/json
+
+{
+  "result": {
+    "summary": "Release checks passed."
+  }
+}
+```
+
+```http
+POST /v1/jobs/job_123/fail
+content-type: application/json
+
+{
+  "error": "Pi runtime exited before message_end"
 }
 ```
 
