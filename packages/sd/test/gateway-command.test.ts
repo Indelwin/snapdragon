@@ -82,6 +82,17 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
       await runGatewayCommand({ ...args, gatewayArgs: ['logs', 'tail'] }),
       /gateway logs/,
     );
+    const inspection = await runGatewayCommand({
+      ...args,
+      gatewayArgs: ['inspect', 'job_1', '--runtime', 'pi', '--limit', '3'],
+    });
+    assert.match(inspection, /gateway inspect job_1/);
+    assert.match(inspection, /queues: default p=1 r=1/);
+    assert.match(inspection, /job_1\trunning\tagent\.run\tqueue=default.*runtime=pi/);
+    assert.match(inspection, /proc_1\trunning\tservice=agent-jobs pid=321 command=node/);
+    assert.match(inspection, /pi\tpi\tjsonl Pi Agent jobs=agent\.run caps=agent\.run/);
+    assert.match(inspection, /lease_1\tjob=job_1\tworker=agent-jobs-1/);
+    assert.match(inspection, /agent runtime event: message_end/);
     const datasetPath = join(root, 'dataset.json');
     await writeFile(
       datasetPath,
@@ -404,6 +415,9 @@ function mockGatewayServer(socketPath: string) {
 }
 
 function responseFor(request: any): unknown {
+  if (request.method === 'status') {
+    return { id: request.id, ok: true, result: wireStatus() };
+  }
   if (request.method === 'services.list') {
     return { id: request.id, ok: true, result: [wireService('memory-worker', 0)] };
   }
@@ -432,7 +446,7 @@ function responseFor(request: any): unknown {
     return { id: request.id, ok: true, result: wireJob('job_1', 'Pending') };
   }
   if (request.method === 'jobs.list') {
-    return { id: request.id, ok: true, result: [wireJob('job_1', 'Pending')] };
+    return { id: request.id, ok: true, result: [wireJob('job_1', 'Running')] };
   }
   if (request.method === 'jobs.cancel') {
     return { id: request.id, ok: true, result: wireJob(request.params.id, 'Cancelled') };
@@ -446,13 +460,26 @@ function responseFor(request: any): unknown {
   if (request.method === 'agents.show') {
     return { id: request.id, ok: true, result: wireAgentRuntime(request.params.id) };
   }
+  if (request.method === 'events.list') {
+    return { id: request.id, ok: true, result: [] };
+  }
   if (request.method === 'logs.tail') {
     return {
       id: request.id,
       ok: true,
-      result: [{ id: 1, at_ms: 10, level: 'info', message: 'ready' }],
+      result: [
+        { id: 1, at_ms: 10, level: 'info', target: 'job_1', message: 'agent runtime started' },
+        {
+          id: 2,
+          at_ms: 20,
+          level: 'info',
+          target: 'job_1',
+          message: 'agent runtime event: message_end',
+        },
+      ],
     };
   }
+  if (request.method === 'sandboxes.list') return { id: request.id, ok: true, result: [] };
   return { id: request.id, ok: true, result: true };
 }
 
@@ -469,13 +496,51 @@ function wireService(name: string, runs: number): unknown {
   };
 }
 
+function wireStatus(): unknown {
+  return {
+    services: [wireService('memory-worker', 0)],
+    agent_runtimes: [wireAgentRuntime('pi')],
+    processes: 1,
+    worker_processes: [
+      {
+        id: 'proc_1',
+        service: 'agent-jobs',
+        pid: 321,
+        command: 'node',
+        args: ['sd', 'gateway', 'worker', 'run', 'agent-jobs'],
+        cwd: null,
+        started_at_ms: 10,
+        state: 'Running',
+      },
+    ],
+    tables: ['state'],
+    service_tasks: ['agent-jobs'],
+    jobs_pending: 1,
+    jobs_running: 1,
+    active_leases: [
+      {
+        id: 'lease_1',
+        job_id: 'job_1',
+        worker: 'agent-jobs-1',
+        acquired_at_ms: 10,
+        expires_at_ms: 120_000,
+      },
+    ],
+    queue_depths: [{ queue: 'default', pending: 1, running: 1 }],
+    recent_logs: [],
+    recent_failures: [],
+    uptime_ms: 1_000,
+    pid: 123,
+  };
+}
+
 function wireJob(id: string, state: string): unknown {
   return {
     id,
     spec: {
       kind: 'agent.run',
       queue: 'default',
-      payload: { prompt: 'test' },
+      payload: { prompt: 'test', targetRuntimeId: 'pi' },
       priority: 0,
       max_attempts: 1,
       timeout_ms: null,
@@ -484,6 +549,8 @@ function wireJob(id: string, state: string): unknown {
     attempts: 0,
     created_at_ms: 10,
     updated_at_ms: 10,
+    lease_id: state === 'Running' ? 'lease_1' : null,
+    lease_expires_at_ms: state === 'Running' ? 120_000 : null,
   };
 }
 
@@ -495,7 +562,7 @@ function wireAgentRuntime(id: string): unknown {
     label: id === 'pi' ? 'Pi Agent' : null,
     command: null,
     supported_job_kinds: ['agent.run'],
-    capabilities: [],
+    capabilities: ['agent.run'],
     isolation: 'profile',
     health: null,
     metadata: null,
