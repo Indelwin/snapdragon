@@ -13,6 +13,7 @@ Usage:
   sd [options] "prompt"
 
 Gateway commands:
+  sd gateway inspect [job-id] [--runtime <id>] [--worker <id>] [--limit <n>]
   sd gateway jobs enqueue|list|show|cancel
   sd gateway agents list|show|register-pi|probe-pi
   sd gateway agents run|enqueue [--runtime <id>]

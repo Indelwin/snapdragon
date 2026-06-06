@@ -205,6 +205,12 @@ process and records a `timed_out` worker state. The daemon also expires stale
 job leases during status/watchdog passes so stuck jobs can become visible and
 recoverable without requiring a foreground TUI process.
 
+`worldSnapshot()` composes status, registry, services, agent runtimes, jobs,
+events, logs, leases, queue depths, table snapshots, and worker process rows into
+one agent-facing shape. `sd gateway inspect [job-id]` formats that snapshot as
+the pre-UI operator view for jobs, workers, runtimes, services, leases,
+sandboxes, and logs.
+
 ## Current Boundaries
 
 This package defines local-first gateway contracts. Distributed transport
