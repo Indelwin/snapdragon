@@ -98,6 +98,10 @@ restart recovers Pi, `sd`, Codex, Hermes, and custom runtime descriptors before
 workers lease queued jobs, so orchestration does not depend on a one-shot setup
 command still being present in process memory.
 
+REST clients can probe the same runtime through `POST /v1/agents/probe/pi`.
+Passing `{ "save": true }` registers the health-checked descriptor, which gives
+future management UIs a single guided "check and add Pi" operation.
+
 The adapter sends `prompt`, `get_state`, and `get_commands` commands over stdin,
 observes streamed message and agent lifecycle events on stdout, and cancels
 blocking extension UI prompts by default. Callers can pass `onEvent` to mirror

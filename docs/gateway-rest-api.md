@@ -42,6 +42,7 @@ should be added above the same route shape.
 | `POST` | `/v1/services/:name/enable` | Enable or disable a service. |
 | `GET` | `/v1/agents` | List registered agent runtimes. |
 | `POST` | `/v1/agents/register` | Register and durably store an agent runtime descriptor. |
+| `POST` | `/v1/agents/probe/pi` | Probe a Pi RPC runtime descriptor and optionally register it. |
 | `GET` | `/v1/agents/:id` | Show one runtime descriptor. |
 | `GET` | `/v1/workers` | List worker process snapshots. |
 | `GET` | `/v1/jobs` | List durable jobs. |
@@ -104,6 +105,27 @@ content-type: application/json
   }
 }
 ```
+
+Probe and save the local Pi runtime:
+
+```http
+POST /v1/agents/probe/pi
+content-type: application/json
+
+{
+  "save": true,
+  "options": {
+    "command": "pi",
+    "args": ["--mode", "rpc"],
+    "agentDir": "/Users/example/Workspace/pi-mono"
+  }
+}
+```
+
+The response is a `GatewayAgentRuntimeDescriptor` with `health` and `metadata`
+filled from Pi RPC `get_state` and `get_commands`. Because probing launches the
+configured command, keep this route on the default local listener unless a later
+auth/policy layer explicitly allows remote runtime management.
 
 Enqueue a routed agent job:
 

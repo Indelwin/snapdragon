@@ -97,6 +97,9 @@ The `sd` facade can also save descriptors under `gateway.agent_runtimes`; saved
 descriptors are visible in `sd gateway agents list/show` even before the daemon
 is available, and job workers can re-register them before dispatch. This gives
 operators one stable setup step instead of a hidden in-memory runtime table.
+Runtime probes are explicit management operations: `POST /v1/agents/probe/pi`
+checks a user's Pi RPC runtime and can save the health-checked descriptor for
+future jobs.
 
 ```mermaid
 sequenceDiagram
