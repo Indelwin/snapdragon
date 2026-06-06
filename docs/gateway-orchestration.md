@@ -164,6 +164,8 @@ the next action obvious:
 - Stable ids and correlation ids across jobs, events, logs, and artifacts.
 - World snapshots that explain queue depth, active leases, workers, runtimes,
   and recent failures.
+- Focused snapshot options for agents and UIs that only need one job, runtime,
+  service, worker process, table set, or log target.
 - Concrete public nouns: jobs, services, agents, workers, capabilities, events,
   logs, sandboxes.
 - ECS terminology stays in architecture docs and implementation internals unless

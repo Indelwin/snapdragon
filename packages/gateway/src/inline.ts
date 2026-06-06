@@ -22,7 +22,7 @@ import type {
   GatewayTableAccess,
   GatewayTableSnapshot,
 } from './types.js';
-import type { GatewayOrchestrationClient, GatewayWorldSnapshot } from './types-runtime.js';
+import type { GatewayOrchestrationClient, GatewayWorldSnapshotOptions } from './types-runtime.js';
 import { buildGatewayWorldSnapshot } from './world.js';
 
 export class InlineGatewayClient implements GatewayOrchestrationClient {
@@ -206,8 +206,8 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
     return logs.slice(-(options.limit ?? 20));
   }
 
-  async worldSnapshot(): Promise<GatewayWorldSnapshot> {
-    return buildGatewayWorldSnapshot(this);
+  async worldSnapshot(options: GatewayWorldSnapshotOptions = {}) {
+    return buildGatewayWorldSnapshot(this, options);
   }
 
   #cancel<T extends { id: string; state: string; updatedAtMs: number }>(

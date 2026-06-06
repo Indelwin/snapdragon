@@ -98,6 +98,22 @@ restart recovers Pi, `sd`, Codex, Hermes, and custom runtime descriptors before
 workers lease queued jobs, so orchestration does not depend on a one-shot setup
 command still being present in process memory.
 
+Focused world snapshots keep agent and UI polling small:
+
+```ts
+const snapshot = await gateway.worldSnapshot({
+  sections: ['jobs', 'logs', 'workerProcesses'],
+  target: 'job_123',
+  runtimeId: 'pi',
+  logLimit: 20,
+});
+```
+
+The same vocabulary is available through `GET /v1/world` and `GET /v1/stream`,
+for example `/v1/world?sections=jobs,logs&target=job_123&logLimit=20`.
+`workerProcesses` is the explicit process snapshot section; `workers` currently
+mirrors it for compatibility until durable worker records land on `main`.
+
 The adapter sends `prompt`, `get_state`, and `get_commands` commands over stdin,
 observes streamed message and agent lifecycle events on stdout, and cancels
 blocking extension UI prompts by default. Callers can pass `onEvent` to mirror

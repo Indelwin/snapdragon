@@ -1,3 +1,4 @@
+import { worldSnapshotOptionsFromSearch } from './rest-query.js';
 import { dispatchAgents } from './rest-routes-agents.js';
 import { dispatchEvents } from './rest-routes-events.js';
 import { dispatchJobs } from './rest-routes-jobs.js';
@@ -51,6 +52,11 @@ async function dispatchBuiltin(
   if (route.method !== 'GET') return undefined;
   if (resource === 'health') return { status: 200, body: { ok: true, runtime: client.runtime } };
   if (resource === 'status') return { status: 200, body: await client.status() };
-  if (resource === 'world') return { status: 200, body: await client.worldSnapshot() };
+  if (resource === 'world') {
+    return {
+      status: 200,
+      body: await client.worldSnapshot(worldSnapshotOptionsFromSearch(route.searchParams)),
+    };
+  }
   return undefined;
 }

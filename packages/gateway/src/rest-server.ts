@@ -53,7 +53,7 @@ async function handleRequest(
     return;
   }
   if (route.method === 'GET' && route.parts[0] === 'stream') {
-    await sendStream(client, response, context.streamIntervalMs);
+    await sendStream(client, response, context.streamIntervalMs, route.searchParams);
     return;
   }
   const result = await dispatchRoute(client, route, request);

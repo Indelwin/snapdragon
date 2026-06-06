@@ -60,5 +60,7 @@ export type {
   GatewaySandboxLease,
   GatewaySandboxSpec,
   GatewayWorldSnapshot,
+  GatewayWorldSnapshotOptions,
+  GatewayWorldSnapshotSection,
 } from './types-runtime.js';
 export { buildGatewayWorldSnapshot } from './world.js';

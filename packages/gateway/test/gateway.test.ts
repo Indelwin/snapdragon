@@ -101,12 +101,32 @@ test('inline gateway registers agent runtimes and snapshots the world', async ()
     capabilities: ['tools.shell'],
     isolation: 'profile',
   });
-  await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'map the world' } });
+  const job = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'map the world' } });
+  await gateway.enqueueJob({ kind: 'learn.eval', queue: 'evals', payload: { prompt: 'ignore' } });
+  await gateway.appendEvent({ kind: 'channel.run', target: job.id });
+  await gateway.appendEvent({ kind: 'channel.run', target: 'other' });
+  await gateway.appendLog({ target: job.id, message: 'focused breadcrumb' });
+  await gateway.appendLog({ target: 'other', message: 'ignored breadcrumb' });
   const snapshot = await gateway.worldSnapshot();
   assert.equal(snapshot.agentRuntimes[0]?.id, 'sd');
+  assert.deepEqual(snapshot.workerProcesses, []);
   assert.equal(snapshot.jobs[0]?.spec.kind, 'agent.run');
   assert.equal(snapshot.status.agentRuntimes?.[0]?.protocol, 'embedded');
   assert.deepEqual(snapshot.sandboxes, []);
+  const focused = await gateway.worldSnapshot({
+    sections: ['agentRuntimes', 'jobs', 'events', 'logs'],
+    target: job.id,
+    runtimeId: 'sd',
+    jobKind: 'agent.run',
+    eventKind: 'channel.run',
+    logLimit: 1,
+  });
+  assert.equal(focused.agentRuntimes[0]?.id, 'sd');
+  assert.equal(focused.jobs[0]?.id, job.id);
+  assert.equal(focused.events[0]?.target, job.id);
+  assert.equal(focused.logs[0]?.message, 'focused breadcrumb');
+  assert.equal(focused.services.length, 0);
+  assert.equal(focused.workerProcesses.length, 0);
 });
 
 test('gateway REST server exposes local orchestration routes', async () => {
@@ -126,25 +146,55 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.equal((await postJson(`${baseUrl}/services/pulse/run`, {})).runs, 1);
     const services = await postJson(`${baseUrl}/services/pulse/enable`, { enabled: false });
     assert.equal(services.find((status: any) => status.name === 'pulse')?.enabled, false);
+    assert.equal(
+      (await getJson(`${baseUrl}/services?enabled=false&state=stopped`))[0]?.name,
+      'pulse',
+    );
 
     const event = await postJson(`${baseUrl}/events`, {
       kind: 'channel.run',
+      target: 'channel:demo',
       payload: { source: 'rest' },
     });
     assert.equal(event.state, 'pending');
     assert.equal((await getJson(`${baseUrl}/events`))[0]?.id, event.id);
     assert.equal((await postJson(`${baseUrl}/events/${event.id}/cancel`, {})).state, 'cancelled');
+    assert.equal(
+      (await getJson(`${baseUrl}/events?target=channel:demo&eventState=cancelled`))[0]?.id,
+      event.id,
+    );
 
     const job = await postJson(`${baseUrl}/jobs`, {
       spec: { kind: 'agent.run', payload: { prompt: 'from REST' } },
     });
     assert.equal(job.state, 'pending');
     assert.equal((await getJson(`${baseUrl}/jobs/${job.id}`)).id, job.id);
+    assert.equal((await getJson(`${baseUrl}/jobs?state=pending&kind=agent.run`))[0]?.id, job.id);
     assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/cancel`, {})).state, 'cancelled');
+    await gateway.appendLog({ target: job.id, message: 'runtime breadcrumb' });
 
     const world = await getJson(`${baseUrl}/world`);
     assert.equal(world.agentRuntimes[0]?.id, 'codex');
     assert.equal(Array.isArray(world.logs), true);
+    assert.deepEqual(world.workerProcesses, []);
+    const focusedWorld = await getJson(
+      `${baseUrl}/world?sections=jobs,logs,workerProcesses&target=${job.id}&state=cancelled&logLimit=5`,
+    );
+    assert.equal(focusedWorld.jobs[0]?.id, job.id);
+    assert.equal(
+      focusedWorld.logs.some((record: any) => record.message === 'runtime breadcrumb'),
+      true,
+    );
+    assert.deepEqual(focusedWorld.services, []);
+    assert.deepEqual(focusedWorld.workerProcesses, []);
+    const streamed = await readSseSnapshot(
+      `${baseUrl}/stream?sections=jobs,logs&target=${job.id}&state=cancelled&logLimit=5`,
+    );
+    assert.equal(streamed.jobs[0]?.id, job.id);
+    assert.equal(
+      streamed.logs.every((record: any) => record.target === job.id),
+      true,
+    );
   } finally {
     await rest.close();
   }
@@ -517,6 +567,25 @@ async function getJson(url: string): Promise<any> {
   return response.json();
 }
 
+async function readSseSnapshot(url: string): Promise<any> {
+  const controller = new AbortController();
+  const response = await fetch(url, {
+    headers: { accept: 'text/event-stream' },
+    signal: controller.signal,
+  });
+  assert.equal(response.ok, true);
+  const reader = response.body?.getReader();
+  assert.ok(reader);
+  try {
+    const chunk = await Promise.race([reader.read(), timeout(1_000)]);
+    const text = new TextDecoder().decode(chunk.value);
+    return JSON.parse(text.match(/data: (.*)/)?.[1] ?? '{}');
+  } finally {
+    await reader.cancel().catch(() => {});
+    controller.abort();
+  }
+}
+
 async function postJson(url: string, body: unknown): Promise<any> {
   const response = await fetch(url, {
     method: 'POST',
@@ -525,6 +594,12 @@ async function postJson(url: string, body: unknown): Promise<any> {
   });
   assert.equal(response.ok, true);
   return response.json();
+}
+
+function timeout(ms: number): Promise<never> {
+  return new Promise((_resolve, reject) => {
+    setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+  });
 }
 
 function wireServiceStatus(name: string): unknown {

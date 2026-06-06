@@ -2,16 +2,20 @@ import type {
   GatewayAgentRuntimeDescriptor,
   GatewayClient,
   GatewayEventRecord,
+  GatewayEventState,
+  GatewayJobState,
   GatewayJobStatus,
   GatewayLease,
   GatewayLogRecord,
   GatewayQueueDepth,
   GatewayRegistrySnapshot,
   GatewayServiceSpec,
+  GatewayServiceState,
   GatewayServiceStatus,
   GatewayStatus,
   GatewayTableSnapshot,
   GatewayWorkerProcess,
+  GatewayWorkerProcessState,
 } from './types.js';
 
 export type {
@@ -105,6 +109,7 @@ export interface GatewayWorldSnapshot {
   services: GatewayServiceStatus[];
   agentRuntimes: GatewayAgentRuntimeDescriptor[];
   workers: GatewayWorkerProcess[];
+  workerProcesses: GatewayWorkerProcess[];
   jobs: GatewayJobStatus[];
   events: GatewayEventRecord[];
   logs: GatewayLogRecord[];
@@ -115,6 +120,39 @@ export interface GatewayWorldSnapshot {
   sandboxes: GatewaySandboxLease[];
 }
 
+export type GatewayWorldSnapshotSection =
+  | 'services'
+  | 'agentRuntimes'
+  | 'workers'
+  | 'workerProcesses'
+  | 'jobs'
+  | 'events'
+  | 'logs'
+  | 'registry'
+  | 'leases'
+  | 'queueDepths'
+  | 'tables'
+  | 'sandboxes';
+
+export interface GatewayWorldSnapshotOptions {
+  sections?: GatewayWorldSnapshotSection[];
+  target?: string;
+  queue?: string;
+  runtimeId?: string;
+  service?: string;
+  worker?: string;
+  workerState?: GatewayWorkerProcessState;
+  capability?: string;
+  serviceState?: GatewayServiceState;
+  serviceEnabled?: boolean;
+  jobKind?: string;
+  jobState?: GatewayJobState;
+  eventKind?: string;
+  eventState?: GatewayEventState;
+  logLimit?: number;
+  tables?: string[];
+}
+
 export interface GatewayOrchestrationClient extends GatewayClient {
-  worldSnapshot(): Promise<GatewayWorldSnapshot>;
+  worldSnapshot(options?: GatewayWorldSnapshotOptions): Promise<GatewayWorldSnapshot>;
 }
