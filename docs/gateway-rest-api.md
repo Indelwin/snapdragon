@@ -62,6 +62,31 @@ runtime jobs this includes lifecycle events such as `agent_start`,
 `message_end`, tool execution boundaries, extension UI requests, and
 cancellation observation without exposing raw token deltas by default.
 
+## Query Filters
+
+`GET /v1/world` and `GET /v1/stream` accept the same focused inspection query
+parameters. List routes for services, workers, jobs, and events also use the
+matching subset of this vocabulary.
+
+| Parameter | Applies to | Purpose |
+| --- | --- | --- |
+| `sections` or repeated `section` | `/world`, `/stream` | Comma-separated world sections such as `jobs,logs,workerProcesses`. |
+| `target` | jobs, events, logs, leases | Focus on a job id, event target, log target, or lease job id. |
+| `queue` | jobs, queue depths | Filter by durable job queue. |
+| `runtime` / `runtimeId` | agent runtimes | Filter by registered runtime id. |
+| `service` | services, worker processes | Filter by service name. |
+| `worker` / `process` | worker processes, leases | Filter by worker/process id. |
+| `state` / `jobState` / `eventState` / `serviceState` / `workerState` | route-dependent | Filter by current state. |
+| `kind` / `jobKind` / `eventKind` | jobs, events | Filter by job or event kind. |
+| `capability` | agent runtimes | Filter runtimes by capability. |
+| `enabled` | services | Filter service enablement with `true`, `false`, `1`, or `0`. |
+| `limit` / `logLimit` | logs | Bound returned log records. |
+| `tables` / repeated `table` | `/world`, `/stream` | Restrict table snapshots by name. |
+
+The current snapshot shape exposes `workerProcesses` explicitly. `workers`
+remains as a compatibility section and mirrors worker process rows until durable
+worker registration records become part of the main branch contract.
+
 ## Request Examples
 
 Register an external runtime:
@@ -146,7 +171,7 @@ cancelled status.
 Watch world snapshots:
 
 ```http
-GET /v1/stream
+GET /v1/stream?sections=jobs,logs&target=job_123&logLimit=20
 accept: text/event-stream
 ```
 

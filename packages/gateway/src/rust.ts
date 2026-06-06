@@ -43,7 +43,7 @@ import type {
   GatewayTableAccess,
   GatewayTableSnapshot,
 } from './types.js';
-import type { GatewayOrchestrationClient } from './types-runtime.js';
+import type { GatewayOrchestrationClient, GatewayWorldSnapshotOptions } from './types-runtime.js';
 import { buildGatewayWorldSnapshot } from './world.js';
 
 export type { RustGatewayClientOptions } from './rust-options.js';
@@ -241,8 +241,8 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
     return ((await this.#call('logs.tail', options)) as any[]).map(fromWireLogRecord);
   }
 
-  async worldSnapshot() {
-    return buildGatewayWorldSnapshot(this);
+  async worldSnapshot(options: GatewayWorldSnapshotOptions = {}) {
+    return buildGatewayWorldSnapshot(this, options);
   }
 
   async #recordServiceRun(name: string, summary?: string) {

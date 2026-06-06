@@ -1,3 +1,5 @@
+import { filterWorkerProcesses } from './query-filters.js';
+import { worldSnapshotOptionsFromSearch } from './rest-query.js';
 import type { RestRoute, RestRouteResult } from './rest-types.js';
 import type { GatewayClient } from './types.js';
 
@@ -7,7 +9,9 @@ export async function dispatchWorkers(
 ): Promise<RestRouteResult> {
   if (route.method !== 'GET' || route.parts[1])
     return { status: 404, body: { error: 'not found' } };
-  return { status: 200, body: (await client.status()).workerProcesses ?? [] };
+  const options = worldSnapshotOptionsFromSearch(route.searchParams);
+  const processes = (await client.status()).workerProcesses ?? [];
+  return { status: 200, body: filterWorkerProcesses(processes, options) };
 }
 
 export async function dispatchLogs(
