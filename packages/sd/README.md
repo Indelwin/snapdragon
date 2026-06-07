@@ -57,6 +57,9 @@ sd gateway events list
 sd gateway events cancel 20260506_event
 sd gateway jobs enqueue agent.run '{"prompt":"check the repo"}'
 sd gateway jobs list
+sd gateway jobs acquire default worker-1
+sd gateway jobs complete job_123 '{"ok":true}'
+sd gateway jobs fail job_124 "worker failed clearly"
 sd gateway agents enqueue "run the release checks"
 sd gateway agents register-pi
 sd gateway agents register-pi --save --agent-dir ~/.pi-agent
