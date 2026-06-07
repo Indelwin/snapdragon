@@ -17,6 +17,7 @@ pub mod service;
 pub mod supervisor;
 pub mod tables;
 pub mod transport;
+pub mod workers;
 
 pub use agent::*;
 pub use envelope::*;
@@ -30,3 +31,4 @@ pub use service::*;
 pub use supervisor::*;
 pub use tables::*;
 pub use transport::*;
+pub use workers::*;

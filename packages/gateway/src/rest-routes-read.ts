@@ -1,15 +1,6 @@
 import type { RestRoute, RestRouteResult } from './rest-types.js';
 import type { GatewayClient } from './types.js';
 
-export async function dispatchWorkers(
-  client: GatewayClient,
-  route: RestRoute,
-): Promise<RestRouteResult> {
-  if (route.method !== 'GET' || route.parts[1])
-    return { status: 404, body: { error: 'not found' } };
-  return { status: 200, body: (await client.status()).workerProcesses ?? [] };
-}
-
 export async function dispatchLogs(
   client: GatewayClient,
   route: RestRoute,

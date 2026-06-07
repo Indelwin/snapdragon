@@ -12,6 +12,7 @@ import type {
   GatewayStatus,
   GatewayTableSnapshot,
   GatewayWorkerProcess,
+  GatewayWorkerRecord,
 } from './types.js';
 
 export type {
@@ -104,7 +105,8 @@ export interface GatewayWorldSnapshot {
   status: GatewayStatus;
   services: GatewayServiceStatus[];
   agentRuntimes: GatewayAgentRuntimeDescriptor[];
-  workers: GatewayWorkerProcess[];
+  workers: GatewayWorkerRecord[];
+  workerProcesses: GatewayWorkerProcess[];
   jobs: GatewayJobStatus[];
   events: GatewayEventRecord[];
   logs: GatewayLogRecord[];
