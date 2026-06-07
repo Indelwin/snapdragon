@@ -8,7 +8,8 @@ use crate::{
     ipc::{ok_json, parse},
     ipc_params::{
         EventRecordParams, JobAcquireParams, JobCompleteParams, JobFailParams, JobIdParams,
-        JobSpecParams, LogAppendParams, LogTailParams,
+        JobSpecParams, LogAppendParams, LogTailParams, WorkerHeartbeatParams, WorkerIdParams,
+        WorkerRegistrationParams,
     },
 };
 
@@ -65,6 +66,37 @@ pub(crate) async fn dispatch_logs(
                     .tail_logs(params.target.as_deref(), params.limit.unwrap_or(20))
                     .await?,
             )
+        }
+        _ => Err(format!("unknown gateway method: {method}")),
+    }
+}
+
+pub(crate) async fn dispatch_workers(
+    daemon: &GatewayDaemon,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
+    match method {
+        "workers.register" => {
+            let params = parse::<WorkerRegistrationParams>(params)?;
+            ok_json(
+                daemon
+                    .register_worker(params.worker, unix_time_ms())
+                    .await?,
+            )
+        }
+        "workers.heartbeat" => {
+            let params = parse::<WorkerHeartbeatParams>(params)?;
+            ok_json(
+                daemon
+                    .heartbeat_worker(params.heartbeat, unix_time_ms())
+                    .await?,
+            )
+        }
+        "workers.list" => ok_json(daemon.list_workers().await?),
+        "workers.show" => {
+            let params = parse::<WorkerIdParams>(params)?;
+            ok_json(daemon.worker(&params.id).await?)
         }
         _ => Err(format!("unknown gateway method: {method}")),
     }

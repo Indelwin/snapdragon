@@ -19,6 +19,8 @@ The public TypeScript API is intentionally small and serializable:
   daemon.
 - `GatewayAgentRuntimeDescriptor` for external runtimes such as `sd`, Codex,
   Hermes Agent, Pi Agent, and custom workers.
+- `GatewayWorkerRegistration`, `GatewayWorkerHeartbeat`, and
+  `GatewayWorkerRecord` for logical job workers and external agent adapters.
 - `GatewayJobSpec`, `GatewayJobStatus`, and `GatewayLease` for durable work
   queues.
 - `GatewayEventRecord` and `GatewayLogRecord` for inspectable orchestration
@@ -156,6 +158,13 @@ if (lease) await gateway.completeJob(lease.job.id, { ok: true });
 The inline client implements the same lifecycle in memory for tests and small
 embedders.
 
+Workers that acquire durable jobs are visible through the logical worker
+registry. A job lease updates the worker's current job, lease id, queue, and
+state; completing, failing, cancelling, or expiring the job clears the lease
+back to an idle worker record. Workers can also register and heartbeat before
+claiming work so dashboards and executive agents can distinguish "available",
+"running", and "offline" participants without inspecting OS process state.
+
 ## REST and SSE Facade
 
 `createGatewayRestServer()` wraps any `GatewayClient` with a dependency-free
@@ -178,8 +187,10 @@ Initial routes cover:
 - `GET /v1/services`, `POST /v1/services/:name/run`, and
   `POST /v1/services/:name/enable`.
 - `GET /v1/agents`, `POST /v1/agents/register`, and `GET /v1/agents/:id`.
-- `GET /v1/workers`, `GET /v1/jobs`, `POST /v1/jobs`,
-  `GET /v1/jobs/:id`, and `POST /v1/jobs/:id/cancel`.
+- `GET /v1/workers`, `GET /v1/workers/:id`, `POST /v1/workers/register`,
+  and `POST /v1/workers/:id/heartbeat`.
+- `GET /v1/jobs`, `POST /v1/jobs`, `GET /v1/jobs/:id`, and
+  `POST /v1/jobs/:id/cancel`.
 - `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
   `GET /v1/logs`, `GET /v1/registry`, `GET /v1/capabilities`, and
   `GET /v1/sandboxes`.
@@ -199,7 +210,9 @@ shape instead of coupling callers to a specific runtime.
 
 `gateway.status()` exposes the operator snapshot used by `sd gateway status`:
 registered service tasks, queue depths, active leases, recent failures, tables,
-process count, worker process snapshots, pid, and uptime. Service workers are
+logical worker records, worker process snapshots, pid, and uptime. Logical
+workers are job-capable agents or adapters; worker process snapshots are OS
+children spawned for scheduled services. Service workers are
 spawned with explicit timeout enforcement, so budget expiry kills the child
 process and records a `timed_out` worker state. The daemon also expires stale
 job leases during status/watchdog passes so stuck jobs can become visible and

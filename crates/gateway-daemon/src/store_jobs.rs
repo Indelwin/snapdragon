@@ -57,16 +57,14 @@ impl GatewayStore {
         let Some(mut status) = self.job(id)? else {
             return Ok(None);
         };
+        let leases = self.job_leases(id)?;
         status.state = GatewayJobState::Cancelled;
         status.updated_at_ms = now_ms;
         status.lease_id = None;
         status.lease_expires_at_ms = None;
         self.upsert_job(&status)?;
-        self.with_conn(|conn| {
-            conn.execute("delete from gateway_leases where job_id=?1", params![id])
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        })?;
+        self.clear_worker_leases(&leases, now_ms)?;
+        self.delete_job_leases(id)?;
         self.append_log(now_ms, "warn", Some(id), "job cancelled", None)?;
         Ok(Some(status))
     }
@@ -113,18 +111,21 @@ impl GatewayStore {
         status.lease_expires_at_ms = Some(lease.expires_at_ms);
         self.upsert_job(&status)?;
         self.upsert_lease(&lease)?;
+        self.mark_worker_leased(worker, queue, &lease, now_ms)?;
         self.append_log(now_ms, "info", Some(&status.id), "job leased", None)?;
         Ok(Some((status, lease)))
     }
 
     pub fn expire_leases(&self, now_ms: u64) -> Result<u64, String> {
         for mut status in self.expired_running_jobs(now_ms)? {
+            let leases = self.job_leases(&status.id)?;
             status.state = expired_state(&status);
             status.updated_at_ms = now_ms;
             status.last_error = Some("lease expired".into());
             status.lease_id = None;
             status.lease_expires_at_ms = None;
             self.upsert_job(&status)?;
+            self.clear_worker_leases(&leases, now_ms)?;
             self.append_log(now_ms, "warn", Some(&status.id), "job lease expired", None)?;
         }
         self.with_conn(|conn| {
@@ -184,12 +185,10 @@ impl GatewayStore {
         status.last_error = error;
         status.lease_id = None;
         status.lease_expires_at_ms = None;
+        let leases = self.job_leases(id)?;
         self.upsert_job(&status)?;
-        self.with_conn(|conn| {
-            conn.execute("delete from gateway_leases where job_id=?1", params![id])
-                .map(|_| ())
-                .map_err(|error| error.to_string())
-        })?;
+        self.clear_worker_leases(&leases, now_ms)?;
+        self.delete_job_leases(id)?;
         self.append_log(
             now_ms,
             "info",
@@ -230,25 +229,6 @@ impl GatewayStore {
                 .map_err(|error| error.to_string())?;
             rows.map(|row| json_parse(&row.map_err(|error| error.to_string())?))
                 .collect()
-        })
-    }
-
-    fn upsert_lease(&self, lease: &GatewayLease) -> Result<(), String> {
-        self.with_conn(|conn| {
-            conn.execute(
-                "insert into gateway_leases(id, job_id, worker, acquired_at_ms, expires_at_ms)
-                 values (?1, ?2, ?3, ?4, ?5)
-                 on conflict(id) do update set expires_at_ms=excluded.expires_at_ms",
-                params![
-                    lease.id,
-                    lease.job_id,
-                    lease.worker,
-                    lease.acquired_at_ms,
-                    lease.expires_at_ms
-                ],
-            )
-            .map(|_| ())
-            .map_err(|error| error.to_string())
         })
     }
 }
