@@ -46,7 +46,10 @@ should be added above the same route shape.
 | `GET` | `/v1/workers` | List worker process snapshots. |
 | `GET` | `/v1/jobs` | List durable jobs. |
 | `POST` | `/v1/jobs` | Enqueue a durable job. |
+| `POST` | `/v1/jobs/acquire` | Acquire the next pending job on a queue. |
 | `GET` | `/v1/jobs/:id` | Show one job. |
+| `POST` | `/v1/jobs/:id/complete` | Complete one job with an optional result. |
+| `POST` | `/v1/jobs/:id/fail` | Fail one job with a durable error. |
 | `POST` | `/v1/jobs/:id/cancel` | Cancel one job. |
 | `GET` | `/v1/events` | List gateway events. |
 | `POST` | `/v1/events` | Append an event. |
@@ -126,6 +129,41 @@ content-type: application/json
       }
     }
   }
+}
+```
+
+Acquire and finish a job from a worker adapter:
+
+```http
+POST /v1/jobs/acquire
+content-type: application/json
+
+{
+  "queue": "default",
+  "worker": "pi-worker-1",
+  "leaseMs": 300000
+}
+```
+
+```http
+POST /v1/jobs/job_123/complete
+content-type: application/json
+
+{
+  "result": {
+    "summary": "Release checks passed."
+  }
+}
+```
+
+Report a worker failure:
+
+```http
+POST /v1/jobs/job_124/fail
+content-type: application/json
+
+{
+  "error": "runtime exited before message_end"
 }
 ```
 

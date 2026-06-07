@@ -1,3 +1,4 @@
+import { dispatchJobLifecycle } from './rest-routes-job-lifecycle.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient, GatewayJobSpec } from './types.js';
 
@@ -10,6 +11,8 @@ export async function dispatchJobs(
   if (route.method === 'GET' && !id) return { status: 200, body: await client.listJobs() };
   if (route.method === 'GET' && id) return showJob(client, id);
   if (route.method === 'POST' && !id) return enqueueJob(client, request);
+  const lifecycle = await dispatchJobLifecycle(client, route, request);
+  if (lifecycle) return lifecycle;
   if (route.method === 'POST' && id && action === 'cancel') {
     return { status: 200, body: await client.cancelJob(id) };
   }

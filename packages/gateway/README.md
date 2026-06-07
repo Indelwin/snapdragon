@@ -179,7 +179,9 @@ Initial routes cover:
   `POST /v1/services/:name/enable`.
 - `GET /v1/agents`, `POST /v1/agents/register`, and `GET /v1/agents/:id`.
 - `GET /v1/workers`, `GET /v1/jobs`, `POST /v1/jobs`,
-  `GET /v1/jobs/:id`, and `POST /v1/jobs/:id/cancel`.
+  `POST /v1/jobs/acquire`, `GET /v1/jobs/:id`,
+  `POST /v1/jobs/:id/complete`, `POST /v1/jobs/:id/fail`, and
+  `POST /v1/jobs/:id/cancel`.
 - `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
   `GET /v1/logs`, `GET /v1/registry`, `GET /v1/capabilities`, and
   `GET /v1/sandboxes`.
