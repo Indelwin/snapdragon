@@ -46,6 +46,27 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
     );
     assert.match(await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'list'] }), /agent\.run/);
     assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['jobs', 'acquire', 'default', 'worker-1', '--lease-ms', '60000'],
+      }),
+      /acquired job_1\tagent\.run\tqueue=default\tworker=worker-1\tlease=lease_1/,
+    );
+    assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['jobs', 'complete', 'job_1', '{"ok":true}'],
+      }),
+      /completed job_1/,
+    );
+    assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['jobs', 'fail', 'job_1', 'worker failed clearly'],
+      }),
+      /failed job_1\terror=worker failed clearly/,
+    );
+    assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'cancel', 'job_1'] }),
       /cancelled job_1/,
     );
@@ -434,6 +455,39 @@ function responseFor(request: any): unknown {
   if (request.method === 'jobs.list') {
     return { id: request.id, ok: true, result: [wireJob('job_1', 'Pending')] };
   }
+  if (request.method === 'jobs.acquire') {
+    return {
+      id: request.id,
+      ok: true,
+      result: {
+        job: wireJob('job_1', 'Running', {
+          lease_id: 'lease_1',
+          lease_expires_at_ms: 60_010,
+        }),
+        lease: {
+          id: 'lease_1',
+          job_id: 'job_1',
+          worker: request.params.worker,
+          acquired_at_ms: 10,
+          expires_at_ms: 60_010,
+        },
+      },
+    };
+  }
+  if (request.method === 'jobs.complete') {
+    return {
+      id: request.id,
+      ok: true,
+      result: wireJob(request.params.id, 'Completed', { result: request.params.result }),
+    };
+  }
+  if (request.method === 'jobs.fail') {
+    return {
+      id: request.id,
+      ok: true,
+      result: wireJob(request.params.id, 'Failed', { last_error: request.params.error }),
+    };
+  }
   if (request.method === 'jobs.cancel') {
     return { id: request.id, ok: true, result: wireJob(request.params.id, 'Cancelled') };
   }
@@ -469,7 +523,7 @@ function wireService(name: string, runs: number): unknown {
   };
 }
 
-function wireJob(id: string, state: string): unknown {
+function wireJob(id: string, state: string, fields: Record<string, unknown> = {}): unknown {
   return {
     id,
     spec: {
@@ -484,6 +538,7 @@ function wireJob(id: string, state: string): unknown {
     attempts: 0,
     created_at_ms: 10,
     updated_at_ms: 10,
+    ...fields,
   };
 }
 

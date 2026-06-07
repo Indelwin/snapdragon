@@ -75,6 +75,10 @@ Every job should have enough context for agent experience: kind, queue, payload,
 priority, parent job id, correlation id, target runtime id, project/channel refs,
 sandbox lease, policy hints, attempts, last error, result, and logs.
 
+The `sd gateway jobs` CLI exposes both sides of that lifecycle. Operators can
+enqueue, list, show, and cancel work; worker adapters can acquire a queued job,
+complete it with an optional result artifact, or fail it with a durable error.
+
 ## Agent Runtime Registration
 
 Agent runtimes are registered descriptors, not hardcoded integrations. The first
@@ -160,7 +164,7 @@ Failures should be explicit and inspectable:
 The gateway is for agents as much as humans. A good control surface should make
 the next action obvious:
 
-- One path to enqueue, inspect, cancel, and retry jobs.
+- One path to enqueue, inspect, acquire, complete, fail, and cancel jobs.
 - Stable ids and correlation ids across jobs, events, logs, and artifacts.
 - World snapshots that explain queue depth, active leases, workers, runtimes,
   and recent failures.
