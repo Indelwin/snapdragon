@@ -1,13 +1,9 @@
 import { dispatchAgents } from './rest-routes-agents.js';
 import { dispatchEvents } from './rest-routes-events.js';
 import { dispatchJobs } from './rest-routes-jobs.js';
-import {
-  dispatchCapabilities,
-  dispatchLogs,
-  dispatchRegistry,
-  dispatchWorkers,
-} from './rest-routes-read.js';
+import { dispatchCapabilities, dispatchLogs, dispatchRegistry } from './rest-routes-read.js';
 import { dispatchServices } from './rest-routes-services.js';
+import { dispatchWorkers } from './rest-routes-workers.js';
 import type { RestRequest, RestRoute, RestRouteResult } from './rest-types.js';
 import type { GatewayOrchestrationClient } from './types-runtime.js';
 
@@ -20,7 +16,7 @@ type RouteHandler = (
 const routeHandlers: Record<string, RouteHandler> = {
   services: dispatchServices,
   agents: dispatchAgents,
-  workers: (client, route) => dispatchWorkers(client, route),
+  workers: dispatchWorkers,
   jobs: dispatchJobs,
   events: dispatchEvents,
   logs: (client, route) => dispatchLogs(client, route),

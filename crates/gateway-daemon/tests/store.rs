@@ -4,6 +4,7 @@ use serde_json::Value;
 use snapdragon_gateway_core::{
     GatewayAgentRuntimeDescriptor, GatewayAgentRuntimeKind, GatewayAgentRuntimeProtocol,
     GatewayEventRecord, GatewayEventState, GatewayJobSpec, GatewayJobState,
+    GatewayWorkerRegistration, GatewayWorkerState,
 };
 use snapdragon_gateway_daemon::GatewayStore;
 
@@ -38,10 +39,17 @@ fn store_persists_jobs_events_logs_and_services() {
         .unwrap()
         .unwrap();
     assert_eq!(running.state, GatewayJobState::Running);
+    let worker = store.worker("worker-1").unwrap().unwrap();
+    assert_eq!(worker.state, GatewayWorkerState::Running);
+    assert_eq!(worker.current_job_id.as_deref(), Some("job_1"));
     assert_eq!(store.active_leases(11).unwrap().len(), 1);
     assert_eq!(
         store.cancel_job("job_1", 12).unwrap().unwrap().state,
         GatewayJobState::Cancelled
+    );
+    assert_eq!(
+        store.worker("worker-1").unwrap().unwrap().state,
+        GatewayWorkerState::Idle
     );
     assert!(store.active_leases(12).unwrap().is_empty());
     assert_eq!(
@@ -96,9 +104,25 @@ fn store_persists_jobs_events_logs_and_services() {
         .unwrap();
     assert_eq!(runtime.id, "pi");
     assert_eq!(store.agent_runtime_snapshots().unwrap()[0].id, "pi");
+    let worker = store
+        .register_worker(
+            GatewayWorkerRegistration {
+                id: "pi-worker".into(),
+                queue: Some("default".into()),
+                runtime_id: Some("pi".into()),
+                service: Some("agent-jobs".into()),
+                capabilities: vec!["agent.run".into()],
+                status: Some("ready".into()),
+                metadata: Some(serde_json::json!({"pid": 123})),
+            },
+            18,
+        )
+        .unwrap();
+    assert_eq!(worker.runtime_id.as_deref(), Some("pi"));
+    assert_eq!(store.list_workers().unwrap()[0].id, "pi-worker");
     assert_eq!(
         store
-            .append_log(18, "info", Some("job_1"), "runtime breadcrumb", None)
+            .append_log(19, "info", Some("job_1"), "runtime breadcrumb", None)
             .unwrap()
             .target
             .as_deref(),

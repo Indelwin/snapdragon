@@ -43,7 +43,10 @@ should be added above the same route shape.
 | `GET` | `/v1/agents` | List registered agent runtimes. |
 | `POST` | `/v1/agents/register` | Register and durably store an agent runtime descriptor. |
 | `GET` | `/v1/agents/:id` | Show one runtime descriptor. |
-| `GET` | `/v1/workers` | List worker process snapshots. |
+| `GET` | `/v1/workers` | List logical job workers and external agent adapters. |
+| `GET` | `/v1/workers/:id` | Show one logical worker record. |
+| `POST` | `/v1/workers/register` | Register or update a logical worker record. |
+| `POST` | `/v1/workers/:id/heartbeat` | Update worker state, queue, status, error, or metadata. |
 | `GET` | `/v1/jobs` | List durable jobs. |
 | `POST` | `/v1/jobs` | Enqueue a durable job. |
 | `GET` | `/v1/jobs/:id` | Show one job. |
@@ -129,6 +132,39 @@ content-type: application/json
 }
 ```
 
+Register a logical worker before claiming work:
+
+```http
+POST /v1/workers/register
+content-type: application/json
+
+{
+  "worker": {
+    "id": "pi-agent-jobs-1",
+    "queue": "default",
+    "runtimeId": "pi",
+    "service": "agent-jobs",
+    "capabilities": ["agent.run", "skills.pi"],
+    "status": "waiting"
+  }
+}
+```
+
+Heartbeat worker availability or failure:
+
+```http
+POST /v1/workers/pi-agent-jobs-1/heartbeat
+content-type: application/json
+
+{
+  "state": "idle",
+  "status": "waiting",
+  "metadata": {
+    "lastRuntimeProbe": "ok"
+  }
+}
+```
+
 Cancel a running job:
 
 ```http
@@ -157,8 +193,13 @@ Errors are emitted as `event: error` with a small JSON error object.
 
 `GatewayWorldSnapshot` is the primary dashboard and agent inspection shape. It
 contains captured time, runtime kind, raw status, service statuses, agent runtime
-descriptors, worker process snapshots, durable jobs, events, logs, registry,
-leases, queue depths, table snapshots, and sandbox leases.
+descriptors, logical workers, worker process snapshots, durable jobs, events,
+logs, registry, leases, queue depths, table snapshots, and sandbox leases.
+
+`workers` are durable logical participants that can register, heartbeat, and
+hold job leases. `workerProcesses` are OS subprocess snapshots produced by the
+Rust service supervisor. Keeping both shapes visible lets UIs show available
+agent capacity separately from low-level process health.
 
 The API intentionally returns the same camelCase TypeScript shapes exposed by
 `@snapdragon-ai/gateway`. Rust IPC wire casing stays behind the facade.

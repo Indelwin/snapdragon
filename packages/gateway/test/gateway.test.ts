@@ -69,8 +69,13 @@ test('inline gateway leases, completes, and logs jobs', async () => {
   assert.equal(lease?.lease.worker, 'worker-1');
   const leasedStatus = await gateway.status();
   assert.equal(leasedStatus.activeLeases?.[0]?.jobId, job.id);
+  assert.equal(leasedStatus.activeLeases?.[0]?.worker, 'worker-1');
+  assert.equal(leasedStatus.workers?.[0]?.id, 'worker-1');
+  assert.equal(leasedStatus.workers?.[0]?.state, 'running');
+  assert.equal(leasedStatus.workers?.[0]?.currentJobId, job.id);
   assert.deepEqual(leasedStatus.queueDepths, [{ queue: 'default', pending: 0, running: 1 }]);
   assert.equal((await gateway.completeJob(job.id, { ok: true }))?.state, 'completed');
+  assert.equal((await gateway.showWorker('worker-1'))?.state, 'idle');
   const failed = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'fail it' } });
   await gateway.acquireJob('default', 'worker-1');
   assert.equal((await gateway.failJob(failed.id, 'nope'))?.state, 'failed');
@@ -102,8 +107,16 @@ test('inline gateway registers agent runtimes and snapshots the world', async ()
     isolation: 'profile',
   });
   await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'map the world' } });
+  await gateway.registerWorker({
+    id: 'agent-jobs-1',
+    queue: 'default',
+    runtimeId: 'sd',
+    capabilities: ['agent.run'],
+  });
   const snapshot = await gateway.worldSnapshot();
   assert.equal(snapshot.agentRuntimes[0]?.id, 'sd');
+  assert.equal(snapshot.workers[0]?.id, 'agent-jobs-1');
+  assert.deepEqual(snapshot.workerProcesses, []);
   assert.equal(snapshot.jobs[0]?.spec.kind, 'agent.run');
   assert.equal(snapshot.status.agentRuntimes?.[0]?.protocol, 'embedded');
   assert.deepEqual(snapshot.sandboxes, []);
@@ -120,6 +133,20 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(runtime.id, 'codex');
     assert.equal((await getJson(`${baseUrl}/agents/codex`)).protocol, 'command');
+    const worker = await postJson(`${baseUrl}/workers/register`, {
+      id: 'rest-worker',
+      queue: 'default',
+      runtimeId: 'codex',
+      capabilities: ['agent.run'],
+    });
+    assert.equal(worker.id, 'rest-worker');
+    assert.equal((await getJson(`${baseUrl}/workers/rest-worker`)).runtimeId, 'codex');
+    const heartbeat = await postJson(`${baseUrl}/workers/rest-worker/heartbeat`, {
+      state: 'idle',
+      status: 'waiting',
+    });
+    assert.equal(heartbeat.status, 'waiting');
+    assert.equal((await getJson(`${baseUrl}/workers`))[0]?.id, 'rest-worker');
 
     const service = await postJson(`${baseUrl}/services`, { spec: { name: 'pulse' } });
     assert.equal(service.name, 'pulse');
@@ -232,6 +259,8 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
     });
     const status = await gateway.status();
     assert.equal(status.pid, 42);
+    assert.equal(status.workers?.[0]?.id, 'worker');
+    assert.equal(status.workers?.[0]?.state, 'running');
     assert.deepEqual(status.serviceTasks, ['memory-worker']);
     assert.equal(status.workerProcesses?.[0]?.pid, 123);
     assert.equal(status.workerProcesses?.[0]?.state, 'running');
@@ -262,6 +291,23 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
     );
     assert.equal((await gateway.listAgentRuntimes())[0]?.id, 'sd');
     assert.equal((await gateway.showAgentRuntime('sd'))?.protocol, 'embedded');
+    assert.equal(
+      (
+        await gateway.registerWorker({
+          id: 'worker',
+          queue: 'default',
+          runtimeId: 'sd',
+          capabilities: ['agent.run'],
+        })
+      ).runtimeId,
+      'sd',
+    );
+    assert.equal(
+      (await gateway.heartbeatWorker({ id: 'worker', status: 'ready' }))?.status,
+      'ready',
+    );
+    assert.equal((await gateway.listWorkers())[0]?.id, 'worker');
+    assert.equal((await gateway.showWorker('worker'))?.queue, 'default');
     assert.equal(await gateway.createTable('state', { id: 'worker' }, 'private'), true);
     assert.deepEqual(await gateway.tableNames(), ['state']);
     assert.deepEqual(await gateway.tableSnapshot('state'), {
@@ -297,6 +343,10 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'agents.register',
       'agents.list',
       'agents.show',
+      'workers.register',
+      'workers.heartbeat',
+      'workers.list',
+      'workers.show',
       'tables.create',
       'tables.list',
       'tables.show',
@@ -376,6 +426,7 @@ function responseFor(request: any): unknown {
         tables: [],
         service_tasks: ['memory-worker'],
         agent_runtimes: [wireAgentRuntime()],
+        workers: [wireWorkerRecord()],
         jobs_pending: 2,
         jobs_running: 1,
         active_leases: [
@@ -425,6 +476,25 @@ function responseFor(request: any): unknown {
   }
   if (request.method === 'agents.show') {
     return { id: request.id, ok: true, result: wireAgentRuntime(request.params.id) };
+  }
+  if (request.method === 'workers.register') {
+    return { id: request.id, ok: true, result: wireWorkerRecord(request.params.worker) };
+  }
+  if (request.method === 'workers.heartbeat') {
+    return {
+      id: request.id,
+      ok: true,
+      result: wireWorkerRecord({
+        id: request.params.heartbeat.id,
+        status: request.params.heartbeat.status,
+      }),
+    };
+  }
+  if (request.method === 'workers.list') {
+    return { id: request.id, ok: true, result: [wireWorkerRecord()] };
+  }
+  if (request.method === 'workers.show') {
+    return { id: request.id, ok: true, result: wireWorkerRecord({ id: request.params.id }) };
   }
   if (request.method === 'tables.list') return { id: request.id, ok: true, result: ['state'] };
   if (request.method === 'tables.show') {
@@ -586,6 +656,25 @@ function wireAgentRuntime(id = 'sd'): unknown {
     isolation: null,
     health: null,
     metadata: null,
+  };
+}
+
+function wireWorkerRecord(worker: any = {}): unknown {
+  return {
+    id: worker.id ?? 'worker',
+    queue: worker.queue ?? 'default',
+    runtime_id: worker.runtimeId ?? worker.runtime_id ?? null,
+    service: worker.service ?? null,
+    capabilities: worker.capabilities ?? ['agent.run'],
+    state: worker.state ?? 'running',
+    registered_at_ms: 10,
+    heartbeat_at_ms: 20,
+    current_job_id: worker.currentJobId ?? worker.current_job_id ?? 'job_1',
+    current_lease_id: worker.currentLeaseId ?? worker.current_lease_id ?? 'lease_1',
+    lease_expires_at_ms: worker.leaseExpiresAtMs ?? worker.lease_expires_at_ms ?? 30,
+    status: worker.status ?? null,
+    last_error: worker.lastError ?? worker.last_error ?? null,
+    metadata: worker.metadata ?? null,
   };
 }
 

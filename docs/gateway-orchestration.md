@@ -13,7 +13,7 @@ ECS-shaped implementation internally.
 | Gateway noun | ECS role | Common components |
 | --- | --- | --- |
 | Agent runtime | Entity | kind, protocol, command/RPC endpoint, supported jobs, capabilities, health |
-| Worker | Entity | process state, lease, runtime id, heartbeat, current job |
+| Worker | Entity | logical state, lease, runtime id, heartbeat, current job, capabilities |
 | Job | Entity | spec, state, queue, priority, attempts, parentage, routing hints |
 | Service | Entity | schedule, enabled state, restart policy, budget, worker command |
 | Channel | Entity | target, event queue, subscribers, session refs |
@@ -75,6 +75,13 @@ Every job should have enough context for agent experience: kind, queue, payload,
 priority, parent job id, correlation id, target runtime id, project/channel refs,
 sandbox lease, policy hints, attempts, last error, result, and logs.
 
+Acquiring a job also updates the worker registry. The gateway records the
+worker id, queue, lease id, expiry, and current job. Completing, failing,
+cancelling, or expiring that lease returns the worker to `idle`, while explicit
+heartbeats can mark it `offline` or attach operator-facing status and metadata.
+This gives executive agents and dashboards a direct capacity surface instead of
+forcing them to infer availability from subprocess listings.
+
 ## Agent Runtime Registration
 
 Agent runtimes are registered descriptors, not hardcoded integrations. The first
@@ -97,6 +104,9 @@ The `sd` facade can also save descriptors under `gateway.agent_runtimes`; saved
 descriptors are visible in `sd gateway agents list/show` even before the daemon
 is available, and job workers can re-register them before dispatch. This gives
 operators one stable setup step instead of a hidden in-memory runtime table.
+Agent job services should also register logical worker records and heartbeat
+while waiting, running, or shutting down, regardless of whether their runtime is
+embedded, command-based, JSONL, stdio, or HTTP.
 
 ```mermaid
 sequenceDiagram
@@ -149,7 +159,8 @@ Failures should be explicit and inspectable:
 
 - A crashed worker records process state, last error, and recent logs.
 - A timed-out worker is killed by the daemon and recorded as `timed_out`.
-- A stale lease expires during watchdog/status passes.
+- A stale lease expires during watchdog/status passes and clears the logical
+  worker lease.
 - Retry decisions are controlled by job attempts and service restart intensity.
 - Cancellation updates the durable record, removes active leases, aborts
   cooperative runtime workers, and stops future dispatch.
@@ -164,6 +175,8 @@ the next action obvious:
 - Stable ids and correlation ids across jobs, events, logs, and artifacts.
 - World snapshots that explain queue depth, active leases, workers, runtimes,
   and recent failures.
+- Separate `workers` from `workerProcesses`: workers answer who can take work;
+  worker processes answer what the daemon spawned and how it exited.
 - Concrete public nouns: jobs, services, agents, workers, capabilities, events,
   logs, sandboxes.
 - ECS terminology stays in architecture docs and implementation internals unless
