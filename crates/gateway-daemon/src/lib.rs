@@ -26,8 +26,12 @@ mod store_agent_runtimes;
 mod store_events;
 mod store_job_types;
 mod store_jobs;
+mod store_leases;
 mod store_observability;
+mod store_schema;
 mod store_services;
+mod store_workers;
+mod workers;
 
 pub use status::GatewayStatusSnapshot;
 pub use store::GatewayStore;
@@ -219,7 +223,7 @@ impl GatewayDaemon {
         Ok(())
     }
 
-    fn require_store(&self) -> Result<&GatewayStore, String> {
+    pub(crate) fn require_store(&self) -> Result<&GatewayStore, String> {
         self.store
             .as_ref()
             .ok_or_else(|| "gateway durable store is not configured".to_string())
