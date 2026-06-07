@@ -140,6 +140,32 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(job.state, 'pending');
     assert.equal((await getJson(`${baseUrl}/jobs/${job.id}`)).id, job.id);
+
+    const workerJob = await postJson(`${baseUrl}/jobs`, {
+      spec: { kind: 'agent.run', queue: 'workers', payload: { prompt: 'lease me' } },
+    });
+    const lease = await postJson(`${baseUrl}/jobs/acquire`, {
+      queue: 'workers',
+      worker: 'rest-worker',
+      leaseMs: 60_000,
+    });
+    assert.equal(lease.job.id, workerJob.id);
+    assert.equal(lease.lease.worker, 'rest-worker');
+    const completed = await postJson(`${baseUrl}/jobs/${workerJob.id}/complete`, {
+      result: { ok: true },
+    });
+    assert.equal(completed.state, 'completed');
+    assert.deepEqual(completed.result, { ok: true });
+
+    const failingJob = await postJson(`${baseUrl}/jobs`, {
+      spec: { kind: 'agent.run', payload: { prompt: 'fail me' } },
+    });
+    const failed = await postJson(`${baseUrl}/jobs/${failingJob.id}/fail`, {
+      message: 'worker failed clearly',
+    });
+    assert.equal(failed.state, 'failed');
+    assert.equal(failed.lastError, 'worker failed clearly');
+
     assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/cancel`, {})).state, 'cancelled');
 
     const world = await getJson(`${baseUrl}/world`);
