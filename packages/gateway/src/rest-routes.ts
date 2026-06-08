@@ -2,6 +2,7 @@ import { dispatchAgents } from './rest-routes-agents.js';
 import { dispatchEvents } from './rest-routes-events.js';
 import { dispatchJobs } from './rest-routes-jobs.js';
 import { dispatchCapabilities, dispatchLogs, dispatchRegistry } from './rest-routes-read.js';
+import { dispatchSandboxes } from './rest-routes-sandboxes.js';
 import { dispatchServices } from './rest-routes-services.js';
 import { dispatchWorkers } from './rest-routes-workers.js';
 import type { RestRequest, RestRoute, RestRouteResult } from './rest-types.js';
@@ -22,6 +23,7 @@ const routeHandlers: Record<string, RouteHandler> = {
   logs: (client, route) => dispatchLogs(client, route),
   registry: (client, route) => dispatchRegistry(client, route),
   capabilities: (client, route) => dispatchCapabilities(client, route),
+  sandboxes: dispatchSandboxes,
 };
 
 export async function dispatchRoute(
@@ -31,11 +33,9 @@ export async function dispatchRoute(
 ): Promise<RestRouteResult> {
   const builtin = await dispatchBuiltin(client, route);
   if (builtin) return builtin;
-  const [resource, id, action] = route.parts;
+  const [resource] = route.parts;
   const handler = routeHandlers[resource ?? ''];
   if (handler) return handler(client, route, request);
-  if (resource === 'sandboxes' && route.method === 'GET' && !id && !action)
-    return { status: 200, body: [] };
   return { status: 404, body: { error: 'not found' } };
 }
 
