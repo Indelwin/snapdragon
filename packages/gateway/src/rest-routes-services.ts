@@ -1,3 +1,5 @@
+import { filterServices } from './query-filters.js';
+import { worldSnapshotOptionsFromSearch } from './rest-query.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient, GatewayServiceSpec } from './types.js';
 
@@ -7,7 +9,7 @@ export async function dispatchServices(
   request: RestRequest,
 ): Promise<RestRouteResult> {
   const [, name, action] = route.parts;
-  if (route.method === 'GET') return listServices(client, name);
+  if (route.method === 'GET') return listServices(client, name, route);
   if (route.method === 'POST') return mutateService(client, name, action, request);
   return notFound();
 }
@@ -15,9 +17,11 @@ export async function dispatchServices(
 async function listServices(
   client: GatewayClient,
   name: string | undefined,
+  route: RestRoute,
 ): Promise<RestRouteResult> {
   if (name) return notFound();
-  return { status: 200, body: await client.listServices() };
+  const options = worldSnapshotOptionsFromSearch(route.searchParams);
+  return { status: 200, body: filterServices(await client.listServices(), options) };
 }
 
 async function mutateService(

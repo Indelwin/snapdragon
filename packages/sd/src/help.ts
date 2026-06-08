@@ -13,11 +13,13 @@ Usage:
   sd [options] "prompt"
 
 Gateway commands:
-  sd gateway jobs enqueue|list|show|cancel
+  sd gateway inspect [job-id] [--runtime <id>] [--worker <id>] [--limit <n>]
+  sd gateway jobs enqueue|list|show|cancel|retry|acquire|complete|fail
   sd gateway agents list|show|register-pi|probe-pi
   sd gateway agents run|enqueue [--runtime <id>]
   sd gateway agents status|cancel <job-id>
   sd gateway learn enqueue-eval <dataset.json> [--id <id>]
+  sd gateway rest serve [--host <host>] [--port <port>]
   sd gateway logs tail [target] [limit]
   sd gateway sandboxes list
   sd gateway sandboxes lease [project] [--id <id>] [--ref <path>] [--ttl-ms <ms>]
