@@ -40,6 +40,16 @@ The command prints the base URL, defaults to `http://127.0.0.1:8787/v1`, and
 accepts `--ready-file <path>` so UI launchers can wait for the exact bound URL.
 Use `--port 0` for an ephemeral test port.
 
+TypeScript clients can reuse the packaged route contract:
+
+```ts
+import { GatewayRestClient } from '@snapdragon-ai/gateway';
+
+const gateway = new GatewayRestClient({ baseUrl: 'http://127.0.0.1:8787/v1' });
+const status = await gateway.status();
+const jobs = await gateway.listJobs();
+```
+
 ## Routes
 
 | Method | Path | Purpose |
