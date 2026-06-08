@@ -210,6 +210,22 @@ Apps that use the packaged `sd` CLI can start the same facade with
 the server in the foreground, prints the base URL, and supports `--ready-file`
 for UI launchers that need a deterministic readiness signal.
 
+Typed clients can use `GatewayRestClient` instead of hand-rolling fetch calls:
+
+```ts
+import { GatewayRestClient } from '@snapdragon-ai/gateway';
+
+const gateway = new GatewayRestClient({ baseUrl: 'http://127.0.0.1:8787/v1' });
+const job = await gateway.enqueueJob({
+  kind: 'agent.run',
+  payload: { prompt: 'triage this workspace' },
+});
+
+for await (const snapshot of gateway.streamWorldSnapshots()) {
+  console.log(snapshot.jobs.length);
+}
+```
+
 ## Sandbox Contracts
 
 `GatewaySandboxSpec` and `GatewaySandboxLease` describe project-scoped execution
