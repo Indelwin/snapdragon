@@ -13,6 +13,9 @@ export async function dispatchJobs(
   if (route.method === 'POST' && id && action === 'cancel') {
     return { status: 200, body: await client.cancelJob(id) };
   }
+  if (route.method === 'POST' && id && action === 'retry') {
+    return { status: 200, body: await client.retryJob(id) };
+  }
   return { status: 404, body: { error: 'not found' } };
 }
 

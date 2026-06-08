@@ -153,6 +153,7 @@ const job = await gateway.enqueueJob({
 });
 const lease = await gateway.acquireJob('default', 'worker-1');
 if (lease) await gateway.completeJob(lease.job.id, { ok: true });
+await gateway.retryJob('job_failed');
 ```
 
 The inline client implements the same lifecycle in memory for tests and small
@@ -164,6 +165,9 @@ state; completing, failing, cancelling, or expiring the job clears the lease
 back to an idle worker record. Workers can also register and heartbeat before
 claiming work so dashboards and executive agents can distinguish "available",
 "running", and "offline" participants without inspecting OS process state.
+Failed jobs with attempts remaining return to `pending`; terminal failed jobs
+can be manually retried by operators or executive agents without resurrecting
+cancelled jobs.
 
 ## REST and SSE Facade
 
@@ -190,7 +194,7 @@ Initial routes cover:
 - `GET /v1/workers`, `GET /v1/workers/:id`, `POST /v1/workers/register`,
   and `POST /v1/workers/:id/heartbeat`.
 - `GET /v1/jobs`, `POST /v1/jobs`, `GET /v1/jobs/:id`, and
-  `POST /v1/jobs/:id/cancel`.
+  `POST /v1/jobs/:id/cancel` / `retry`.
 - `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
   `GET /v1/logs`, `GET /v1/registry`, `GET /v1/capabilities`, and
   `GET /v1/sandboxes`.

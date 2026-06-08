@@ -186,6 +186,54 @@ async fn ipc_persists_jobs_events_and_logs() {
     let workers = request(&path, json!({ "id": 22, "method": "workers.list" })).await;
     assert_eq!(workers["result"][0]["id"], "worker");
 
+    request(
+        &path,
+        json!({
+            "id": 23,
+            "method": "jobs.enqueue",
+            "params": {
+                "id": "job_retry",
+                "spec": {
+                    "kind": "agent.run",
+                    "queue": "default",
+                    "payload": { "prompt": "retry" },
+                    "priority": 0,
+                    "max_attempts": 1
+                }
+            }
+        }),
+    )
+    .await;
+    request(
+        &path,
+        json!({
+            "id": 24,
+            "method": "jobs.acquire",
+            "params": { "queue": "default", "worker": "worker", "lease_ms": 1000 }
+        }),
+    )
+    .await;
+    let failed = request(
+        &path,
+        json!({
+            "id": 25,
+            "method": "jobs.fail",
+            "params": { "id": "job_retry", "error": "needs another try" }
+        }),
+    )
+    .await;
+    assert_eq!(failed["result"]["state"], "Failed");
+    let retry = request(
+        &path,
+        json!({
+            "id": 26,
+            "method": "jobs.retry",
+            "params": { "id": "job_retry" }
+        }),
+    )
+    .await;
+    assert_eq!(retry["result"]["state"], "Pending");
+
     let event = request(
         &path,
         json!({

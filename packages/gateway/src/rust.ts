@@ -19,6 +19,7 @@ import {
   enqueueRustJob,
   failRustJob,
   listRustJobs,
+  retryRustJob,
   showRustJob,
 } from './rust-jobs.js';
 import {
@@ -194,6 +195,10 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
 
   async cancelJob(id: string): Promise<GatewayJobStatus | undefined> {
     return cancelRustJob(this.#gatewayCall, id);
+  }
+
+  async retryJob(id: string): Promise<GatewayJobStatus | undefined> {
+    return retryRustJob(this.#gatewayCall, id);
   }
 
   async acquireJob(

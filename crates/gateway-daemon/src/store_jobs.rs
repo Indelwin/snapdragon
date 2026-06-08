@@ -4,7 +4,10 @@ use snapdragon_gateway_core::{GatewayJobSpec, GatewayJobState, GatewayJobStatus,
 
 use crate::{
     store::{GatewayStore, json_parse, json_string},
-    store_job_types::{expired_state, job_log_data, job_state, pending_job_status},
+    store_job_types::{
+        expired_state, final_job_state, finish_log_level, finish_log_message, job_log_data,
+        job_state, pending_job_status,
+    },
 };
 
 impl GatewayStore {
@@ -66,6 +69,26 @@ impl GatewayStore {
         self.clear_worker_leases(&leases, now_ms)?;
         self.delete_job_leases(id)?;
         self.append_log(now_ms, "warn", Some(id), "job cancelled", None)?;
+        Ok(Some(status))
+    }
+
+    pub fn retry_job(&self, id: &str, now_ms: u64) -> Result<Option<GatewayJobStatus>, String> {
+        let Some(mut status) = self.job(id)? else {
+            return Ok(None);
+        };
+        if status.state != GatewayJobState::Failed {
+            return Ok(Some(status));
+        }
+        let leases = self.job_leases(id)?;
+        status.state = GatewayJobState::Pending;
+        status.updated_at_ms = now_ms;
+        status.result = None;
+        status.lease_id = None;
+        status.lease_expires_at_ms = None;
+        self.upsert_job(&status)?;
+        self.clear_worker_leases(&leases, now_ms)?;
+        self.delete_job_leases(id)?;
+        self.append_log(now_ms, "info", Some(id), "job retry requested", None)?;
         Ok(Some(status))
     }
 
@@ -179,10 +202,11 @@ impl GatewayStore {
         if status.state == GatewayJobState::Cancelled {
             return Ok(Some(status));
         }
-        status.state = state;
+        let final_state = final_job_state(&status, state);
+        status.state = final_state;
         status.updated_at_ms = now_ms;
         status.result = result;
-        status.last_error = error;
+        status.last_error = error.clone();
         status.lease_id = None;
         status.lease_expires_at_ms = None;
         let leases = self.job_leases(id)?;
@@ -191,9 +215,9 @@ impl GatewayStore {
         self.delete_job_leases(id)?;
         self.append_log(
             now_ms,
-            "info",
+            finish_log_level(final_state),
             Some(id),
-            "job finished",
+            finish_log_message(final_state, error.as_deref()),
             Some(job_log_data(&status)),
         )?;
         Ok(Some(status))
