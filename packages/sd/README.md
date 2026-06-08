@@ -69,6 +69,8 @@ sd gateway sandboxes lease . --ref ../reference-repo --ttl-ms 3600000
 sd gateway sandboxes list
 sd gateway registry list
 sd gateway tables list
+sd gateway workers list
+sd gateway workers show agent-jobs-12345
 ```
 
 Configured services are in `gateway.services`; background channel settings are
@@ -76,7 +78,10 @@ in `background.channels`. First-party services currently include
 `memory-worker`, `skill-builder`, `channel-events`, `session-index`, and
 `agent-jobs`; `learn-jobs` is available but disabled by default. Service config supports `restart`, `restart_intensity`,
 `backoff_ms`, and `max_backoff_ms`; `sd gateway status` reports suppressed
-restarts, next scheduled runs, queue depth, active leases, and recent failures.
+restarts, next scheduled runs, queue depth, active leases, recent failures,
+logical job workers, and daemon worker processes. `sd gateway workers list` and
+`show` inspect logical workers such as `agent-jobs` and `learn-jobs`, while the
+status `worker processes` line reports subprocesses spawned by the daemon.
 
 When the Rust runtime is active, services are executed through an internal
 headless worker command. The worker rebuilds only the runtime pieces a service
