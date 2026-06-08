@@ -63,9 +63,10 @@ stateDiagram-v2
   pending --> running: acquire lease
   running --> completed: complete
   running --> failed: fail with no attempts left
-  running --> pending: lease expires with attempts left
+  running --> pending: fail or lease expires with attempts left
   pending --> cancelled: cancel
   running --> cancelled: cancel
+  failed --> pending: retry
   completed --> [*]
   failed --> [*]
   cancelled --> [*]
@@ -81,6 +82,10 @@ cancelling, or expiring that lease returns the worker to `idle`, while explicit
 heartbeats can mark it `offline` or attach operator-facing status and metadata.
 This gives executive agents and dashboards a direct capacity surface instead of
 forcing them to infer availability from subprocess listings.
+
+Failure with attempts remaining requeues the job as `pending`. Once attempts are
+exhausted, the job becomes `failed` until an operator or executive agent retries
+it explicitly. Cancellation remains terminal.
 
 ## Agent Runtime Registration
 

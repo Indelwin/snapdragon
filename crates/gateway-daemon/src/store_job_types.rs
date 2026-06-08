@@ -28,6 +28,33 @@ pub(crate) fn expired_state(status: &GatewayJobStatus) -> GatewayJobState {
     }
 }
 
+pub(crate) fn final_job_state(
+    status: &GatewayJobStatus,
+    requested: GatewayJobState,
+) -> GatewayJobState {
+    if requested == GatewayJobState::Failed && status.attempts < status.spec.max_attempts {
+        GatewayJobState::Pending
+    } else {
+        requested
+    }
+}
+
+pub(crate) fn finish_log_level(state: GatewayJobState) -> &'static str {
+    match state {
+        GatewayJobState::Failed => "error",
+        GatewayJobState::Pending => "warn",
+        _ => "info",
+    }
+}
+
+pub(crate) fn finish_log_message(state: GatewayJobState, error: Option<&str>) -> &str {
+    if state == GatewayJobState::Pending {
+        "job failed; retry pending"
+    } else {
+        error.unwrap_or("job finished")
+    }
+}
+
 pub(crate) fn job_log_data(status: &GatewayJobStatus) -> Value {
     serde_json::json!({ "kind": status.spec.kind, "queue": status.spec.queue })
 }

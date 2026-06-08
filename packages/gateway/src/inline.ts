@@ -182,6 +182,10 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
     return job;
   }
 
+  async retryJob(id: string): Promise<GatewayJobStatus | undefined> {
+    return this.#jobs.retry(id);
+  }
+
   async acquireJob(
     queue: string,
     worker: string,

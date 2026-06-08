@@ -13,7 +13,7 @@ Usage:
   sd [options] "prompt"
 
 Gateway commands:
-  sd gateway jobs enqueue|list|show|cancel
+  sd gateway jobs enqueue|list|show|cancel|retry
   sd gateway agents list|show|register-pi|probe-pi
   sd gateway agents run|enqueue [--runtime <id>]
   sd gateway agents status|cancel <job-id>
