@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
   createGatewayRestServer,
+  GatewayRestClient,
   InlineGatewayClient,
   probePiRpcRuntime,
   RustGatewayClient,
@@ -199,6 +200,78 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.equal(world.agentRuntimes[0]?.id, 'codex');
     assert.equal(Array.isArray(world.logs), true);
   } finally {
+    await rest.close();
+  }
+});
+
+test('gateway REST client wraps route contracts and streams world snapshots', async () => {
+  const gateway = new InlineGatewayClient();
+  const rest = createGatewayRestServer(gateway, { streamIntervalMs: 20 });
+  const baseUrl = await rest.listen();
+  const client = new GatewayRestClient({ baseUrl });
+  const controller = new AbortController();
+  try {
+    assert.equal((await client.health()).runtime, 'inline-ts');
+    const runtime = await client.registerAgentRuntime({
+      id: 'hermes',
+      kind: 'hermes',
+      protocol: 'command',
+    });
+    assert.equal(runtime.id, 'hermes');
+    assert.equal(await client.showAgentRuntime('missing'), undefined);
+    assert.equal((await client.listAgentRuntimes())[0]?.id, 'hermes');
+
+    const worker = await client.registerWorker({
+      id: 'rest-client-worker',
+      queue: 'default',
+      capabilities: ['agent.run'],
+    });
+    assert.equal(worker.id, 'rest-client-worker');
+    const heartbeat = await client.heartbeatWorker({ id: worker.id, status: 'ready' });
+    assert.equal(heartbeat?.status, 'ready');
+    assert.equal((await client.showWorker(worker.id))?.id, worker.id);
+
+    const service = await client.registerService({ name: 'rest-client-service' });
+    assert.equal(service.name, 'rest-client-service');
+    assert.equal((await client.runService(service.name))?.runs, 1);
+    assert.equal(
+      (await client.enableService(service.name, false)).find((item) => item.name === service.name)
+        ?.enabled,
+      false,
+    );
+
+    const event = await client.appendEvent({ kind: 'channel.run', payload: { source: 'client' } });
+    assert.equal(event.state, 'pending');
+    assert.equal((await client.cancelEvent(event.id))?.state, 'cancelled');
+
+    const job = await client.enqueueJob({ kind: 'agent.run', payload: { prompt: 'from client' } });
+    assert.equal(job.state, 'pending');
+    assert.equal((await client.showJob(job.id))?.id, job.id);
+    assert.equal((await client.cancelJob(job.id))?.state, 'cancelled');
+
+    await gateway.appendLog({ target: job.id, message: 'client-visible log' });
+    assert.equal(
+      (await client.tailLogs({ target: job.id })).some(
+        (log) => log.message === 'client-visible log',
+      ),
+      true,
+    );
+    assert.deepEqual(await client.capabilities(), {});
+
+    const lease = await client.registerSandboxLease(sandboxLease('lease_client', 'sandbox_client'));
+    assert.equal(lease.id, 'lease_client');
+    assert.equal((await client.showSandboxLease(lease.id))?.sandboxId, 'sandbox_client');
+    assert.equal((await client.releaseSandboxLease(lease.id))?.id, lease.id);
+
+    const stream = client
+      .streamWorldSnapshots({ signal: controller.signal })
+      [Symbol.asyncIterator]();
+    const snapshot = await stream.next();
+    assert.equal(snapshot.value?.runtime, 'inline-ts');
+    controller.abort();
+    await stream.return?.();
+  } finally {
+    controller.abort();
     await rest.close();
   }
 });
