@@ -14,6 +14,7 @@ import { registryCommand } from './gateway-command-registry.js';
 import { sandboxesCommand } from './gateway-command-sandboxes.js';
 import { servicesCommand } from './gateway-command-services.js';
 import { tablesCommand } from './gateway-command-tables.js';
+import { workersCommand } from './gateway-command-workers.js';
 
 type GatewayTopicHandler = (
   action: string | undefined,
@@ -32,6 +33,7 @@ const gatewayTopicHandlers: Record<string, GatewayTopicHandler> = {
   sandboxes: (action, rest, args) => sandboxesCommand(action ?? 'list', rest, args),
   services: (action, rest, args) => servicesCommand(action ?? 'list', rest, args),
   tables: (action, rest, args) => tablesCommand(action ?? 'list', rest, args),
+  workers: (action, rest, args) => workersCommand(action ?? 'list', rest, args),
   async worker(action, rest, args) {
     const { gatewayWorkerCommand } = await import('./gateway-worker.js');
     return gatewayWorkerCommand(action ?? 'run', rest, args);
