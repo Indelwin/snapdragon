@@ -9,6 +9,7 @@ import { stringify as stringifyYaml } from 'yaml';
 import { parseArgs } from '../src/args.ts';
 import { registerAgentJobWorker, runGatewayAgentJob } from '../src/gateway-agent-job-service.ts';
 import { runGatewayCommand } from '../src/gateway-command.ts';
+import { serveGatewayRest } from '../src/gateway-command-rest.ts';
 import { registerLearnJobWorker, runLearnEvalJob } from '../src/gateway-learn-job-service.ts';
 import { configuredRustGatewayServices } from '../src/gateway-rust-config.ts';
 import { formatRustGatewayStatus } from '../src/gateway-rust-status.ts';
@@ -109,6 +110,52 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
     );
   } finally {
     await server.close();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('gateway rest serve exposes the Rust gateway over local HTTP until aborted', async () => {
+  const root = await mkGatewayRoot();
+  const configPath = join(root, 'config.yaml');
+  const socketPath = join(root, 'gateway.sock');
+  const readyFile = join(root, 'rest.ready');
+  const server = mockGatewayServer(socketPath);
+  const controller = new AbortController();
+  const output: string[] = [];
+  await writeGatewayConfig(configPath, root);
+  await server.ready;
+
+  try {
+    const running = serveGatewayRest(
+      ['--port', '0', '--ready-file', readyFile],
+      { configPath, gatewayArgs: [] } as any,
+      { signal: controller.signal, stdout: { write: (chunk) => output.push(chunk) } },
+    );
+    const url = await waitForReadyFile(readyFile);
+    const response = await fetch(`${url}/status`);
+    assert.equal(response.status, 200);
+    assert.equal(((await response.json()) as { runtime?: string }).runtime, 'rust');
+    assert.match(output.join(''), /gateway rest listening http:\/\/127\.0\.0\.1:\d+\/v1/);
+    controller.abort();
+    assert.equal(await running, 'gateway rest stopped\n');
+  } finally {
+    controller.abort();
+    await server.close();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('gateway rest serve validates the durable Rust gateway before listening', async () => {
+  const root = await mkGatewayRoot();
+  const configPath = join(root, 'config.yaml');
+  await writeGatewayConfig(configPath, root);
+
+  try {
+    const result = await serveGatewayRest(['--port', '0'], { configPath, gatewayArgs: [] } as any, {
+      signal: AbortSignal.abort(),
+    });
+    assert.match(result, /Rust gateway unavailable:/);
+  } finally {
     await rm(root, { force: true, recursive: true });
   }
 });
@@ -465,6 +512,18 @@ async function waitForLog(
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   assert.fail(`Timed out waiting for log ${pattern}`);
+}
+
+async function waitForReadyFile(path: string): Promise<string> {
+  const deadline = Date.now() + 1_000;
+  while (Date.now() < deadline) {
+    try {
+      return (await readFile(path, 'utf8')).trim();
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  assert.fail(`Timed out waiting for ready file ${path}`);
 }
 
 function mockGatewayServer(socketPath: string) {
