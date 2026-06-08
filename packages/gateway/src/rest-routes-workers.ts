@@ -1,3 +1,5 @@
+import { filterWorkers } from './query-filters.js';
+import { worldSnapshotOptionsFromSearch } from './rest-query.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient, GatewayWorkerHeartbeat, GatewayWorkerRegistration } from './types.js';
 
@@ -7,7 +9,15 @@ export async function dispatchWorkers(
   request: RestRequest,
 ): Promise<RestRouteResult> {
   const [, id, action] = route.parts;
-  if (route.method === 'GET' && !id) return { status: 200, body: await client.listWorkers() };
+  if (route.method === 'GET' && !id) {
+    return {
+      status: 200,
+      body: filterWorkers(
+        await client.listWorkers(),
+        worldSnapshotOptionsFromSearch(route.searchParams),
+      ),
+    };
+  }
   if (route.method === 'GET' && id) return showWorker(client, id);
   if (route.method === 'POST' && id === 'register' && !action) {
     return registerWorker(client, request);

@@ -7,6 +7,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 use serde_json::Value;
 
+use crate::store_sandboxes::init_sandbox_schema;
 use crate::store_schema::init_schema;
 
 #[derive(Clone)]
@@ -32,7 +33,10 @@ impl GatewayStore {
     }
 
     pub fn init(&self) -> Result<(), String> {
-        self.with_conn(init_schema)
+        self.with_conn(|conn| {
+            init_schema(conn)?;
+            init_sandbox_schema(conn)
+        })
     }
 
     pub(crate) fn with_conn<T>(

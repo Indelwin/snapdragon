@@ -63,9 +63,10 @@ stateDiagram-v2
   pending --> running: acquire lease
   running --> completed: complete
   running --> failed: fail with no attempts left
-  running --> pending: lease expires with attempts left
+  running --> pending: fail or lease expires with attempts left
   pending --> cancelled: cancel
   running --> cancelled: cancel
+  failed --> pending: retry
   completed --> [*]
   failed --> [*]
   cancelled --> [*]
@@ -81,6 +82,13 @@ cancelling, or expiring that lease returns the worker to `idle`, while explicit
 heartbeats can mark it `offline` or attach operator-facing status and metadata.
 This gives executive agents and dashboards a direct capacity surface instead of
 forcing them to infer availability from subprocess listings.
+
+Failure with attempts remaining requeues the job as `pending`. Once attempts are
+exhausted, the job becomes `failed` until an operator or executive agent retries
+it explicitly. Cancellation remains terminal.
+The `sd gateway jobs` CLI exposes both sides of that lifecycle. Operators can
+enqueue, list, show, and cancel work; worker adapters can acquire a queued job,
+complete it with an optional result artifact, or fail it with a durable error.
 
 ## Agent Runtime Registration
 
@@ -107,6 +115,9 @@ operators one stable setup step instead of a hidden in-memory runtime table.
 Agent job services should also register logical worker records and heartbeat
 while waiting, running, or shutting down, regardless of whether their runtime is
 embedded, command-based, JSONL, stdio, or HTTP.
+Runtime probes are explicit management operations: `POST /v1/agents/probe/pi`
+checks a user's Pi RPC runtime and can save the health-checked descriptor for
+future jobs.
 
 ```mermaid
 sequenceDiagram
@@ -161,6 +172,8 @@ Failures should be explicit and inspectable:
 - A timed-out worker is killed by the daemon and recorded as `timed_out`.
 - A stale lease expires during watchdog/status passes and clears the logical
   worker lease.
+- A stale sandbox lease expires during watchdog/recovery passes and disappears
+  from REST/SSE/world snapshots.
 - Retry decisions are controlled by job attempts and service restart intensity.
 - Cancellation updates the durable record, removes active leases, aborts
   cooperative runtime workers, and stops future dispatch.
@@ -171,12 +184,16 @@ Failures should be explicit and inspectable:
 The gateway is for agents as much as humans. A good control surface should make
 the next action obvious:
 
-- One path to enqueue, inspect, cancel, and retry jobs.
+- One path to enqueue, inspect, acquire, complete, fail, cancel, and retry jobs.
 - Stable ids and correlation ids across jobs, events, logs, and artifacts.
 - World snapshots that explain queue depth, active leases, workers, runtimes,
-  and recent failures.
+  sandbox leases, and recent failures.
 - Separate `workers` from `workerProcesses`: workers answer who can take work;
   worker processes answer what the daemon spawned and how it exited.
+- Focused snapshot options for agents and UIs that only need one job, runtime,
+  service, worker, worker process, table set, or log target.
+- `sd gateway inspect [job-id]` gives the snapshot a compact focused CLI view
+  before the web management surface exists.
 - Concrete public nouns: jobs, services, agents, workers, capabilities, events,
   logs, sandboxes.
 - ECS terminology stays in architecture docs and implementation internals unless

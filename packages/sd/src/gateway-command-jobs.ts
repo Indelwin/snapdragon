@@ -2,14 +2,25 @@ import type { GatewayClient, GatewayJobStatus } from '@snapdragon-ai/gateway';
 import type { SdCliArgs } from './args-types.js';
 import { loadSdConfig } from './config.js';
 import { gatewayErrorMessage, rustGatewayClientForConfig } from './gateway-command-client.js';
+import {
+  acquireGatewayJob,
+  completeGatewayJob,
+  failGatewayJob,
+} from './gateway-command-job-lifecycle.js';
 
 type JobsHandler = (rest: string[], args: SdCliArgs) => Promise<string>;
 
 const JOB_HANDLERS: Record<string, JobsHandler> = {
+  acquire: acquireGatewayJob,
+  claim: acquireGatewayJob,
   enqueue: enqueueJob,
+  complete: completeGatewayJob,
+  fail: failGatewayJob,
+  finish: completeGatewayJob,
   list: (_rest, args) => listJobs(args),
   show: (rest, args) => showJob(rest[0], args),
   cancel: (rest, args) => cancelJob(rest[0], args),
+  retry: (rest, args) => retryJob(rest[0], args),
 };
 
 export async function jobsCommand(
@@ -51,6 +62,17 @@ async function cancelJob(id: string | undefined, args: SdCliArgs): Promise<strin
   return withGateway(args, async (client) => {
     const job = await client.cancelJob(id);
     return job ? `cancelled ${job.id}\n` : `Unknown gateway job: ${id}\n`;
+  });
+}
+
+async function retryJob(id: string | undefined, args: SdCliArgs): Promise<string> {
+  if (!id) return 'gateway jobs retry requires <id>\n';
+  return withGateway(args, async (client) => {
+    const job = await client.retryJob(id);
+    if (!job) return `Unknown gateway job: ${id}\n`;
+    return job.state === 'pending'
+      ? `retry scheduled ${job.id}\n`
+      : `job ${job.id} is ${job.state}; retry not scheduled\n`;
   });
 }
 

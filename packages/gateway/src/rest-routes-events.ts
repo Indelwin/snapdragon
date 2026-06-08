@@ -1,3 +1,5 @@
+import { filterEvents } from './query-filters.js';
+import { worldSnapshotOptionsFromSearch } from './rest-query.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient } from './types.js';
 
@@ -7,14 +9,19 @@ export async function dispatchEvents(
   request: RestRequest,
 ): Promise<RestRouteResult> {
   const [, id, action] = route.parts;
-  if (route.method === 'GET') return listEvents(client, id);
+  if (route.method === 'GET') return listEvents(client, id, route);
   if (route.method === 'POST') return mutateEvent(client, id, action, request);
   return notFound();
 }
 
-async function listEvents(client: GatewayClient, id: string | undefined): Promise<RestRouteResult> {
+async function listEvents(
+  client: GatewayClient,
+  id: string | undefined,
+  route: RestRoute,
+): Promise<RestRouteResult> {
   if (id) return notFound();
-  return { status: 200, body: await client.listEvents() };
+  const options = worldSnapshotOptionsFromSearch(route.searchParams);
+  return { status: 200, body: filterEvents(await client.listEvents(), options) };
 }
 
 async function mutateEvent(

@@ -56,6 +56,7 @@ interactive agent shell.
 ```bash
 sd gateway start
 sd gateway status
+sd gateway inspect job_123 --runtime pi
 sd gateway services list
 sd gateway services run session-index
 sd gateway channels ensure local:demo

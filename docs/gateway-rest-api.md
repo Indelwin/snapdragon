@@ -26,7 +26,30 @@ const baseUrl = await rest.listen();
 
 By default the server binds to `127.0.0.1` and uses `/v1` as its path prefix.
 Remote exposure, authentication, and policy enforcement are future layers and
-should be added above the same route shape.
+should be added above the same route shape. The prefix is matched as a complete
+path segment, so `/v10/...` is not treated as a `/v1` route.
+
+For the packaged `sd` operator flow, start the Rust daemon and then run the
+foreground REST/SSE bridge:
+
+```sh
+sd gateway start
+sd gateway rest serve --port 8787
+```
+
+The command prints the base URL, defaults to `http://127.0.0.1:8787/v1`, and
+accepts `--ready-file <path>` so UI launchers can wait for the exact bound URL.
+Use `--port 0` for an ephemeral test port.
+
+TypeScript clients can reuse the packaged route contract:
+
+```ts
+import { GatewayRestClient } from '@snapdragon-ai/gateway';
+
+const gateway = new GatewayRestClient({ baseUrl: 'http://127.0.0.1:8787/v1' });
+const status = await gateway.status();
+const jobs = await gateway.listJobs();
+```
 
 ## Routes
 
@@ -42,6 +65,7 @@ should be added above the same route shape.
 | `POST` | `/v1/services/:name/enable` | Enable or disable a service. |
 | `GET` | `/v1/agents` | List registered agent runtimes. |
 | `POST` | `/v1/agents/register` | Register and durably store an agent runtime descriptor. |
+| `POST` | `/v1/agents/probe/pi` | Probe a Pi RPC runtime descriptor and optionally register it. |
 | `GET` | `/v1/agents/:id` | Show one runtime descriptor. |
 | `GET` | `/v1/workers` | List logical job workers and external agent adapters. |
 | `GET` | `/v1/workers/:id` | Show one logical worker record. |
@@ -49,21 +73,54 @@ should be added above the same route shape.
 | `POST` | `/v1/workers/:id/heartbeat` | Update worker state, queue, status, error, or metadata. |
 | `GET` | `/v1/jobs` | List durable jobs. |
 | `POST` | `/v1/jobs` | Enqueue a durable job. |
+| `POST` | `/v1/jobs/acquire` | Acquire the next pending job on a queue. |
 | `GET` | `/v1/jobs/:id` | Show one job. |
+| `POST` | `/v1/jobs/:id/complete` | Complete one job with an optional result. |
+| `POST` | `/v1/jobs/:id/fail` | Fail one job with a durable error. |
 | `POST` | `/v1/jobs/:id/cancel` | Cancel one job. |
+| `POST` | `/v1/jobs/:id/retry` | Requeue a failed job for another worker attempt. |
 | `GET` | `/v1/events` | List gateway events. |
 | `POST` | `/v1/events` | Append an event. |
 | `POST` | `/v1/events/:id/cancel` | Cancel one event. |
 | `GET` | `/v1/logs` | Tail logs, with optional `target` and `limit`. |
+| `POST` | `/v1/logs` | Append a worker or runtime breadcrumb log. |
 | `GET` | `/v1/registry` | Registry names, capabilities, and channels. |
 | `GET` | `/v1/capabilities` | Capability provider map. |
-| `GET` | `/v1/sandboxes` | Sandbox lease list placeholder. |
+| `GET` | `/v1/sandboxes` | List active sandbox leases. |
+| `POST` | `/v1/sandboxes/register` | Register or update a sandbox lease. |
+| `GET` | `/v1/sandboxes/:id` | Show one sandbox lease. |
+| `POST` | `/v1/sandboxes/:id/release` | Release one sandbox lease. |
 
 Runtime workers append job-targeted logs over local IPC while they run. REST
 clients inspect those breadcrumbs with `GET /v1/logs?target=<job_id>`. For Pi
 runtime jobs this includes lifecycle events such as `agent_start`,
 `message_end`, tool execution boundaries, extension UI requests, and
 cancellation observation without exposing raw token deltas by default.
+
+## Query Filters
+
+`GET /v1/world` and `GET /v1/stream` accept the same focused inspection query
+parameters. List routes for services, workers, jobs, and events also use the
+matching subset of this vocabulary.
+
+| Parameter | Applies to | Purpose |
+| --- | --- | --- |
+| `sections` or repeated `section` | `/world`, `/stream` | Comma-separated world sections such as `jobs,logs,workerProcesses`. |
+| `target` | jobs, events, logs, leases | Focus on a job id, event target, log target, or lease job id. |
+| `queue` | jobs, queue depths | Filter by durable job queue. |
+| `runtime` / `runtimeId` | agent runtimes | Filter by registered runtime id. |
+| `service` | services, worker processes | Filter by service name. |
+| `worker` / `process` | worker processes, leases | Filter by worker/process id. |
+| `state` / `jobState` / `eventState` / `serviceState` / `workerState` | route-dependent | Filter by current state. |
+| `kind` / `jobKind` / `eventKind` | jobs, events | Filter by job or event kind. |
+| `capability` | agent runtimes | Filter runtimes by capability. |
+| `enabled` | services | Filter service enablement with `true`, `false`, `1`, or `0`. |
+| `limit` / `logLimit` | logs | Bound returned log records. |
+| `tables` / repeated `table` | `/world`, `/stream` | Restrict table snapshots by name. |
+
+The current snapshot shape exposes `workerProcesses` explicitly. `workers`
+remains as a compatibility section and mirrors worker process rows until durable
+worker registration records become part of the main branch contract.
 
 ## Request Examples
 
@@ -107,6 +164,27 @@ content-type: application/json
   }
 }
 ```
+
+Probe and save the local Pi runtime:
+
+```http
+POST /v1/agents/probe/pi
+content-type: application/json
+
+{
+  "save": true,
+  "options": {
+    "command": "pi",
+    "args": ["--mode", "rpc"],
+    "agentDir": "/Users/example/Workspace/pi-mono"
+  }
+}
+```
+
+The response is a `GatewayAgentRuntimeDescriptor` with `health` and `metadata`
+filled from Pi RPC `get_state` and `get_commands`. Because probing launches the
+configured command, keep this route on the default local listener unless a later
+auth/policy layer explicitly allows remote runtime management.
 
 Enqueue a routed agent job:
 
@@ -165,6 +243,41 @@ content-type: application/json
 }
 ```
 
+Acquire and finish a job from a worker adapter:
+
+```http
+POST /v1/jobs/acquire
+content-type: application/json
+
+{
+  "queue": "default",
+  "worker": "pi-worker-1",
+  "leaseMs": 300000
+}
+```
+
+```http
+POST /v1/jobs/job_123/complete
+content-type: application/json
+
+{
+  "result": {
+    "summary": "Release checks passed."
+  }
+}
+```
+
+Report a worker failure:
+
+```http
+POST /v1/jobs/job_124/fail
+content-type: application/json
+
+{
+  "error": "runtime exited before message_end"
+}
+```
+
 Cancel a running job:
 
 ```http
@@ -179,10 +292,52 @@ the cancelled job record, abort their runtime signal, clear active leases, and
 leave subsequent late `complete` or `fail` writes as no-ops against the
 cancelled status.
 
+Retry a failed job:
+
+```http
+POST /v1/jobs/job_123/retry
+content-type: application/json
+
+{}
+```
+
+Failed jobs with remaining attempts automatically return to `pending` when a
+worker reports failure. `retry` is the manual operator/executive-agent path for
+terminal failed jobs; jobs in other states are returned unchanged, and cancelled
+jobs stay cancelled.
+
+Register a sandbox lease:
+
+```http
+POST /v1/sandboxes/register
+content-type: application/json
+
+{
+  "lease": {
+    "id": "lease_project-a",
+    "sandboxId": "project-a-worktree",
+    "cwd": "/Users/shannon/.snapdragon/sandboxes/worktrees/project-a",
+    "acquiredAtMs": 1780876800000,
+    "expiresAtMs": 1780880400000,
+    "backend": "worktree",
+    "project": {
+      "id": "project-a",
+      "root": "/Users/shannon/Workspace/project-a",
+      "branch": "main"
+    },
+    "referenceRoots": ["/Users/shannon/Workspace/reference"]
+  }
+}
+```
+
+Sandbox leases are gateway-visible ownership records. Releasing a lease removes
+the durable record; backend-specific cleanup such as removing a git worktree is
+performed by the owning worker or CLI command.
+
 Watch world snapshots:
 
 ```http
-GET /v1/stream
+GET /v1/stream?sections=jobs,logs&target=job_123&logLimit=20
 accept: text/event-stream
 ```
 
@@ -203,3 +358,11 @@ agent capacity separately from low-level process health.
 
 The API intentionally returns the same camelCase TypeScript shapes exposed by
 `@snapdragon-ai/gateway`. Rust IPC wire casing stays behind the facade.
+
+Error responses use a small JSON object:
+
+```json
+{ "error": "invalid JSON" }
+```
+
+Malformed JSON request bodies return `400`. Unknown routes return `404`.
