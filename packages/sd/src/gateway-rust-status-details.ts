@@ -1,10 +1,12 @@
 import type { GatewayServiceStatus, GatewayStatus } from '@snapdragon-ai/gateway';
+import { formatJobWorkers, formatWorkerProcesses } from './gateway-rust-worker-status.js';
 
 export function formatRustStatusDetails(status: GatewayStatus): string[] {
   return [
     `pid: ${status.pid ?? 'unknown'} uptime=${formatDuration(status.uptimeMs ?? 0)}`,
     `processes: ${status.processes}`,
-    `workers: ${formatWorkers(status)}`,
+    `job workers: ${formatJobWorkers(status)}`,
+    `worker processes: ${formatWorkerProcesses(status)}`,
     `service tasks: ${status.serviceTasks?.length ? status.serviceTasks.join(', ') : 'none'}`,
     `tables: ${status.tables.length ? status.tables.join(', ') : 'none'}`,
     `jobs: pending=${status.jobsPending ?? 0} running=${status.jobsRunning ?? 0}`,
@@ -14,18 +16,6 @@ export function formatRustStatusDetails(status: GatewayStatus): string[] {
     ...formatServiceLines(status.services),
     ...formatRecentFailures(status),
   ];
-}
-
-function formatWorkers(status: GatewayStatus): string {
-  const workers = status.workerProcesses ?? [];
-  if (workers.length === 0) return 'none';
-  return workers.slice(-4).map(formatWorker).join(', ');
-}
-
-function formatWorker(worker: NonNullable<GatewayStatus['workerProcesses']>[number]): string {
-  const pid = worker.pid ? ` pid=${worker.pid}` : '';
-  const reason = worker.lastError ? ` ${worker.lastError}` : '';
-  return `${worker.service}:${worker.state}${pid}${reason}`;
 }
 
 function formatServiceLines(services: GatewayServiceStatus[]): string[] {

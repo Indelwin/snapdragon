@@ -51,6 +51,14 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
       /cancelled job_1/,
     );
     assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['workers', 'list'] }),
+      /agent-jobs-1\trunning\tqueue=default service=agent-jobs runtime=pi job=job_1 lease=lease_1/,
+    );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['workers', 'show', 'agent-jobs-1'] }),
+      /"service": "agent-jobs"/,
+    );
+    assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['agents', 'enqueue', 'test agent'] }),
       /enqueued agent job job_1/,
     );
@@ -317,6 +325,19 @@ test('rust gateway status shows leases, queues, service scheduling, and failures
           lastError: 'worker timed out after 500ms',
         },
       ],
+      workers: [
+        {
+          id: 'agent-jobs-1',
+          queue: 'default',
+          service: 'agent-jobs',
+          capabilities: ['agent.run'],
+          state: 'running',
+          registeredAtMs: 1,
+          heartbeatAtMs: 2,
+          currentJobId: 'job_1',
+          status: 'running pi job job_1',
+        },
+      ],
       serviceTasks: ['memory-worker'],
       tables: ['state'],
       jobsPending: 2,
@@ -341,7 +362,11 @@ test('rust gateway status shows leases, queues, service scheduling, and failures
     },
   );
   assert.match(text, /service tasks: memory-worker/);
-  assert.match(text, /workers: memory-worker:timed_out pid=123 worker timed out/);
+  assert.match(
+    text,
+    /job workers: agent-jobs-1:running queue=default service=agent-jobs job=job_1/,
+  );
+  assert.match(text, /worker processes: memory-worker:timed_out pid=123 worker timed out/);
   assert.match(text, /queues: default p=2 r=1/);
   assert.match(text, /leases: 1/);
   assert.match(text, /restart=suppressed/);
@@ -489,6 +514,12 @@ function responseFor(request: any): unknown {
   if (request.method === 'jobs.cancel') {
     return { id: request.id, ok: true, result: wireJob(request.params.id, 'Cancelled') };
   }
+  if (request.method === 'workers.list') {
+    return { id: request.id, ok: true, result: [wireWorker('agent-jobs-1')] };
+  }
+  if (request.method === 'workers.show') {
+    return { id: request.id, ok: true, result: wireWorker(request.params.id) };
+  }
   if (request.method === 'agents.register') {
     return { id: request.id, ok: true, result: request.params.descriptor };
   }
@@ -551,5 +582,24 @@ function wireAgentRuntime(id: string): unknown {
     isolation: 'profile',
     health: null,
     metadata: null,
+  };
+}
+
+function wireWorker(id: string): unknown {
+  return {
+    id,
+    queue: 'default',
+    runtime_id: 'pi',
+    service: 'agent-jobs',
+    capabilities: ['agent.run'],
+    state: 'running',
+    registered_at_ms: 1,
+    heartbeat_at_ms: 2,
+    current_job_id: 'job_1',
+    current_lease_id: 'lease_1',
+    lease_expires_at_ms: 3,
+    status: 'running pi job job_1',
+    last_error: null,
+    metadata: { supportedRuntimeIds: ['sd', 'pi'] },
   };
 }
