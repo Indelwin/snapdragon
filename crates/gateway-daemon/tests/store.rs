@@ -69,6 +69,44 @@ fn store_persists_jobs_events_logs_and_services() {
         GatewayJobState::Cancelled
     );
 
+    let retried = store
+        .enqueue_job(
+            "job_retry".into(),
+            GatewayJobSpec {
+                kind: "agent.run".into(),
+                queue: "default".into(),
+                payload: serde_json::json!({"prompt":"retry"}),
+                priority: 0,
+                max_attempts: 2,
+                timeout_ms: None,
+            },
+            15,
+        )
+        .unwrap();
+    assert_eq!(retried.state, GatewayJobState::Pending);
+    store.acquire_job("default", "worker-1", 1_000, 16).unwrap();
+    assert_eq!(
+        store
+            .fail_job("job_retry", "try again".into(), 17)
+            .unwrap()
+            .unwrap()
+            .state,
+        GatewayJobState::Pending
+    );
+    store.acquire_job("default", "worker-1", 1_000, 18).unwrap();
+    assert_eq!(
+        store
+            .fail_job("job_retry", "out of tries".into(), 19)
+            .unwrap()
+            .unwrap()
+            .state,
+        GatewayJobState::Failed
+    );
+    assert_eq!(
+        store.retry_job("job_retry", 20).unwrap().unwrap().state,
+        GatewayJobState::Pending
+    );
+
     let event = store
         .append_event(GatewayEventRecord {
             id: "event_1".into(),
@@ -119,7 +157,13 @@ fn store_persists_jobs_events_logs_and_services() {
         )
         .unwrap();
     assert_eq!(worker.runtime_id.as_deref(), Some("pi"));
-    assert_eq!(store.list_workers().unwrap()[0].id, "pi-worker");
+    assert!(
+        store
+            .list_workers()
+            .unwrap()
+            .iter()
+            .any(|worker| worker.id == "pi-worker")
+    );
     assert_eq!(
         store
             .append_log(19, "info", Some("job_1"), "runtime breadcrumb", None)
