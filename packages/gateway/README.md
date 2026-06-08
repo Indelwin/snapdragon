@@ -23,6 +23,7 @@ The public TypeScript API is intentionally small and serializable:
   `GatewayWorkerRecord` for logical job workers and external agent adapters.
 - `GatewayJobSpec`, `GatewayJobStatus`, and `GatewayLease` for durable work
   queues.
+- `GatewaySandboxLease` for inspectable project sandbox ownership.
 - `GatewayEventRecord` and `GatewayLogRecord` for inspectable orchestration
   history.
 - `GatewayWorldSnapshot` for dashboard, REST, and agent-facing inspection.
@@ -198,6 +199,8 @@ Initial routes cover:
 - `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
   `GET /v1/logs`, `GET /v1/registry`, `GET /v1/capabilities`, and
   `GET /v1/sandboxes`.
+- `POST /v1/sandboxes/register`, `GET /v1/sandboxes/:id`, and
+  `POST /v1/sandboxes/:id/release`.
 
 The default listener binds to `127.0.0.1`. Authentication, policy enforcement,
 and remote exposure are later layers on the same route shape.
@@ -209,6 +212,12 @@ spaces without baking in a backend. The first `sd` backend is local git
 worktrees with optional linked reference roots; richer providers such as
 OpenShell, Docker, microVMs, or remote sandboxes should implement the same lease
 shape instead of coupling callers to a specific runtime.
+
+Sandbox leases are part of the gateway inspection surface. The Rust daemon can
+persist registered leases, `worldSnapshot()` includes them, and REST clients can
+list/show/release them. The `sd gateway sandboxes` command still works without a
+running daemon, but reports when a lease is local-only so operators and agents do
+not confuse hidden filesystem state with gateway-visible state.
 
 ## Observability
 

@@ -126,13 +126,14 @@ test('inline gateway registers agent runtimes and snapshots the world', async ()
     runtimeId: 'sd',
     capabilities: ['agent.run'],
   });
+  await gateway.registerSandboxLease(sandboxLease('lease_world'));
   const snapshot = await gateway.worldSnapshot();
   assert.equal(snapshot.agentRuntimes[0]?.id, 'sd');
   assert.equal(snapshot.workers[0]?.id, 'agent-jobs-1');
   assert.deepEqual(snapshot.workerProcesses, []);
   assert.equal(snapshot.jobs[0]?.spec.kind, 'agent.run');
   assert.equal(snapshot.status.agentRuntimes?.[0]?.protocol, 'embedded');
-  assert.deepEqual(snapshot.sandboxes, []);
+  assert.equal(snapshot.sandboxes[0]?.id, 'lease_world');
 });
 
 test('gateway REST server exposes local orchestration routes', async () => {
@@ -184,6 +185,15 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.equal((await gateway.failJob(job.id, 'rest failure'))?.state, 'failed');
     assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/retry`, {})).state, 'pending');
     assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/cancel`, {})).state, 'cancelled');
+
+    const sandbox = await postJson(`${baseUrl}/sandboxes/register`, {
+      lease: sandboxLease('lease_rest', 'sandbox_rest'),
+    });
+    assert.equal(sandbox.id, 'lease_rest');
+    assert.equal((await getJson(`${baseUrl}/sandboxes/lease_rest`)).sandboxId, 'sandbox_rest');
+    assert.equal((await getJson(`${baseUrl}/sandboxes`))[0]?.id, 'lease_rest');
+    assert.equal((await postJson(`${baseUrl}/sandboxes/lease_rest/release`, {})).id, 'lease_rest');
+    assert.equal((await getJson(`${baseUrl}/sandboxes`)).length, 0);
 
     const world = await getJson(`${baseUrl}/world`);
     assert.equal(world.agentRuntimes[0]?.id, 'codex');
@@ -345,6 +355,10 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'job_1',
     );
     assert.equal((await gateway.tailLogs()).length, 1);
+    assert.equal((await gateway.registerSandboxLease(sandboxLease('lease_1'))).id, 'lease_1');
+    assert.equal((await gateway.listSandboxLeases())[0]?.id, 'lease_1');
+    assert.equal((await gateway.showSandboxLease('lease_1'))?.cwd, '/tmp/sandbox');
+    assert.equal((await gateway.releaseSandboxLease('lease_1'))?.id, 'lease_1');
     assert.deepEqual(requests[0].params.spec.worker, {
       command: 'node',
       args: ['worker.js'],
@@ -377,6 +391,10 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'events.cancel',
       'logs.append',
       'logs.tail',
+      'sandboxes.register',
+      'sandboxes.list',
+      'sandboxes.show',
+      'sandboxes.release',
     ]);
   } finally {
     server.close();
@@ -616,6 +634,18 @@ function responseFor(request: any): unknown {
       result: [{ id: 1, at_ms: 10, level: 'info', message: 'ok' }],
     };
   }
+  if (request.method === 'sandboxes.register') {
+    return { id: request.id, ok: true, result: request.params.lease };
+  }
+  if (request.method === 'sandboxes.list') {
+    return { id: request.id, ok: true, result: [wireSandboxLease()] };
+  }
+  if (request.method === 'sandboxes.show') {
+    return { id: request.id, ok: true, result: wireSandboxLease(request.params.id) };
+  }
+  if (request.method === 'sandboxes.release') {
+    return { id: request.id, ok: true, result: wireSandboxLease(request.params.id) };
+  }
   return { id: request.id, ok: true, result: true };
 }
 
@@ -713,6 +743,33 @@ function wireWorkerRecord(worker: any = {}): unknown {
     status: worker.status ?? null,
     last_error: worker.lastError ?? worker.last_error ?? null,
     metadata: worker.metadata ?? null,
+  };
+}
+
+function sandboxLease(id = 'lease_1', sandboxId = 'sandbox_1'): any {
+  const now = Date.now();
+  return {
+    id,
+    sandboxId,
+    cwd: '/tmp/sandbox',
+    acquiredAtMs: now,
+    expiresAtMs: now + 60_000,
+    backend: 'worktree',
+    project: { id: 'project_1', root: '/tmp/project' },
+    referenceRoots: ['/tmp/reference'],
+  };
+}
+
+function wireSandboxLease(id = 'lease_1'): any {
+  return {
+    id,
+    sandbox_id: 'sandbox_1',
+    cwd: '/tmp/sandbox',
+    acquired_at_ms: 10,
+    expires_at_ms: 30,
+    backend: 'worktree',
+    project: { id: 'project_1', root: '/tmp/project', branch: null },
+    reference_roots: ['/tmp/reference'],
   };
 }
 
