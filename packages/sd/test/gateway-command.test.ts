@@ -7,8 +7,9 @@ import test from 'node:test';
 import { InlineGatewayClient } from '@snapdragon-ai/gateway';
 import { stringify as stringifyYaml } from 'yaml';
 import { parseArgs } from '../src/args.ts';
-import { runGatewayAgentJob } from '../src/gateway-agent-job-service.ts';
+import { registerAgentJobWorker, runGatewayAgentJob } from '../src/gateway-agent-job-service.ts';
 import { runGatewayCommand } from '../src/gateway-command.ts';
+import { registerLearnJobWorker, runLearnEvalJob } from '../src/gateway-learn-job-service.ts';
 import { configuredRustGatewayServices } from '../src/gateway-rust-config.ts';
 import { formatRustGatewayStatus } from '../src/gateway-rust-status.ts';
 
@@ -142,6 +143,12 @@ test('gateway agent job service records Pi runtime breadcrumbs', async () => {
   const root = await mkGatewayRoot();
   const fixture = await writePiRpcJobFixture(root);
   const gateway = new InlineGatewayClient();
+  const config = piRuntimeConfig(root, fixture);
+  await registerAgentJobWorker(gateway, config, 'test-worker');
+  const worker = await gateway.showWorker('test-worker');
+  assert.equal(worker?.service, 'agent-jobs');
+  assert.deepEqual(worker?.capabilities, ['agent.run']);
+  assert.deepEqual((worker?.metadata as any)?.supportedRuntimeIds, ['sd', 'pi']);
   const job = await gateway.enqueueJob({
     kind: 'agent.run',
     payload: { prompt: 'hello pi', targetRuntimeId: 'pi' },
@@ -152,11 +159,17 @@ test('gateway agent job service records Pi runtime breadcrumbs', async () => {
   assert.equal(lease.job.id, job.id);
 
   try {
-    const result = await runGatewayAgentJob(gateway, piRuntimeConfig(root, fixture), lease.job, {
+    const result = await runGatewayAgentJob(gateway, config, lease.job, {
       cancellationPollMs: 10,
+      workerId: 'test-worker',
     });
     assert.equal(result.metrics?.completed, 1);
     assert.equal((await gateway.showJob(job.id))?.state, 'completed');
+    const completedWorker = await gateway.showWorker('test-worker');
+    assert.equal(completedWorker?.state, 'idle');
+    assert.equal(completedWorker?.status, `completed ${job.id}`);
+    assert.equal((completedWorker?.metadata as any)?.lastRuntimeId, 'pi');
+    assert.deepEqual((completedWorker?.metadata as any)?.supportedRuntimeIds, ['sd', 'pi']);
     const logs = await gateway.tailLogs({ target: job.id, limit: 20 });
     assert.match(
       logs.map((log) => log.message).join('\n'),
@@ -171,6 +184,8 @@ test('gateway agent job service aborts Pi runtime when the job is cancelled', as
   const root = await mkGatewayRoot();
   const fixture = await writePiRpcJobFixture(root, { hang: true });
   const gateway = new InlineGatewayClient();
+  const config = piRuntimeConfig(root, fixture);
+  await registerAgentJobWorker(gateway, config, 'test-worker');
   const job = await gateway.enqueueJob({
     kind: 'agent.run',
     payload: { prompt: 'wait here', targetRuntimeId: 'pi' },
@@ -181,8 +196,9 @@ test('gateway agent job service aborts Pi runtime when the job is cancelled', as
   assert.equal(lease.job.id, job.id);
 
   try {
-    const running = runGatewayAgentJob(gateway, piRuntimeConfig(root, fixture), lease.job, {
+    const running = runGatewayAgentJob(gateway, config, lease.job, {
       cancellationPollMs: 10,
+      workerId: 'test-worker',
     });
     await waitForLog(gateway, job.id, /agent runtime event: agent_start/);
     await gateway.cancelJob(job.id);
@@ -190,11 +206,47 @@ test('gateway agent job service aborts Pi runtime when the job is cancelled', as
     assert.equal(result.metrics?.completed, 0);
     assert.equal(result.metrics?.failed, 0);
     assert.equal((await gateway.showJob(job.id))?.state, 'cancelled');
+    const cancelledWorker = await gateway.showWorker('test-worker');
+    assert.equal(cancelledWorker?.state, 'idle');
+    assert.equal(cancelledWorker?.status, `cancelled ${job.id}`);
     const logs = await gateway.tailLogs({ target: job.id, limit: 20 });
     assert.match(logs.map((log) => log.message).join('\n'), /job cancellation observed/);
   } finally {
     await rm(root, { force: true, recursive: true });
   }
+});
+
+test('gateway learn job service registers and heartbeats learn workers', async () => {
+  const gateway = new InlineGatewayClient();
+  await registerLearnJobWorker(gateway, 'learn-test-worker');
+  const worker = await gateway.showWorker('learn-test-worker');
+  assert.equal(worker?.queue, 'learn');
+  assert.equal(worker?.service, 'learn-jobs');
+  assert.deepEqual(worker?.capabilities, ['learn.eval']);
+
+  const job = await gateway.enqueueJob({
+    kind: 'learn.eval',
+    queue: 'learn',
+    payload: {
+      job: { id: 'eval-1', kind: 'eval', dataset: 'demo' },
+      dataset: {
+        id: 'demo',
+        examples: [{ id: 'one', prompt: 'test', metadata: { output: 'ok' } }],
+      },
+    },
+  });
+  const lease = await gateway.acquireJob('learn', 'learn-test-worker');
+  assert.ok(lease);
+  assert.equal(lease.job.id, job.id);
+
+  const result = await runLearnEvalJob(gateway, lease.job, { workerId: 'learn-test-worker' });
+  assert.equal(result.metrics?.completed, 1);
+  assert.equal((await gateway.showJob(job.id))?.state, 'completed');
+  const completedWorker = await gateway.showWorker('learn-test-worker');
+  assert.equal(completedWorker?.state, 'idle');
+  assert.equal(completedWorker?.status, `completed learn eval ${job.id}`);
+  assert.equal((completedWorker?.metadata as any)?.datasetId, 'demo');
+  assert.equal(typeof (completedWorker?.metadata as any)?.score, 'number');
 });
 
 test('configured Rust gateway services point at headless sd workers', async () => {
