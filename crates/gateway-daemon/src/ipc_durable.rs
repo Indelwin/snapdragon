@@ -29,6 +29,10 @@ pub(crate) async fn dispatch_jobs(
             let params = parse::<JobIdParams>(params)?;
             ok_json(daemon.cancel_job(&params.id, unix_time_ms()).await?)
         }
+        "jobs.retry" => {
+            let params = parse::<JobIdParams>(params)?;
+            ok_json(require_store(daemon)?.retry_job(&params.id, unix_time_ms())?)
+        }
         "jobs.acquire" => acquire_job(daemon, params),
         "jobs.complete" => finish_job(daemon, params, FinishKind::Complete),
         "jobs.fail" => finish_job(daemon, params, FinishKind::Fail),

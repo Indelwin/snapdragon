@@ -34,6 +34,13 @@ export async function cancelRustJob(
   return fromWireJobStatus((await call('jobs.cancel', { id })) as any);
 }
 
+export async function retryRustJob(
+  call: RustGatewayCall,
+  id: string,
+): Promise<GatewayJobStatus | undefined> {
+  return fromWireJobStatus((await call('jobs.retry', { id })) as any);
+}
+
 export async function acquireRustJob(
   call: RustGatewayCall,
   queue: string,
