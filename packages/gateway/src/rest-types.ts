@@ -32,13 +32,27 @@ export interface RestRequestContext {
 export type RestRequest = IncomingMessage;
 export type RestResponse = ServerResponse;
 
+export class RestHttpError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'RestHttpError';
+  }
+}
+
 export async function readJson<T>(request: IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];
   for await (const chunk of request) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
   }
   const body = Buffer.concat(chunks).toString('utf8').trim();
-  return (body ? JSON.parse(body) : {}) as T;
+  try {
+    return (body ? JSON.parse(body) : {}) as T;
+  } catch {
+    throw new RestHttpError(400, 'invalid JSON');
+  }
 }
 
 export function sendJson(response: ServerResponse, status: number, body: unknown): void {

@@ -1,36 +1,109 @@
-import type { GatewayClient, GatewayTableSnapshot } from './types.js';
-import type { GatewayWorldSnapshot } from './types-runtime.js';
+import {
+  filterAgentRuntimes,
+  filterEvents,
+  filterJobs,
+  filterLeases,
+  filterLogs,
+  filterQueueDepths,
+  filterServices,
+  filterWorkerProcesses,
+  filterWorkers,
+} from './query-filters.js';
+import type { GatewayClient, GatewayRegistrySnapshot, GatewayTableSnapshot } from './types.js';
+import type {
+  GatewayWorldSnapshot,
+  GatewayWorldSnapshotOptions,
+  GatewayWorldSnapshotSection,
+} from './types-runtime.js';
+
+const allSections: GatewayWorldSnapshotSection[] = [
+  'services',
+  'agentRuntimes',
+  'workers',
+  'workerProcesses',
+  'jobs',
+  'events',
+  'logs',
+  'registry',
+  'leases',
+  'queueDepths',
+  'tables',
+  'sandboxes',
+];
 
 export async function buildGatewayWorldSnapshot(
   client: GatewayClient,
+  options: GatewayWorldSnapshotOptions = {},
 ): Promise<GatewayWorldSnapshot> {
-  const [status, registry, services, agentRuntimes, jobs, events, logs] = await Promise.all([
-    client.status(),
-    client.registrySnapshot(),
-    client.listServices(),
-    client.listAgentRuntimes(),
-    client.listJobs(),
-    client.listEvents(),
-    client.tailLogs({ limit: 50 }),
-  ]);
-  const tables = await tableSnapshots(client, status.tables);
+  const status = await client.status();
+  const sections = sectionSet(options.sections);
+  const [registry, services, agentRuntimes, workers, jobs, events, logs, sandboxes] =
+    await Promise.all([
+      whenSection(sections, 'registry', () => client.registrySnapshot(), emptyRegistry()),
+      whenSection(sections, 'services', () => client.listServices(), []),
+      whenSection(sections, 'agentRuntimes', () => client.listAgentRuntimes(), []),
+      whenSection(sections, 'workers', () => client.listWorkers(), []),
+      whenSection(sections, 'jobs', () => client.listJobs(), []),
+      whenSection(sections, 'events', () => client.listEvents(), []),
+      whenSection(sections, 'logs', () => client.tailLogs(logOptions(options)), []),
+      whenSection(sections, 'sandboxes', () => client.listSandboxLeases(), []),
+    ]);
+  const workerProcesses = selectedWorkerProcesses(sections, status.workerProcesses ?? [], options);
+  const tables = sections.has('tables')
+    ? await tableSnapshots(client, tableNames(status.tables, options.tables))
+    : [];
   return {
     capturedAtMs: Date.now(),
     runtime: status.runtime,
     status,
-    services,
-    agentRuntimes,
-    workers: await client.listWorkers(),
-    workerProcesses: status.workerProcesses ?? [],
-    jobs,
-    events,
-    logs,
+    services: filterServices(services, options),
+    agentRuntimes: filterAgentRuntimes(agentRuntimes, options),
+    workers: filterWorkers(workers, options),
+    workerProcesses,
+    jobs: filterJobs(jobs, options),
+    events: filterEvents(events, options),
+    logs: filterLogs(logs, options),
     registry,
-    leases: status.activeLeases ?? [],
-    queueDepths: status.queueDepths ?? [],
+    leases: sections.has('leases') ? filterLeases(status.activeLeases ?? [], options) : [],
+    queueDepths: sections.has('queueDepths')
+      ? filterQueueDepths(status.queueDepths ?? [], options)
+      : [],
     tables,
-    sandboxes: [],
+    sandboxes,
   };
+}
+
+function sectionSet(sections: GatewayWorldSnapshotSection[] | undefined) {
+  return new Set(sections?.length ? sections : allSections);
+}
+
+async function whenSection<T>(
+  sections: Set<GatewayWorldSnapshotSection>,
+  section: GatewayWorldSnapshotSection,
+  load: () => Promise<T>,
+  fallback: T,
+): Promise<T> {
+  return sections.has(section) ? load() : fallback;
+}
+
+function emptyRegistry(): GatewayRegistrySnapshot {
+  return { names: {}, capabilities: {}, channels: {} };
+}
+
+function logOptions(options: GatewayWorldSnapshotOptions): { target?: string; limit?: number } {
+  return { target: options.target, limit: options.logLimit ?? 50 };
+}
+
+function tableNames(allNames: string[], requested: string[] | undefined): string[] {
+  return requested?.length ? allNames.filter((name) => requested.includes(name)) : allNames;
+}
+
+function selectedWorkerProcesses(
+  sections: Set<GatewayWorldSnapshotSection>,
+  processes: NonNullable<GatewayWorldSnapshot['workerProcesses']>,
+  options: GatewayWorldSnapshotOptions,
+): NonNullable<GatewayWorldSnapshot['workerProcesses']> {
+  return sections.has('workerProcesses') ? filterWorkerProcesses(processes, options) : [];
 }
 
 async function tableSnapshots(

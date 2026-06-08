@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
   createGatewayRestServer,
+  GatewayRestClient,
   InlineGatewayClient,
   probePiRpcRuntime,
   RustGatewayClient,
@@ -83,6 +84,19 @@ test('inline gateway leases, completes, and logs jobs', async () => {
     (await gateway.status()).recentFailures?.map((log) => log.message).join('\n') ?? '',
     /nope/,
   );
+  const retried = await gateway.enqueueJob({
+    kind: 'agent.run',
+    payload: { prompt: 'retry it' },
+    maxAttempts: 2,
+  });
+  await gateway.acquireJob('default', 'worker-1');
+  assert.equal((await gateway.failJob(retried.id, 'try again'))?.state, 'pending');
+  assert.equal((await gateway.showJob(retried.id))?.attempts, 1);
+  await gateway.acquireJob('default', 'worker-1');
+  assert.equal((await gateway.failJob(retried.id, 'out of tries'))?.state, 'failed');
+  assert.equal((await gateway.retryJob(retried.id))?.state, 'pending');
+  assert.equal((await gateway.acquireJob('default', 'worker-1'))?.job.id, retried.id);
+  assert.equal((await gateway.completeJob(retried.id, { ok: true }))?.state, 'completed');
   const cancelled = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'stop it' } });
   await gateway.acquireJob('default', 'worker-1');
   assert.equal((await gateway.cancelJob(cancelled.id))?.state, 'cancelled');
@@ -106,26 +120,49 @@ test('inline gateway registers agent runtimes and snapshots the world', async ()
     capabilities: ['tools.shell'],
     isolation: 'profile',
   });
-  await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'map the world' } });
+  const job = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'map the world' } });
+  await gateway.enqueueJob({ kind: 'learn.eval', queue: 'evals', payload: { prompt: 'ignore' } });
   await gateway.registerWorker({
     id: 'agent-jobs-1',
     queue: 'default',
     runtimeId: 'sd',
     capabilities: ['agent.run'],
   });
+  await gateway.registerSandboxLease(sandboxLease('lease_world'));
+  await gateway.appendEvent({ kind: 'channel.run', target: job.id });
+  await gateway.appendEvent({ kind: 'channel.run', target: 'other' });
+  await gateway.appendLog({ target: job.id, message: 'focused breadcrumb' });
+  await gateway.appendLog({ target: 'other', message: 'ignored breadcrumb' });
   const snapshot = await gateway.worldSnapshot();
   assert.equal(snapshot.agentRuntimes[0]?.id, 'sd');
   assert.equal(snapshot.workers[0]?.id, 'agent-jobs-1');
   assert.deepEqual(snapshot.workerProcesses, []);
   assert.equal(snapshot.jobs[0]?.spec.kind, 'agent.run');
   assert.equal(snapshot.status.agentRuntimes?.[0]?.protocol, 'embedded');
-  assert.deepEqual(snapshot.sandboxes, []);
+  assert.equal(snapshot.sandboxes[0]?.id, 'lease_world');
+  const focused = await gateway.worldSnapshot({
+    sections: ['agentRuntimes', 'workers', 'jobs', 'events', 'logs'],
+    target: job.id,
+    runtimeId: 'sd',
+    worker: 'agent-jobs-1',
+    jobKind: 'agent.run',
+    eventKind: 'channel.run',
+    logLimit: 1,
+  });
+  assert.equal(focused.agentRuntimes[0]?.id, 'sd');
+  assert.equal(focused.workers[0]?.id, 'agent-jobs-1');
+  assert.equal(focused.jobs[0]?.id, job.id);
+  assert.equal(focused.events[0]?.target, job.id);
+  assert.equal(focused.logs[0]?.message, 'focused breadcrumb');
+  assert.equal(focused.services.length, 0);
+  assert.equal(focused.workerProcesses.length, 0);
 });
 
 test('gateway REST server exposes local orchestration routes', async () => {
   const gateway = new InlineGatewayClient();
   const rest = createGatewayRestServer(gateway, { streamIntervalMs: 20 });
   const baseUrl = await rest.listen();
+  const piFixture = await writePiRpcFixture();
   try {
     assert.equal((await getJson(`${baseUrl}/health`)).runtime, 'inline-ts');
     const runtime = await postJson(`${baseUrl}/agents/register`, {
@@ -147,32 +184,230 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(heartbeat.status, 'waiting');
     assert.equal((await getJson(`${baseUrl}/workers`))[0]?.id, 'rest-worker');
+    const probedRuntime = await postJson(`${baseUrl}/agents/probe/pi`, {
+      options: { command: process.execPath, args: [piFixture], timeoutMs: 3_000 },
+      save: true,
+    });
+    assert.equal(probedRuntime.id, 'pi');
+    assert.equal(probedRuntime.health?.state, 'ok');
+    assert.equal(probedRuntime.metadata?.commandCount, 2);
+    assert.equal((await getJson(`${baseUrl}/agents/pi`)).protocol, 'jsonl');
+    const invalidProbe = await fetch(`${baseUrl}/agents/probe`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ kind: 'hermes' }),
+    });
+    assert.equal(invalidProbe.status, 400);
+    assert.match(await invalidProbe.text(), /unsupported agent runtime probe kind/);
 
     const service = await postJson(`${baseUrl}/services`, { spec: { name: 'pulse' } });
     assert.equal(service.name, 'pulse');
     assert.equal((await postJson(`${baseUrl}/services/pulse/run`, {})).runs, 1);
     const services = await postJson(`${baseUrl}/services/pulse/enable`, { enabled: false });
     assert.equal(services.find((status: any) => status.name === 'pulse')?.enabled, false);
+    assert.equal(
+      (await getJson(`${baseUrl}/services?enabled=false&state=stopped`))[0]?.name,
+      'pulse',
+    );
 
     const event = await postJson(`${baseUrl}/events`, {
       kind: 'channel.run',
+      target: 'channel:demo',
       payload: { source: 'rest' },
     });
     assert.equal(event.state, 'pending');
     assert.equal((await getJson(`${baseUrl}/events`))[0]?.id, event.id);
     assert.equal((await postJson(`${baseUrl}/events/${event.id}/cancel`, {})).state, 'cancelled');
+    assert.equal(
+      (await getJson(`${baseUrl}/events?target=channel:demo&eventState=cancelled`))[0]?.id,
+      event.id,
+    );
 
     const job = await postJson(`${baseUrl}/jobs`, {
       spec: { kind: 'agent.run', payload: { prompt: 'from REST' } },
     });
     assert.equal(job.state, 'pending');
     assert.equal((await getJson(`${baseUrl}/jobs/${job.id}`)).id, job.id);
+    assert.equal((await getJson(`${baseUrl}/jobs?state=pending&kind=agent.run`))[0]?.id, job.id);
+    await gateway.acquireJob('default', 'rest-worker');
+    assert.equal((await gateway.failJob(job.id, 'rest failure'))?.state, 'failed');
+    assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/retry`, {})).state, 'pending');
+
+    const workerJob = await postJson(`${baseUrl}/jobs`, {
+      spec: { kind: 'agent.run', queue: 'workers', payload: { prompt: 'lease me' } },
+    });
+    const lease = await postJson(`${baseUrl}/jobs/acquire`, {
+      queue: 'workers',
+      worker: 'rest-worker',
+      leaseMs: 60_000,
+    });
+    assert.equal(lease.job.id, workerJob.id);
+    assert.equal(lease.lease.worker, 'rest-worker');
+    const completed = await postJson(`${baseUrl}/jobs/${workerJob.id}/complete`, {
+      result: { ok: true },
+    });
+    assert.equal(completed.state, 'completed');
+    assert.deepEqual(completed.result, { ok: true });
+
+    const failingJob = await postJson(`${baseUrl}/jobs`, {
+      spec: { kind: 'agent.run', queue: 'failures', payload: { prompt: 'fail me' } },
+    });
+    assert.equal(
+      (await postJson(`${baseUrl}/jobs/acquire`, { queue: 'failures', worker: 'rest-worker' })).job
+        .id,
+      failingJob.id,
+    );
+    const failed = await postJson(`${baseUrl}/jobs/${failingJob.id}/fail`, {
+      message: 'worker failed clearly',
+    });
+    assert.equal(failed.state, 'failed');
+    assert.equal(failed.lastError, 'worker failed clearly');
+    const breadcrumb = await postJson(`${baseUrl}/logs`, {
+      target: failingJob.id,
+      message: 'worker claimed job over REST',
+      data: { worker: 'rest-worker' },
+    });
+    assert.equal(breadcrumb.target, failingJob.id);
+    assert.match(
+      (await getJson(`${baseUrl}/logs?target=${failingJob.id}`))
+        .map((log: any) => log.message)
+        .join('\n'),
+      /worker claimed job over REST/,
+    );
+
     assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/cancel`, {})).state, 'cancelled');
+    await gateway.appendLog({ target: job.id, message: 'runtime breadcrumb' });
+
+    const sandbox = await postJson(`${baseUrl}/sandboxes/register`, {
+      lease: sandboxLease('lease_rest', 'sandbox_rest'),
+    });
+    assert.equal(sandbox.id, 'lease_rest');
+    assert.equal((await getJson(`${baseUrl}/sandboxes/lease_rest`)).sandboxId, 'sandbox_rest');
+    assert.equal((await getJson(`${baseUrl}/sandboxes`))[0]?.id, 'lease_rest');
+    assert.equal((await postJson(`${baseUrl}/sandboxes/lease_rest/release`, {})).id, 'lease_rest');
+    assert.equal((await getJson(`${baseUrl}/sandboxes`)).length, 0);
 
     const world = await getJson(`${baseUrl}/world`);
     assert.equal(world.agentRuntimes[0]?.id, 'codex');
     assert.equal(Array.isArray(world.logs), true);
+    assert.deepEqual(world.workerProcesses, []);
+    const focusedWorld = await getJson(
+      `${baseUrl}/world?sections=jobs,logs,workerProcesses&target=${job.id}&state=cancelled&logLimit=5`,
+    );
+    assert.equal(focusedWorld.jobs[0]?.id, job.id);
+    assert.equal(
+      focusedWorld.logs.some((record: any) => record.message === 'runtime breadcrumb'),
+      true,
+    );
+    assert.deepEqual(focusedWorld.services, []);
+    assert.deepEqual(focusedWorld.workerProcesses, []);
+    const streamed = await readSseSnapshot(
+      `${baseUrl}/stream?sections=jobs,logs&target=${job.id}&state=cancelled&logLimit=5`,
+    );
+    assert.equal(streamed.jobs[0]?.id, job.id);
+    assert.equal(
+      streamed.logs.every((record: any) => record.target === job.id),
+      true,
+    );
   } finally {
+    await rest.close();
+    await rm(dirname(piFixture), { force: true, recursive: true });
+  }
+});
+
+test('gateway REST client wraps route contracts and streams world snapshots', async () => {
+  const gateway = new InlineGatewayClient();
+  const rest = createGatewayRestServer(gateway, { streamIntervalMs: 20 });
+  const baseUrl = await rest.listen();
+  const client = new GatewayRestClient({ baseUrl });
+  const controller = new AbortController();
+  try {
+    assert.equal((await client.health()).runtime, 'inline-ts');
+    const runtime = await client.registerAgentRuntime({
+      id: 'hermes',
+      kind: 'hermes',
+      protocol: 'command',
+    });
+    assert.equal(runtime.id, 'hermes');
+    assert.equal(await client.showAgentRuntime('missing'), undefined);
+    assert.equal((await client.listAgentRuntimes())[0]?.id, 'hermes');
+
+    const worker = await client.registerWorker({
+      id: 'rest-client-worker',
+      queue: 'default',
+      capabilities: ['agent.run'],
+    });
+    assert.equal(worker.id, 'rest-client-worker');
+    const heartbeat = await client.heartbeatWorker({ id: worker.id, status: 'ready' });
+    assert.equal(heartbeat?.status, 'ready');
+    assert.equal((await client.showWorker(worker.id))?.id, worker.id);
+
+    const service = await client.registerService({ name: 'rest-client-service' });
+    assert.equal(service.name, 'rest-client-service');
+    assert.equal((await client.runService(service.name))?.runs, 1);
+    assert.equal(
+      (await client.enableService(service.name, false)).find((item) => item.name === service.name)
+        ?.enabled,
+      false,
+    );
+
+    const event = await client.appendEvent({ kind: 'channel.run', payload: { source: 'client' } });
+    assert.equal(event.state, 'pending');
+    assert.equal((await client.cancelEvent(event.id))?.state, 'cancelled');
+
+    const job = await client.enqueueJob({ kind: 'agent.run', payload: { prompt: 'from client' } });
+    assert.equal(job.state, 'pending');
+    assert.equal((await client.showJob(job.id))?.id, job.id);
+    assert.equal(
+      (await client.listJobs({ jobKind: 'agent.run', jobState: 'pending' }))[0]?.id,
+      job.id,
+    );
+    assert.equal((await client.acquireJob('default', worker.id))?.job.id, job.id);
+    assert.equal((await client.completeJob(job.id, { ok: true }))?.state, 'completed');
+
+    const failedJob = await client.enqueueJob({
+      kind: 'agent.run',
+      payload: { prompt: 'fail from client' },
+    });
+    assert.equal((await client.acquireJob('default', worker.id))?.job.id, failedJob.id);
+    assert.equal((await client.failJob(failedJob.id, 'client failure'))?.state, 'failed');
+    assert.equal((await client.retryJob(failedJob.id))?.state, 'pending');
+    assert.equal((await client.cancelJob(failedJob.id))?.state, 'cancelled');
+
+    await client.appendLog({ target: failedJob.id, message: 'client-visible log' });
+    assert.equal(
+      (await client.tailLogs({ target: failedJob.id })).some(
+        (log) => log.message === 'client-visible log',
+      ),
+      true,
+    );
+    assert.deepEqual(await client.capabilities(), {});
+    assert.equal(
+      (
+        await client.worldSnapshot({
+          sections: ['jobs', 'logs'],
+          target: failedJob.id,
+          jobState: 'cancelled',
+          logLimit: 5,
+        })
+      ).jobs[0]?.id,
+      failedJob.id,
+    );
+
+    const lease = await client.registerSandboxLease(sandboxLease('lease_client', 'sandbox_client'));
+    assert.equal(lease.id, 'lease_client');
+    assert.equal((await client.showSandboxLease(lease.id))?.sandboxId, 'sandbox_client');
+    assert.equal((await client.releaseSandboxLease(lease.id))?.id, lease.id);
+
+    const stream = client
+      .streamWorldSnapshots({ sections: ['jobs'], signal: controller.signal, target: failedJob.id })
+      [Symbol.asyncIterator]();
+    const snapshot = await stream.next();
+    assert.equal(snapshot.value?.jobs[0]?.id, failedJob.id);
+    controller.abort();
+    await stream.return?.();
+  } finally {
+    controller.abort();
     await rest.close();
   }
 });
@@ -319,6 +554,8 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
     const job = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'test' } });
     assert.equal(job.id, 'job_1');
     assert.equal((await gateway.acquireJob('default', 'worker'))?.lease.worker, 'worker');
+    assert.equal((await gateway.failJob('job_1', 'try again'))?.state, 'failed');
+    assert.equal((await gateway.retryJob('job_1'))?.state, 'pending');
     assert.equal((await gateway.completeJob('job_1', { ok: true }))?.state, 'completed');
     assert.equal((await gateway.appendEvent({ kind: 'channel.run' })).state, 'pending');
     assert.equal((await gateway.cancelEvent('event_1'))?.state, 'cancelled');
@@ -327,6 +564,10 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'job_1',
     );
     assert.equal((await gateway.tailLogs()).length, 1);
+    assert.equal((await gateway.registerSandboxLease(sandboxLease('lease_1'))).id, 'lease_1');
+    assert.equal((await gateway.listSandboxLeases())[0]?.id, 'lease_1');
+    assert.equal((await gateway.showSandboxLease('lease_1'))?.cwd, '/tmp/sandbox');
+    assert.equal((await gateway.releaseSandboxLease('lease_1'))?.id, 'lease_1');
     assert.deepEqual(requests[0].params.spec.worker, {
       command: 'node',
       args: ['worker.js'],
@@ -352,11 +593,17 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'tables.show',
       'jobs.enqueue',
       'jobs.acquire',
+      'jobs.fail',
+      'jobs.retry',
       'jobs.complete',
       'events.append',
       'events.cancel',
       'logs.append',
       'logs.tail',
+      'sandboxes.register',
+      'sandboxes.list',
+      'sandboxes.show',
+      'sandboxes.release',
     ]);
   } finally {
     server.close();
@@ -551,6 +798,24 @@ function responseFor(request: any): unknown {
       },
     };
   }
+  if (request.method === 'jobs.fail') {
+    return {
+      id: request.id,
+      ok: true,
+      result: {
+        ...wireJobStatus(request.params.id),
+        state: 'Failed',
+        last_error: request.params.error,
+      },
+    };
+  }
+  if (request.method === 'jobs.retry') {
+    return {
+      id: request.id,
+      ok: true,
+      result: { ...wireJobStatus(request.params.id), state: 'Pending' },
+    };
+  }
   if (request.method === 'events.append') {
     return { id: request.id, ok: true, result: wireEvent('event_1', 'Pending') };
   }
@@ -578,6 +843,18 @@ function responseFor(request: any): unknown {
       result: [{ id: 1, at_ms: 10, level: 'info', message: 'ok' }],
     };
   }
+  if (request.method === 'sandboxes.register') {
+    return { id: request.id, ok: true, result: request.params.lease };
+  }
+  if (request.method === 'sandboxes.list') {
+    return { id: request.id, ok: true, result: [wireSandboxLease()] };
+  }
+  if (request.method === 'sandboxes.show') {
+    return { id: request.id, ok: true, result: wireSandboxLease(request.params.id) };
+  }
+  if (request.method === 'sandboxes.release') {
+    return { id: request.id, ok: true, result: wireSandboxLease(request.params.id) };
+  }
   return { id: request.id, ok: true, result: true };
 }
 
@@ -585,6 +862,25 @@ async function getJson(url: string): Promise<any> {
   const response = await fetch(url);
   assert.equal(response.ok, true);
   return response.json();
+}
+
+async function readSseSnapshot(url: string): Promise<any> {
+  const controller = new AbortController();
+  const response = await fetch(url, {
+    headers: { accept: 'text/event-stream' },
+    signal: controller.signal,
+  });
+  assert.equal(response.ok, true);
+  const reader = response.body?.getReader();
+  assert.ok(reader);
+  try {
+    const chunk = await Promise.race([reader.read(), timeout(1_000)]);
+    const text = new TextDecoder().decode(chunk.value);
+    return JSON.parse(text.match(/data: (.*)/)?.[1] ?? '{}');
+  } finally {
+    await reader.cancel().catch(() => {});
+    controller.abort();
+  }
 }
 
 async function postJson(url: string, body: unknown): Promise<any> {
@@ -595,6 +891,12 @@ async function postJson(url: string, body: unknown): Promise<any> {
   });
   assert.equal(response.ok, true);
   return response.json();
+}
+
+function timeout(ms: number): Promise<never> {
+  return new Promise((_resolve, reject) => {
+    setTimeout(() => reject(new Error(`Timed out after ${ms}ms`)), ms);
+  });
 }
 
 function wireServiceStatus(name: string): unknown {
@@ -675,6 +977,33 @@ function wireWorkerRecord(worker: any = {}): unknown {
     status: worker.status ?? null,
     last_error: worker.lastError ?? worker.last_error ?? null,
     metadata: worker.metadata ?? null,
+  };
+}
+
+function sandboxLease(id = 'lease_1', sandboxId = 'sandbox_1'): any {
+  const now = Date.now();
+  return {
+    id,
+    sandboxId,
+    cwd: '/tmp/sandbox',
+    acquiredAtMs: now,
+    expiresAtMs: now + 60_000,
+    backend: 'worktree',
+    project: { id: 'project_1', root: '/tmp/project' },
+    referenceRoots: ['/tmp/reference'],
+  };
+}
+
+function wireSandboxLease(id = 'lease_1'): any {
+  return {
+    id,
+    sandbox_id: 'sandbox_1',
+    cwd: '/tmp/sandbox',
+    acquired_at_ms: 10,
+    expires_at_ms: 30,
+    backend: 'worktree',
+    project: { id: 'project_1', root: '/tmp/project', branch: null },
+    reference_roots: ['/tmp/reference'],
   };
 }
 

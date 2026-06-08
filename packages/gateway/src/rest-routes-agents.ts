@@ -1,3 +1,4 @@
+import { isAgentRuntimeProbeRoute, probeAgentRuntimeRoute } from './rest-routes-agent-probe.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayAgentRuntimeDescriptor, GatewayClient } from './types.js';
 
@@ -6,6 +7,7 @@ export async function dispatchAgents(
   route: RestRoute,
   request: RestRequest,
 ): Promise<RestRouteResult> {
+  if (isAgentRuntimeProbeRoute(route)) return probeAgentRuntimeRoute(client, route, request);
   const [, id, action] = route.parts;
   if (route.method === 'GET' && !id) {
     return { status: 200, body: await client.listAgentRuntimes() };

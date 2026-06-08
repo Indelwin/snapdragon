@@ -23,6 +23,7 @@ The public TypeScript API is intentionally small and serializable:
   `GatewayWorkerRecord` for logical job workers and external agent adapters.
 - `GatewayJobSpec`, `GatewayJobStatus`, and `GatewayLease` for durable work
   queues.
+- `GatewaySandboxLease` for inspectable project sandbox ownership.
 - `GatewayEventRecord` and `GatewayLogRecord` for inspectable orchestration
   history.
 - `GatewayWorldSnapshot` for dashboard, REST, and agent-facing inspection.
@@ -100,6 +101,26 @@ restart recovers Pi, `sd`, Codex, Hermes, and custom runtime descriptors before
 workers lease queued jobs, so orchestration does not depend on a one-shot setup
 command still being present in process memory.
 
+Focused world snapshots keep agent and UI polling small:
+
+```ts
+const snapshot = await gateway.worldSnapshot({
+  sections: ['jobs', 'logs', 'workerProcesses'],
+  target: 'job_123',
+  runtimeId: 'pi',
+  logLimit: 20,
+});
+```
+
+The same vocabulary is available through `GET /v1/world` and `GET /v1/stream`,
+for example `/v1/world?sections=jobs,logs&target=job_123&logLimit=20`.
+`workers` contains logical worker records that can claim jobs; `workerProcesses`
+contains OS process telemetry from the daemon.
+
+REST clients can probe the same runtime through `POST /v1/agents/probe/pi`.
+Passing `{ "save": true }` registers the health-checked descriptor, which gives
+future management UIs a single guided "check and add Pi" operation.
+
 The adapter sends `prompt`, `get_state`, and `get_commands` commands over stdin,
 observes streamed message and agent lifecycle events on stdout, and cancels
 blocking extension UI prompts by default. Callers can pass `onEvent` to mirror
@@ -153,6 +174,7 @@ const job = await gateway.enqueueJob({
 });
 const lease = await gateway.acquireJob('default', 'worker-1');
 if (lease) await gateway.completeJob(lease.job.id, { ok: true });
+await gateway.retryJob('job_failed');
 ```
 
 The inline client implements the same lifecycle in memory for tests and small
@@ -164,6 +186,9 @@ state; completing, failing, cancelling, or expiring the job clears the lease
 back to an idle worker record. Workers can also register and heartbeat before
 claiming work so dashboards and executive agents can distinguish "available",
 "running", and "offline" participants without inspecting OS process state.
+Failed jobs with attempts remaining return to `pending`; terminal failed jobs
+can be manually retried by operators or executive agents without resurrecting
+cancelled jobs.
 
 ## REST and SSE Facade
 
@@ -189,14 +214,39 @@ Initial routes cover:
 - `GET /v1/agents`, `POST /v1/agents/register`, and `GET /v1/agents/:id`.
 - `GET /v1/workers`, `GET /v1/workers/:id`, `POST /v1/workers/register`,
   and `POST /v1/workers/:id/heartbeat`.
-- `GET /v1/jobs`, `POST /v1/jobs`, `GET /v1/jobs/:id`, and
-  `POST /v1/jobs/:id/cancel`.
+- `GET /v1/jobs`, `POST /v1/jobs`, `POST /v1/jobs/acquire`,
+  `GET /v1/jobs/:id`, `POST /v1/jobs/:id/complete`,
+  `POST /v1/jobs/:id/fail`, `POST /v1/jobs/:id/cancel`, and
+  `POST /v1/jobs/:id/retry`.
 - `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
-  `GET /v1/logs`, `GET /v1/registry`, `GET /v1/capabilities`, and
+  `GET /v1/logs`, `POST /v1/logs`, `GET /v1/registry`, `GET /v1/capabilities`, and
   `GET /v1/sandboxes`.
+- `POST /v1/sandboxes/register`, `GET /v1/sandboxes/:id`, and
+  `POST /v1/sandboxes/:id/release`.
 
 The default listener binds to `127.0.0.1`. Authentication, policy enforcement,
 and remote exposure are later layers on the same route shape.
+
+Apps that use the packaged `sd` CLI can start the same facade with
+`sd gateway rest serve --port 8787` after `sd gateway start`. The command keeps
+the server in the foreground, prints the base URL, and supports `--ready-file`
+for UI launchers that need a deterministic readiness signal.
+
+Typed clients can use `GatewayRestClient` instead of hand-rolling fetch calls:
+
+```ts
+import { GatewayRestClient } from '@snapdragon-ai/gateway';
+
+const gateway = new GatewayRestClient({ baseUrl: 'http://127.0.0.1:8787/v1' });
+const job = await gateway.enqueueJob({
+  kind: 'agent.run',
+  payload: { prompt: 'triage this workspace' },
+});
+
+for await (const snapshot of gateway.streamWorldSnapshots()) {
+  console.log(snapshot.jobs.length);
+}
+```
 
 ## Sandbox Contracts
 
@@ -205,6 +255,12 @@ spaces without baking in a backend. The first `sd` backend is local git
 worktrees with optional linked reference roots; richer providers such as
 OpenShell, Docker, microVMs, or remote sandboxes should implement the same lease
 shape instead of coupling callers to a specific runtime.
+
+Sandbox leases are part of the gateway inspection surface. The Rust daemon can
+persist registered leases, `worldSnapshot()` includes them, and REST clients can
+list/show/release them. The `sd gateway sandboxes` command still works without a
+running daemon, but reports when a lease is local-only so operators and agents do
+not confuse hidden filesystem state with gateway-visible state.
 
 ## Observability
 
@@ -217,6 +273,12 @@ spawned with explicit timeout enforcement, so budget expiry kills the child
 process and records a `timed_out` worker state. The daemon also expires stale
 job leases during status/watchdog passes so stuck jobs can become visible and
 recoverable without requiring a foreground TUI process.
+
+`worldSnapshot()` composes status, registry, services, agent runtimes, jobs,
+events, logs, leases, queue depths, table snapshots, and worker process rows into
+one agent-facing shape. `sd gateway inspect [job-id]` formats that snapshot as
+the pre-UI operator view for jobs, workers, runtimes, services, leases,
+sandboxes, and logs.
 
 ## Current Boundaries
 

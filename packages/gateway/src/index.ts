@@ -10,8 +10,14 @@ export {
   probePiRpcRuntime,
   runPiRpcAgentJob,
 } from './pi-rpc.js';
-export type { GatewayRestServer, GatewayRestServerOptions } from './rest.js';
-export { createGatewayRestServer } from './rest.js';
+export type {
+  GatewayRestClientOptions,
+  GatewayRestHealth,
+  GatewayRestServer,
+  GatewayRestServerOptions,
+  GatewayRestStreamOptions,
+} from './rest.js';
+export { createGatewayRestServer, GatewayRestClient } from './rest.js';
 export { RustGatewayClient, type RustGatewayClientOptions } from './rust.js';
 export type {
   ActorId,
@@ -60,9 +66,13 @@ export type {
   GatewayExtensionContributions,
   GatewayOrchestrationClient,
   GatewayPolicyHints,
+  GatewayWorldSnapshot,
+  GatewayWorldSnapshotOptions,
+  GatewayWorldSnapshotSection,
+} from './types-runtime.js';
+export type {
   GatewayProjectRef,
   GatewaySandboxLease,
   GatewaySandboxSpec,
-  GatewayWorldSnapshot,
-} from './types-runtime.js';
+} from './types-sandboxes.js';
 export { buildGatewayWorldSnapshot } from './world.js';

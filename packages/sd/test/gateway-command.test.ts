@@ -7,8 +7,10 @@ import test from 'node:test';
 import { InlineGatewayClient } from '@snapdragon-ai/gateway';
 import { stringify as stringifyYaml } from 'yaml';
 import { parseArgs } from '../src/args.ts';
-import { runGatewayAgentJob } from '../src/gateway-agent-job-service.ts';
+import { registerAgentJobWorker, runGatewayAgentJob } from '../src/gateway-agent-job-service.ts';
 import { runGatewayCommand } from '../src/gateway-command.ts';
+import { serveGatewayRest } from '../src/gateway-command-rest.ts';
+import { registerLearnJobWorker, runLearnEvalJob } from '../src/gateway-learn-job-service.ts';
 import { configuredRustGatewayServices } from '../src/gateway-rust-config.ts';
 import { formatRustGatewayStatus } from '../src/gateway-rust-status.ts';
 
@@ -46,8 +48,41 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
     );
     assert.match(await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'list'] }), /agent\.run/);
     assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['jobs', 'acquire', 'default', 'worker-1', '--lease-ms', '60000'],
+      }),
+      /acquired job_1\tagent\.run\tqueue=default\tworker=worker-1\tlease=lease_1/,
+    );
+    assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['jobs', 'complete', 'job_1', '{"ok":true}'],
+      }),
+      /completed job_1/,
+    );
+    assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: ['jobs', 'fail', 'job_1', 'worker failed clearly'],
+      }),
+      /failed job_1\terror=worker failed clearly/,
+    );
+    assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'cancel', 'job_1'] }),
       /cancelled job_1/,
+    );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'retry', 'job_1'] }),
+      /retry scheduled job_1/,
+    );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['workers', 'list'] }),
+      /agent-jobs-1\trunning\tqueue=default service=agent-jobs runtime=pi job=job_1 lease=lease_1/,
+    );
+    assert.match(
+      await runGatewayCommand({ ...args, gatewayArgs: ['workers', 'show', 'agent-jobs-1'] }),
+      /"service": "agent-jobs"/,
     );
     assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['agents', 'enqueue', 'test agent'] }),
@@ -82,6 +117,17 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
       await runGatewayCommand({ ...args, gatewayArgs: ['logs', 'tail'] }),
       /gateway logs/,
     );
+    const inspection = await runGatewayCommand({
+      ...args,
+      gatewayArgs: ['inspect', 'job_1', '--runtime', 'pi', '--limit', '3'],
+    });
+    assert.match(inspection, /gateway inspect job_1/);
+    assert.match(inspection, /queues: default p=1 r=1/);
+    assert.match(inspection, /job_1\trunning\tagent\.run\tqueue=default.*runtime=pi/);
+    assert.match(inspection, /proc_1\trunning\tservice=agent-jobs pid=321 command=node/);
+    assert.match(inspection, /pi\tpi\tjsonl Pi Agent jobs=agent\.run caps=agent\.run/);
+    assert.match(inspection, /lease_1\tjob=job_1\tworker=agent-jobs-1/);
+    assert.match(inspection, /agent runtime event: message_end/);
     const datasetPath = join(root, 'dataset.json');
     await writeFile(
       datasetPath,
@@ -96,6 +142,52 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
     );
   } finally {
     await server.close();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('gateway rest serve exposes the Rust gateway over local HTTP until aborted', async () => {
+  const root = await mkGatewayRoot();
+  const configPath = join(root, 'config.yaml');
+  const socketPath = join(root, 'gateway.sock');
+  const readyFile = join(root, 'rest.ready');
+  const server = mockGatewayServer(socketPath);
+  const controller = new AbortController();
+  const output: string[] = [];
+  await writeGatewayConfig(configPath, root);
+  await server.ready;
+
+  try {
+    const running = serveGatewayRest(
+      ['--port', '0', '--ready-file', readyFile],
+      { configPath, gatewayArgs: [] } as any,
+      { signal: controller.signal, stdout: { write: (chunk) => output.push(chunk) } },
+    );
+    const url = await waitForReadyFile(readyFile);
+    const response = await fetch(`${url}/status`);
+    assert.equal(response.status, 200);
+    assert.equal(((await response.json()) as { runtime?: string }).runtime, 'rust');
+    assert.match(output.join(''), /gateway rest listening http:\/\/127\.0\.0\.1:\d+\/v1/);
+    controller.abort();
+    assert.equal(await running, 'gateway rest stopped\n');
+  } finally {
+    controller.abort();
+    await server.close();
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test('gateway rest serve validates the durable Rust gateway before listening', async () => {
+  const root = await mkGatewayRoot();
+  const configPath = join(root, 'config.yaml');
+  await writeGatewayConfig(configPath, root);
+
+  try {
+    const result = await serveGatewayRest(['--port', '0'], { configPath, gatewayArgs: [] } as any, {
+      signal: AbortSignal.abort(),
+    });
+    assert.match(result, /Rust gateway unavailable:/);
+  } finally {
     await rm(root, { force: true, recursive: true });
   }
 });
@@ -142,6 +234,12 @@ test('gateway agent job service records Pi runtime breadcrumbs', async () => {
   const root = await mkGatewayRoot();
   const fixture = await writePiRpcJobFixture(root);
   const gateway = new InlineGatewayClient();
+  const config = piRuntimeConfig(root, fixture);
+  await registerAgentJobWorker(gateway, config, 'test-worker');
+  const worker = await gateway.showWorker('test-worker');
+  assert.equal(worker?.service, 'agent-jobs');
+  assert.deepEqual(worker?.capabilities, ['agent.run']);
+  assert.deepEqual((worker?.metadata as any)?.supportedRuntimeIds, ['sd', 'pi']);
   const job = await gateway.enqueueJob({
     kind: 'agent.run',
     payload: { prompt: 'hello pi', targetRuntimeId: 'pi' },
@@ -152,11 +250,17 @@ test('gateway agent job service records Pi runtime breadcrumbs', async () => {
   assert.equal(lease.job.id, job.id);
 
   try {
-    const result = await runGatewayAgentJob(gateway, piRuntimeConfig(root, fixture), lease.job, {
+    const result = await runGatewayAgentJob(gateway, config, lease.job, {
       cancellationPollMs: 10,
+      workerId: 'test-worker',
     });
     assert.equal(result.metrics?.completed, 1);
     assert.equal((await gateway.showJob(job.id))?.state, 'completed');
+    const completedWorker = await gateway.showWorker('test-worker');
+    assert.equal(completedWorker?.state, 'idle');
+    assert.equal(completedWorker?.status, `completed ${job.id}`);
+    assert.equal((completedWorker?.metadata as any)?.lastRuntimeId, 'pi');
+    assert.deepEqual((completedWorker?.metadata as any)?.supportedRuntimeIds, ['sd', 'pi']);
     const logs = await gateway.tailLogs({ target: job.id, limit: 20 });
     assert.match(
       logs.map((log) => log.message).join('\n'),
@@ -171,6 +275,8 @@ test('gateway agent job service aborts Pi runtime when the job is cancelled', as
   const root = await mkGatewayRoot();
   const fixture = await writePiRpcJobFixture(root, { hang: true });
   const gateway = new InlineGatewayClient();
+  const config = piRuntimeConfig(root, fixture);
+  await registerAgentJobWorker(gateway, config, 'test-worker');
   const job = await gateway.enqueueJob({
     kind: 'agent.run',
     payload: { prompt: 'wait here', targetRuntimeId: 'pi' },
@@ -181,8 +287,9 @@ test('gateway agent job service aborts Pi runtime when the job is cancelled', as
   assert.equal(lease.job.id, job.id);
 
   try {
-    const running = runGatewayAgentJob(gateway, piRuntimeConfig(root, fixture), lease.job, {
+    const running = runGatewayAgentJob(gateway, config, lease.job, {
       cancellationPollMs: 10,
+      workerId: 'test-worker',
     });
     await waitForLog(gateway, job.id, /agent runtime event: agent_start/);
     await gateway.cancelJob(job.id);
@@ -190,11 +297,47 @@ test('gateway agent job service aborts Pi runtime when the job is cancelled', as
     assert.equal(result.metrics?.completed, 0);
     assert.equal(result.metrics?.failed, 0);
     assert.equal((await gateway.showJob(job.id))?.state, 'cancelled');
+    const cancelledWorker = await gateway.showWorker('test-worker');
+    assert.equal(cancelledWorker?.state, 'idle');
+    assert.equal(cancelledWorker?.status, `cancelled ${job.id}`);
     const logs = await gateway.tailLogs({ target: job.id, limit: 20 });
     assert.match(logs.map((log) => log.message).join('\n'), /job cancellation observed/);
   } finally {
     await rm(root, { force: true, recursive: true });
   }
+});
+
+test('gateway learn job service registers and heartbeats learn workers', async () => {
+  const gateway = new InlineGatewayClient();
+  await registerLearnJobWorker(gateway, 'learn-test-worker');
+  const worker = await gateway.showWorker('learn-test-worker');
+  assert.equal(worker?.queue, 'learn');
+  assert.equal(worker?.service, 'learn-jobs');
+  assert.deepEqual(worker?.capabilities, ['learn.eval']);
+
+  const job = await gateway.enqueueJob({
+    kind: 'learn.eval',
+    queue: 'learn',
+    payload: {
+      job: { id: 'eval-1', kind: 'eval', dataset: 'demo' },
+      dataset: {
+        id: 'demo',
+        examples: [{ id: 'one', prompt: 'test', metadata: { output: 'ok' } }],
+      },
+    },
+  });
+  const lease = await gateway.acquireJob('learn', 'learn-test-worker');
+  assert.ok(lease);
+  assert.equal(lease.job.id, job.id);
+
+  const result = await runLearnEvalJob(gateway, lease.job, { workerId: 'learn-test-worker' });
+  assert.equal(result.metrics?.completed, 1);
+  assert.equal((await gateway.showJob(job.id))?.state, 'completed');
+  const completedWorker = await gateway.showWorker('learn-test-worker');
+  assert.equal(completedWorker?.state, 'idle');
+  assert.equal(completedWorker?.status, `completed learn eval ${job.id}`);
+  assert.equal((completedWorker?.metadata as any)?.datasetId, 'demo');
+  assert.equal(typeof (completedWorker?.metadata as any)?.score, 'number');
 });
 
 test('configured Rust gateway services point at headless sd workers', async () => {
@@ -265,6 +408,19 @@ test('rust gateway status shows leases, queues, service scheduling, and failures
           lastError: 'worker timed out after 500ms',
         },
       ],
+      workers: [
+        {
+          id: 'agent-jobs-1',
+          queue: 'default',
+          service: 'agent-jobs',
+          capabilities: ['agent.run'],
+          state: 'running',
+          registeredAtMs: 1,
+          heartbeatAtMs: 2,
+          currentJobId: 'job_1',
+          status: 'running pi job job_1',
+        },
+      ],
       serviceTasks: ['memory-worker'],
       tables: ['state'],
       jobsPending: 2,
@@ -289,7 +445,11 @@ test('rust gateway status shows leases, queues, service scheduling, and failures
     },
   );
   assert.match(text, /service tasks: memory-worker/);
-  assert.match(text, /workers: memory-worker:timed_out pid=123 worker timed out/);
+  assert.match(
+    text,
+    /job workers: agent-jobs-1:running queue=default service=agent-jobs job=job_1/,
+  );
+  assert.match(text, /worker processes: memory-worker:timed_out pid=123 worker timed out/);
   assert.match(text, /queues: default p=2 r=1/);
   assert.match(text, /leases: 1/);
   assert.match(text, /restart=suppressed/);
@@ -386,6 +546,18 @@ async function waitForLog(
   assert.fail(`Timed out waiting for log ${pattern}`);
 }
 
+async function waitForReadyFile(path: string): Promise<string> {
+  const deadline = Date.now() + 1_000;
+  while (Date.now() < deadline) {
+    try {
+      return (await readFile(path, 'utf8')).trim();
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+  assert.fail(`Timed out waiting for ready file ${path}`);
+}
+
 function mockGatewayServer(socketPath: string) {
   const server = createServer((socket) => {
     let buffer = '';
@@ -404,6 +576,9 @@ function mockGatewayServer(socketPath: string) {
 }
 
 function responseFor(request: any): unknown {
+  if (request.method === 'status') {
+    return { id: request.id, ok: true, result: wireStatus() };
+  }
   if (request.method === 'services.list') {
     return { id: request.id, ok: true, result: [wireService('memory-worker', 0)] };
   }
@@ -432,10 +607,52 @@ function responseFor(request: any): unknown {
     return { id: request.id, ok: true, result: wireJob('job_1', 'Pending') };
   }
   if (request.method === 'jobs.list') {
-    return { id: request.id, ok: true, result: [wireJob('job_1', 'Pending')] };
+    return { id: request.id, ok: true, result: [wireJob('job_1', 'Running')] };
+  }
+  if (request.method === 'jobs.acquire') {
+    return {
+      id: request.id,
+      ok: true,
+      result: {
+        job: wireJob('job_1', 'Running', {
+          lease_id: 'lease_1',
+          lease_expires_at_ms: 60_010,
+        }),
+        lease: {
+          id: 'lease_1',
+          job_id: 'job_1',
+          worker: request.params.worker,
+          acquired_at_ms: 10,
+          expires_at_ms: 60_010,
+        },
+      },
+    };
+  }
+  if (request.method === 'jobs.complete') {
+    return {
+      id: request.id,
+      ok: true,
+      result: wireJob(request.params.id, 'Completed', { result: request.params.result }),
+    };
+  }
+  if (request.method === 'jobs.fail') {
+    return {
+      id: request.id,
+      ok: true,
+      result: wireJob(request.params.id, 'Failed', { last_error: request.params.error }),
+    };
   }
   if (request.method === 'jobs.cancel') {
     return { id: request.id, ok: true, result: wireJob(request.params.id, 'Cancelled') };
+  }
+  if (request.method === 'jobs.retry') {
+    return { id: request.id, ok: true, result: wireJob(request.params.id, 'Pending') };
+  }
+  if (request.method === 'workers.list') {
+    return { id: request.id, ok: true, result: [wireWorker('agent-jobs-1')] };
+  }
+  if (request.method === 'workers.show') {
+    return { id: request.id, ok: true, result: wireWorker(request.params.id) };
   }
   if (request.method === 'agents.register') {
     return { id: request.id, ok: true, result: request.params.descriptor };
@@ -446,13 +663,26 @@ function responseFor(request: any): unknown {
   if (request.method === 'agents.show') {
     return { id: request.id, ok: true, result: wireAgentRuntime(request.params.id) };
   }
+  if (request.method === 'events.list') {
+    return { id: request.id, ok: true, result: [] };
+  }
   if (request.method === 'logs.tail') {
     return {
       id: request.id,
       ok: true,
-      result: [{ id: 1, at_ms: 10, level: 'info', message: 'ready' }],
+      result: [
+        { id: 1, at_ms: 10, level: 'info', target: 'job_1', message: 'agent runtime started' },
+        {
+          id: 2,
+          at_ms: 20,
+          level: 'info',
+          target: 'job_1',
+          message: 'agent runtime event: message_end',
+        },
+      ],
     };
   }
+  if (request.method === 'sandboxes.list') return { id: request.id, ok: true, result: [] };
   return { id: request.id, ok: true, result: true };
 }
 
@@ -469,13 +699,51 @@ function wireService(name: string, runs: number): unknown {
   };
 }
 
-function wireJob(id: string, state: string): unknown {
+function wireStatus(): unknown {
+  return {
+    services: [wireService('memory-worker', 0)],
+    agent_runtimes: [wireAgentRuntime('pi')],
+    processes: 1,
+    worker_processes: [
+      {
+        id: 'proc_1',
+        service: 'agent-jobs',
+        pid: 321,
+        command: 'node',
+        args: ['sd', 'gateway', 'worker', 'run', 'agent-jobs'],
+        cwd: null,
+        started_at_ms: 10,
+        state: 'Running',
+      },
+    ],
+    tables: ['state'],
+    service_tasks: ['agent-jobs'],
+    jobs_pending: 1,
+    jobs_running: 1,
+    active_leases: [
+      {
+        id: 'lease_1',
+        job_id: 'job_1',
+        worker: 'agent-jobs-1',
+        acquired_at_ms: 10,
+        expires_at_ms: 120_000,
+      },
+    ],
+    queue_depths: [{ queue: 'default', pending: 1, running: 1 }],
+    recent_logs: [],
+    recent_failures: [],
+    uptime_ms: 1_000,
+    pid: 123,
+  };
+}
+
+function wireJob(id: string, state: string, fields: Record<string, unknown> = {}): unknown {
   return {
     id,
     spec: {
       kind: 'agent.run',
       queue: 'default',
-      payload: { prompt: 'test' },
+      payload: { prompt: 'test', targetRuntimeId: 'pi' },
       priority: 0,
       max_attempts: 1,
       timeout_ms: null,
@@ -484,6 +752,10 @@ function wireJob(id: string, state: string): unknown {
     attempts: 0,
     created_at_ms: 10,
     updated_at_ms: 10,
+    ...(state === 'Running'
+      ? { lease_id: 'lease_1', lease_expires_at_ms: 120_000 }
+      : { lease_id: null, lease_expires_at_ms: null }),
+    ...fields,
   };
 }
 
@@ -495,9 +767,28 @@ function wireAgentRuntime(id: string): unknown {
     label: id === 'pi' ? 'Pi Agent' : null,
     command: null,
     supported_job_kinds: ['agent.run'],
-    capabilities: [],
+    capabilities: ['agent.run'],
     isolation: 'profile',
     health: null,
     metadata: null,
+  };
+}
+
+function wireWorker(id: string): unknown {
+  return {
+    id,
+    queue: 'default',
+    runtime_id: 'pi',
+    service: 'agent-jobs',
+    capabilities: ['agent.run'],
+    state: 'running',
+    registered_at_ms: 1,
+    heartbeat_at_ms: 2,
+    current_job_id: 'job_1',
+    current_lease_id: 'lease_1',
+    lease_expires_at_ms: 3,
+    status: 'running pi job job_1',
+    last_error: null,
+    metadata: { supportedRuntimeIds: ['sd', 'pi'] },
   };
 }

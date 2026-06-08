@@ -57,6 +57,10 @@ sd gateway events list
 sd gateway events cancel 20260506_event
 sd gateway jobs enqueue agent.run '{"prompt":"check the repo"}'
 sd gateway jobs list
+sd gateway jobs retry job_123
+sd gateway jobs acquire default worker-1
+sd gateway jobs complete job_123 '{"ok":true}'
+sd gateway jobs fail job_124 "worker failed clearly"
 sd gateway agents enqueue "run the release checks"
 sd gateway agents register-pi
 sd gateway agents register-pi --save --agent-dir ~/.pi-agent
@@ -64,11 +68,15 @@ sd gateway agents list
 sd gateway agents enqueue --runtime pi "ask my Pi agent to triage the workspace"
 sd gateway agents run "summarize the current workspace"
 sd gateway learn enqueue-eval ./eval-dataset.json
+sd gateway rest serve --port 8787
 sd gateway logs tail
 sd gateway sandboxes lease . --ref ../reference-repo --ttl-ms 3600000
 sd gateway sandboxes list
+sd gateway sandboxes release lease_my-sandbox
 sd gateway registry list
 sd gateway tables list
+sd gateway workers list
+sd gateway workers show agent-jobs-12345
 ```
 
 Configured services are in `gateway.services`; background channel settings are
@@ -76,7 +84,10 @@ in `background.channels`. First-party services currently include
 `memory-worker`, `skill-builder`, `channel-events`, `session-index`, and
 `agent-jobs`; `learn-jobs` is available but disabled by default. Service config supports `restart`, `restart_intensity`,
 `backoff_ms`, and `max_backoff_ms`; `sd gateway status` reports suppressed
-restarts, next scheduled runs, queue depth, active leases, and recent failures.
+restarts, next scheduled runs, queue depth, active leases, recent failures,
+logical job workers, and daemon worker processes. `sd gateway workers list` and
+`show` inspect logical workers such as `agent-jobs` and `learn-jobs`, while the
+status `worker processes` line reports subprocesses spawned by the daemon.
 
 When the Rust runtime is active, services are executed through an internal
 headless worker command. The worker rebuilds only the runtime pieces a service
@@ -87,7 +98,23 @@ or run the interactive `sd` controller.
 The Rust daemon stores durable jobs, events, service snapshots, leases, and logs
 in a SQLite WAL database under the gateway root. Agent jobs use the same
 headless runtime as service workers, so scheduled channel work can use tools,
-sessions, skills, memory, and TODOs without starting Ink.
+sessions, skills, memory, and TODOs without starting Ink. Jobs with attempts
+remaining return to `pending` after a worker failure; `sd gateway jobs retry
+<job_id>` requeues terminal failed jobs for operator or executive-agent
+recovery.
+
+`sd gateway rest serve` starts the local REST/SSE facade over the configured
+Rust gateway. It binds to `127.0.0.1:8787` with the `/v1` prefix by default,
+prints the base URL, and shuts down cleanly on SIGINT or SIGTERM. `--ready-file`
+writes the bound URL for UI launchers and process managers, while `--port 0`
+lets tests or callers request an ephemeral port.
+
+`sd gateway sandboxes lease` creates a local git worktree sandbox and records a
+lease under the gateway root. When the Rust gateway daemon is running, the lease
+is also registered with the durable gateway store and appears in REST/SSE/world
+snapshots. Without the daemon it remains usable as a local-only lease and the
+command reports that distinction. Future sandbox providers can keep this lease
+vocabulary while swapping out the backend.
 
 Agent jobs can also target external runtimes. `sd gateway agents register-pi`
 adds a Pi JSONL runtime descriptor for the installed `pi` command; adding
