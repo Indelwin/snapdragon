@@ -65,6 +65,7 @@ sd gateway agents list
 sd gateway agents enqueue --runtime pi "ask my Pi agent to triage the workspace"
 sd gateway agents run "summarize the current workspace"
 sd gateway learn enqueue-eval ./eval-dataset.json
+sd gateway rest serve --port 8787
 sd gateway logs tail
 sd gateway sandboxes lease . --ref ../reference-repo --ttl-ms 3600000
 sd gateway sandboxes list
@@ -98,6 +99,12 @@ sessions, skills, memory, and TODOs without starting Ink. Jobs with attempts
 remaining return to `pending` after a worker failure; `sd gateway jobs retry
 <job_id>` requeues terminal failed jobs for operator or executive-agent
 recovery.
+
+`sd gateway rest serve` starts the local REST/SSE facade over the configured
+Rust gateway. It binds to `127.0.0.1:8787` with the `/v1` prefix by default,
+prints the base URL, and shuts down cleanly on SIGINT or SIGTERM. `--ready-file`
+writes the bound URL for UI launchers and process managers, while `--port 0`
+lets tests or callers request an ephemeral port.
 
 `sd gateway sandboxes lease` creates a local git worktree sandbox and records a
 lease under the gateway root. When the Rust gateway daemon is running, the lease

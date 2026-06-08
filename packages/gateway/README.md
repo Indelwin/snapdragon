@@ -205,6 +205,11 @@ Initial routes cover:
 The default listener binds to `127.0.0.1`. Authentication, policy enforcement,
 and remote exposure are later layers on the same route shape.
 
+Apps that use the packaged `sd` CLI can start the same facade with
+`sd gateway rest serve --port 8787` after `sd gateway start`. The command keeps
+the server in the foreground, prints the base URL, and supports `--ready-file`
+for UI launchers that need a deterministic readiness signal.
+
 ## Sandbox Contracts
 
 `GatewaySandboxSpec` and `GatewaySandboxLease` describe project-scoped execution

@@ -28,6 +28,18 @@ By default the server binds to `127.0.0.1` and uses `/v1` as its path prefix.
 Remote exposure, authentication, and policy enforcement are future layers and
 should be added above the same route shape.
 
+For the packaged `sd` operator flow, start the Rust daemon and then run the
+foreground REST/SSE bridge:
+
+```sh
+sd gateway start
+sd gateway rest serve --port 8787
+```
+
+The command prints the base URL, defaults to `http://127.0.0.1:8787/v1`, and
+accepts `--ready-file <path>` so UI launchers can wait for the exact bound URL.
+Use `--port 0` for an ephemeral test port.
+
 ## Routes
 
 | Method | Path | Purpose |
