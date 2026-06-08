@@ -58,7 +58,10 @@ should be added above the same route shape.
 | `GET` | `/v1/logs` | Tail logs, with optional `target` and `limit`. |
 | `GET` | `/v1/registry` | Registry names, capabilities, and channels. |
 | `GET` | `/v1/capabilities` | Capability provider map. |
-| `GET` | `/v1/sandboxes` | Sandbox lease list placeholder. |
+| `GET` | `/v1/sandboxes` | List active sandbox leases. |
+| `POST` | `/v1/sandboxes/register` | Register or update a sandbox lease. |
+| `GET` | `/v1/sandboxes/:id` | Show one sandbox lease. |
+| `POST` | `/v1/sandboxes/:id/release` | Release one sandbox lease. |
 
 Runtime workers append job-targeted logs over local IPC while they run. REST
 clients inspect those breadcrumbs with `GET /v1/logs?target=<job_id>`. For Pi
@@ -193,6 +196,34 @@ Failed jobs with remaining attempts automatically return to `pending` when a
 worker reports failure. `retry` is the manual operator/executive-agent path for
 terminal failed jobs; jobs in other states are returned unchanged, and cancelled
 jobs stay cancelled.
+
+Register a sandbox lease:
+
+```http
+POST /v1/sandboxes/register
+content-type: application/json
+
+{
+  "lease": {
+    "id": "lease_project-a",
+    "sandboxId": "project-a-worktree",
+    "cwd": "/Users/shannon/.snapdragon/sandboxes/worktrees/project-a",
+    "acquiredAtMs": 1780876800000,
+    "expiresAtMs": 1780880400000,
+    "backend": "worktree",
+    "project": {
+      "id": "project-a",
+      "root": "/Users/shannon/Workspace/project-a",
+      "branch": "main"
+    },
+    "referenceRoots": ["/Users/shannon/Workspace/reference"]
+  }
+}
+```
+
+Sandbox leases are gateway-visible ownership records. Releasing a lease removes
+the durable record; backend-specific cleanup such as removing a git worktree is
+performed by the owning worker or CLI command.
 
 Watch world snapshots:
 

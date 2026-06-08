@@ -4,6 +4,7 @@ import { InlineJobStore } from './inline-jobs.js';
 import { InlineLogStore } from './inline-logs.js';
 import { InlineMailboxStore } from './inline-mailboxes.js';
 import { InlineCapabilityRegistry } from './inline-registry.js';
+import { InlineSandboxStore } from './inline-sandboxes.js';
 import { InlineServiceStore } from './inline-services.js';
 import { InlineTableStore } from './inline-tables.js';
 import { InlineWorkerStore } from './inline-workers.js';
@@ -30,6 +31,7 @@ import type {
   GatewayWorkerRegistration,
 } from './types.js';
 import type { GatewayOrchestrationClient, GatewayWorldSnapshot } from './types-runtime.js';
+import type { GatewaySandboxLease } from './types-sandboxes.js';
 import { buildGatewayWorldSnapshot } from './world.js';
 
 export class InlineGatewayClient implements GatewayOrchestrationClient {
@@ -46,6 +48,9 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   #workers = new InlineWorkerStore((level, target, message, data) =>
     this.#log(level, target, message, data),
   );
+  #sandboxes = new InlineSandboxStore((level, target, message, data) =>
+    this.#log(level, target, message, data),
+  );
   #jobs = new InlineJobStore({
     log: (level, target, message, data) => this.#log(level, target, message, data),
   });
@@ -53,7 +58,6 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async send(envelope: GatewayEnvelope): Promise<void> {
     this.#mailboxes.send(envelope);
   }
-
   async receive(
     actor: ActorId,
     filter: GatewayReceiveFilter = {},
@@ -64,19 +68,15 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async registerService(spec: GatewayServiceSpec, runner?: GatewayServiceRunner): Promise<void> {
     this.#services.register(spec, runner);
   }
-
   async enableService(name: string, enabled: boolean): Promise<void> {
     this.#services.enable(name, enabled);
   }
-
   async runService(name: string, signal?: AbortSignal): Promise<GatewayServiceStatus | undefined> {
     return this.#services.run(name, signal);
   }
-
   async listServices(): Promise<GatewayServiceStatus[]> {
     return this.#services.list();
   }
-
   async status(): Promise<GatewayStatus> {
     return {
       runtime: this.runtime,
@@ -100,15 +100,12 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async registerCapability(capability: string, actor: ActorId): Promise<void> {
     this.#capabilities.register(capability, actor);
   }
-
   async whereisCapability(capability: string): Promise<ActorId[]> {
     return this.#capabilities.whereis(capability);
   }
-
   async registrySnapshot(): Promise<GatewayRegistrySnapshot> {
     return this.#capabilities.snapshot();
   }
-
   async registerAgentRuntime(
     descriptor: GatewayAgentRuntimeDescriptor,
   ): Promise<GatewayAgentRuntimeDescriptor> {
@@ -124,15 +121,12 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async listAgentRuntimes(): Promise<GatewayAgentRuntimeDescriptor[]> {
     return [...this.#agentRuntimes.values()].sort((a, b) => a.id.localeCompare(b.id));
   }
-
   async showAgentRuntime(id: string): Promise<GatewayAgentRuntimeDescriptor | undefined> {
     return this.#agentRuntimes.get(id);
   }
-
   async registerWorker(worker: GatewayWorkerRegistration): Promise<GatewayWorkerRecord> {
     return this.#workers.register(worker);
   }
-
   async heartbeatWorker(
     heartbeat: GatewayWorkerHeartbeat,
   ): Promise<GatewayWorkerRecord | undefined> {
@@ -142,11 +136,9 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async listWorkers(): Promise<GatewayWorkerRecord[]> {
     return this.#workers.list();
   }
-
   async showWorker(id: string): Promise<GatewayWorkerRecord | undefined> {
     return this.#workers.show(id);
   }
-
   async createTable(
     name: string,
     owner: ActorId,
@@ -158,34 +150,27 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async tableNames(): Promise<string[]> {
     return this.#tables.names();
   }
-
   async tableSnapshot(name: string): Promise<GatewayTableSnapshot | undefined> {
     return this.#tables.snapshot(name);
   }
-
   async enqueueJob(spec: GatewayJobSpec, id = inlineId('job')): Promise<GatewayJobStatus> {
     return this.#jobs.enqueue(spec, id);
   }
-
   async listJobs(): Promise<GatewayJobStatus[]> {
     return this.#jobs.list();
   }
-
   async showJob(id: string): Promise<GatewayJobStatus | undefined> {
     return this.#jobs.show(id);
   }
-
   async cancelJob(id: string): Promise<GatewayJobStatus | undefined> {
     const lease = this.#leaseForJob(id);
     const job = this.#jobs.cancel(id);
     if (job) this.#workers.clearLease(lease);
     return job;
   }
-
   async retryJob(id: string): Promise<GatewayJobStatus | undefined> {
     return this.#jobs.retry(id);
   }
-
   async acquireJob(
     queue: string,
     worker: string,
@@ -202,14 +187,12 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
     if (job) this.#workers.clearLease(lease);
     return job;
   }
-
   async failJob(id: string, error: string): Promise<GatewayJobStatus | undefined> {
     const lease = this.#leaseForJob(id);
     const job = this.#jobs.fail(id, error);
     if (job) this.#workers.clearLease(lease);
     return job;
   }
-
   async appendEvent(input: {
     id?: string;
     kind: string;
@@ -218,27 +201,33 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   }): Promise<GatewayEventRecord> {
     return this.#events.append(input);
   }
-
   async listEvents(): Promise<GatewayEventRecord[]> {
     return this.#events.list();
   }
-
   async cancelEvent(id: string): Promise<GatewayEventRecord | undefined> {
     return this.#events.cancel(id);
   }
-
   async appendLog(input: GatewayLogInput): Promise<GatewayLogRecord> {
     return this.#logs.appendInput(input);
   }
-
   async tailLogs(options: { target?: string; limit?: number } = {}): Promise<GatewayLogRecord[]> {
     return this.#logs.tail(options);
   }
-
+  async registerSandboxLease(lease: GatewaySandboxLease): Promise<GatewaySandboxLease> {
+    return this.#sandboxes.register(lease);
+  }
+  async listSandboxLeases(): Promise<GatewaySandboxLease[]> {
+    return this.#sandboxes.list();
+  }
+  async showSandboxLease(id: string): Promise<GatewaySandboxLease | undefined> {
+    return this.#sandboxes.show(id);
+  }
+  async releaseSandboxLease(id: string): Promise<GatewaySandboxLease | undefined> {
+    return this.#sandboxes.release(id);
+  }
   async worldSnapshot(): Promise<GatewayWorldSnapshot> {
     return buildGatewayWorldSnapshot(this);
   }
-
   #log(
     level: string,
     target: string | undefined,

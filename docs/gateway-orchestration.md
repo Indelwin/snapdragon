@@ -166,6 +166,8 @@ Failures should be explicit and inspectable:
 - A timed-out worker is killed by the daemon and recorded as `timed_out`.
 - A stale lease expires during watchdog/status passes and clears the logical
   worker lease.
+- A stale sandbox lease expires during watchdog/recovery passes and disappears
+  from REST/SSE/world snapshots.
 - Retry decisions are controlled by job attempts and service restart intensity.
 - Cancellation updates the durable record, removes active leases, aborts
   cooperative runtime workers, and stops future dispatch.
@@ -179,7 +181,7 @@ the next action obvious:
 - One path to enqueue, inspect, cancel, and retry jobs.
 - Stable ids and correlation ids across jobs, events, logs, and artifacts.
 - World snapshots that explain queue depth, active leases, workers, runtimes,
-  and recent failures.
+  sandbox leases, and recent failures.
 - Separate `workers` from `workerProcesses`: workers answer who can take work;
   worker processes answer what the daemon spawned and how it exited.
 - Concrete public nouns: jobs, services, agents, workers, capabilities, events,

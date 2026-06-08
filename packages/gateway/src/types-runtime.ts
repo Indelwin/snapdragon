@@ -14,6 +14,7 @@ import type {
   GatewayWorkerProcess,
   GatewayWorkerRecord,
 } from './types.js';
+import type { GatewayProjectRef, GatewaySandboxLease } from './types-sandboxes.js';
 
 export type {
   GatewayAgentRuntimeDescriptor,
@@ -56,31 +57,6 @@ export interface GatewayAgentRuntimeObservedEvent {
   type: string;
   atMs: number;
   payload: Record<string, unknown>;
-}
-
-export interface GatewayProjectRef {
-  id: string;
-  root: string;
-  branch?: string;
-}
-
-export interface GatewaySandboxSpec {
-  id?: string;
-  project: GatewayProjectRef;
-  backend?: 'worktree';
-  referenceRoots?: string[];
-  inheritEnv?: boolean;
-}
-
-export interface GatewaySandboxLease {
-  id: string;
-  sandboxId: string;
-  cwd: string;
-  acquiredAtMs: number;
-  expiresAtMs?: number;
-  backend?: 'worktree';
-  project?: GatewayProjectRef;
-  referenceRoots?: string[];
 }
 
 export interface GatewayExtensionContributions {

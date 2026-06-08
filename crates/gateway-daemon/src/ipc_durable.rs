@@ -8,8 +8,8 @@ use crate::{
     ipc::{ok_json, parse},
     ipc_params::{
         EventRecordParams, JobAcquireParams, JobCompleteParams, JobFailParams, JobIdParams,
-        JobSpecParams, LogAppendParams, LogTailParams, WorkerHeartbeatParams, WorkerIdParams,
-        WorkerRegistrationParams,
+        JobSpecParams, LogAppendParams, LogTailParams, SandboxLeaseIdParams, SandboxLeaseParams,
+        WorkerHeartbeatParams, WorkerIdParams, WorkerRegistrationParams,
     },
 };
 
@@ -101,6 +101,37 @@ pub(crate) async fn dispatch_workers(
         "workers.show" => {
             let params = parse::<WorkerIdParams>(params)?;
             ok_json(daemon.worker(&params.id).await?)
+        }
+        _ => Err(format!("unknown gateway method: {method}")),
+    }
+}
+
+pub(crate) async fn dispatch_sandboxes(
+    daemon: &GatewayDaemon,
+    method: &str,
+    params: Value,
+) -> Result<Value, String> {
+    match method {
+        "sandboxes.register" => {
+            let params = parse::<SandboxLeaseParams>(params)?;
+            ok_json(
+                daemon
+                    .register_sandbox_lease(params.lease, unix_time_ms())
+                    .await?,
+            )
+        }
+        "sandboxes.list" => ok_json(daemon.list_sandbox_leases().await?),
+        "sandboxes.show" => {
+            let params = parse::<SandboxLeaseIdParams>(params)?;
+            ok_json(daemon.sandbox_lease(&params.id).await?)
+        }
+        "sandboxes.release" => {
+            let params = parse::<SandboxLeaseIdParams>(params)?;
+            ok_json(
+                daemon
+                    .release_sandbox_lease(&params.id, unix_time_ms())
+                    .await?,
+            )
         }
         _ => Err(format!("unknown gateway method: {method}")),
     }
