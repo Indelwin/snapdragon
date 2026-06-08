@@ -1,3 +1,19 @@
+import type {
+  GatewayWorkerHeartbeat,
+  GatewayWorkerProcess,
+  GatewayWorkerRecord,
+  GatewayWorkerRegistration,
+} from './types-workers.js';
+
+export type {
+  GatewayWorkerHeartbeat,
+  GatewayWorkerProcess,
+  GatewayWorkerProcessState,
+  GatewayWorkerRecord,
+  GatewayWorkerRegistration,
+  GatewayWorkerState,
+} from './types-workers.js';
+
 export type GatewayRuntime = 'rust' | 'inline-ts';
 
 export interface ActorId {
@@ -28,7 +44,6 @@ export type GatewayTableAccess = 'public' | 'protected' | 'private';
 export type GatewayServiceState = 'starting' | 'running' | 'stopped' | 'failed';
 export type GatewayJobState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type GatewayEventState = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
-export type GatewayWorkerProcessState = 'running' | 'exited' | 'timed_out' | 'failed';
 export type GatewayAgentRuntimeKind = 'sd' | 'codex' | 'hermes' | 'pi' | 'custom';
 export type GatewayAgentRuntimeProtocol = 'embedded' | 'command' | 'jsonl' | 'http' | 'stdio';
 export type GatewayAgentRuntimeIsolation = 'inherit' | 'profile' | 'channel' | 'sandbox';
@@ -96,6 +111,7 @@ export interface GatewayStatus {
   runtime: GatewayRuntime;
   services: GatewayServiceStatus[];
   agentRuntimes?: GatewayAgentRuntimeDescriptor[];
+  workers?: GatewayWorkerRecord[];
   processes: number;
   workerProcesses?: GatewayWorkerProcess[];
   tables: string[];
@@ -108,22 +124,6 @@ export interface GatewayStatus {
   recentFailures?: GatewayLogRecord[];
   uptimeMs?: number;
   pid?: number;
-}
-
-export interface GatewayWorkerProcess {
-  id: string;
-  service: string;
-  pid?: number;
-  command: string;
-  args: string[];
-  cwd?: string;
-  startedAtMs: number;
-  finishedAtMs?: number;
-  timeoutMs?: number;
-  state: GatewayWorkerProcessState;
-  exitCode?: number;
-  signal?: string;
-  lastError?: string;
 }
 
 export interface GatewayRegistrySnapshot {
@@ -228,6 +228,10 @@ export interface GatewayClient extends GatewayTransport {
   ): Promise<GatewayAgentRuntimeDescriptor>;
   listAgentRuntimes(): Promise<GatewayAgentRuntimeDescriptor[]>;
   showAgentRuntime(id: string): Promise<GatewayAgentRuntimeDescriptor | undefined>;
+  registerWorker(worker: GatewayWorkerRegistration): Promise<GatewayWorkerRecord>;
+  heartbeatWorker(heartbeat: GatewayWorkerHeartbeat): Promise<GatewayWorkerRecord | undefined>;
+  listWorkers(): Promise<GatewayWorkerRecord[]>;
+  showWorker(id: string): Promise<GatewayWorkerRecord | undefined>;
   registerCapability(capability: string, actor: ActorId): Promise<void>;
   whereisCapability(capability: string): Promise<ActorId[]>;
   registrySnapshot(): Promise<GatewayRegistrySnapshot>;

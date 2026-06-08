@@ -1,5 +1,6 @@
 import { fromWireLogRecord } from './rust-wire-durable.js';
 import { fromWireAgentRuntimeDescriptor } from './rust-wire-runtime.js';
+import { fromWireWorkerRecord, type WireWorkerRecord } from './rust-wire-workers.js';
 import type {
   GatewayAgentRuntimeDescriptor,
   GatewayLease,
@@ -9,6 +10,7 @@ import type {
   GatewayStatus,
   GatewayWorkerProcess,
   GatewayWorkerProcessState,
+  GatewayWorkerRecord,
 } from './types.js';
 
 interface WireServiceStatus {
@@ -29,6 +31,7 @@ interface WireServiceStatus {
 interface WireStatus {
   services?: WireServiceStatus[];
   agent_runtimes?: unknown[];
+  workers?: WireWorkerRecord[];
   processes?: number;
   worker_processes?: WireWorkerProcess[];
   tables?: string[];
@@ -80,6 +83,9 @@ export function fromWireStatus(value: WireStatus): GatewayStatus {
     agentRuntimes: (value.agent_runtimes ?? [])
       .map((runtime) => fromWireAgentRuntimeDescriptor(runtime as any))
       .filter((runtime): runtime is GatewayAgentRuntimeDescriptor => runtime !== undefined),
+    workers: (value.workers ?? [])
+      .map((worker) => fromWireWorkerRecord(worker))
+      .filter((worker): worker is GatewayWorkerRecord => worker !== undefined),
     processes: value.processes ?? 0,
     workerProcesses: value.worker_processes?.map(fromWireWorkerProcess),
     tables: value.tables ?? [],
