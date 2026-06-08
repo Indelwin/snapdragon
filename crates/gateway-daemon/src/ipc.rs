@@ -11,7 +11,9 @@ use crate::{
     ipc_core::{
         dispatch_agents, dispatch_envelopes, dispatch_registry, dispatch_services, dispatch_tables,
     },
-    ipc_durable::{dispatch_events, dispatch_jobs, dispatch_logs, dispatch_workers},
+    ipc_durable::{
+        dispatch_events, dispatch_jobs, dispatch_logs, dispatch_sandboxes, dispatch_workers,
+    },
 };
 
 #[derive(Debug, Deserialize)]
@@ -99,6 +101,7 @@ async fn dispatch(daemon: &GatewayDaemon, method: &str, params: Value) -> Result
         "events" => dispatch_events(daemon, method, params).await,
         "logs" => dispatch_logs(daemon, method, params).await,
         "workers" => dispatch_workers(daemon, method, params).await,
+        "sandboxes" => dispatch_sandboxes(daemon, method, params).await,
         _ => Err(format!("unknown gateway method: {method}")),
     }
 }

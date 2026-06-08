@@ -1,3 +1,4 @@
+import type { GatewaySandboxLease } from './types-sandboxes.js';
 import type {
   GatewayWorkerHeartbeat,
   GatewayWorkerProcess,
@@ -13,13 +14,10 @@ export type {
   GatewayWorkerRegistration,
   GatewayWorkerState,
 } from './types-workers.js';
-
 export type GatewayRuntime = 'rust' | 'inline-ts';
-
 export interface ActorId {
   id: string;
 }
-
 export interface GatewayEnvelope {
   id: number;
   kind: string;
@@ -30,14 +28,12 @@ export interface GatewayEnvelope {
   payload: unknown;
   insertedAtMs: number;
 }
-
 export interface GatewayReceiveFilter {
   kind?: string;
   source?: ActorId;
   correlationId?: string;
   capability?: string;
 }
-
 export type GatewaySupervisorStrategy = 'one_for_one' | 'one_for_all' | 'rest_for_one';
 export type GatewayChildRestart = 'permanent' | 'transient' | 'temporary';
 export type GatewayTableAccess = 'public' | 'protected' | 'private';
@@ -47,7 +43,6 @@ export type GatewayEventState = 'pending' | 'running' | 'done' | 'failed' | 'can
 export type GatewayAgentRuntimeKind = 'sd' | 'codex' | 'hermes' | 'pi' | 'custom';
 export type GatewayAgentRuntimeProtocol = 'embedded' | 'command' | 'jsonl' | 'http' | 'stdio';
 export type GatewayAgentRuntimeIsolation = 'inherit' | 'profile' | 'channel' | 'sandbox';
-
 export interface GatewayAgentRuntimeHealth {
   state: string;
   checkedAtMs: number;
@@ -242,6 +237,7 @@ export interface GatewayClient extends GatewayTransport {
   listJobs(): Promise<GatewayJobStatus[]>;
   showJob(id: string): Promise<GatewayJobStatus | undefined>;
   cancelJob(id: string): Promise<GatewayJobStatus | undefined>;
+  retryJob(id: string): Promise<GatewayJobStatus | undefined>;
   acquireJob(queue: string, worker: string, leaseMs?: number): Promise<GatewayJobLease | undefined>;
   completeJob(id: string, result?: unknown): Promise<GatewayJobStatus | undefined>;
   failJob(id: string, error: string): Promise<GatewayJobStatus | undefined>;
@@ -255,4 +251,8 @@ export interface GatewayClient extends GatewayTransport {
   cancelEvent(id: string): Promise<GatewayEventRecord | undefined>;
   appendLog(input: GatewayLogInput): Promise<GatewayLogRecord>;
   tailLogs(options?: { target?: string; limit?: number }): Promise<GatewayLogRecord[]>;
+  registerSandboxLease(lease: GatewaySandboxLease): Promise<GatewaySandboxLease>;
+  listSandboxLeases(): Promise<GatewaySandboxLease[]>;
+  showSandboxLease(id: string): Promise<GatewaySandboxLease | undefined>;
+  releaseSandboxLease(id: string): Promise<GatewaySandboxLease | undefined>;
 }
