@@ -15,6 +15,7 @@ mod ipc_core;
 mod ipc_durable;
 mod ipc_params;
 mod process_tracking;
+mod sandboxes;
 mod service_supervision;
 mod service_tasks;
 mod service_worker;
@@ -28,6 +29,7 @@ mod store_job_types;
 mod store_jobs;
 mod store_leases;
 mod store_observability;
+mod store_sandboxes;
 mod store_schema;
 mod store_services;
 mod store_workers;
@@ -191,7 +193,11 @@ impl GatewayDaemon {
     }
 
     pub async fn run_watchdogs(&self) -> Result<u64, String> {
-        self.require_store()?.expire_leases(unix_time_ms())
+        let now_ms = unix_time_ms();
+        let store = self.require_store()?;
+        let expired_jobs = store.expire_leases(now_ms)?;
+        let expired_sandboxes = store.expire_sandbox_leases(now_ms)?;
+        Ok(expired_jobs + expired_sandboxes)
     }
 
     async fn recover_store(&self) -> Result<(), String> {
@@ -219,7 +225,9 @@ impl GatewayDaemon {
             }
             self.replace_service_task(spec).await;
         }
-        store.expire_leases(unix_time_ms())?;
+        let now_ms = unix_time_ms();
+        store.expire_leases(now_ms)?;
+        store.expire_sandbox_leases(now_ms)?;
         Ok(())
     }
 

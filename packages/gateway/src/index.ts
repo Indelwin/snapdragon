@@ -60,9 +60,11 @@ export type {
   GatewayExtensionContributions,
   GatewayOrchestrationClient,
   GatewayPolicyHints,
+  GatewayWorldSnapshot,
+} from './types-runtime.js';
+export type {
   GatewayProjectRef,
   GatewaySandboxLease,
   GatewaySandboxSpec,
-  GatewayWorldSnapshot,
-} from './types-runtime.js';
+} from './types-sandboxes.js';
 export { buildGatewayWorldSnapshot } from './world.js';

@@ -68,6 +68,7 @@ sd gateway learn enqueue-eval ./eval-dataset.json
 sd gateway logs tail
 sd gateway sandboxes lease . --ref ../reference-repo --ttl-ms 3600000
 sd gateway sandboxes list
+sd gateway sandboxes release lease_my-sandbox
 sd gateway registry list
 sd gateway tables list
 sd gateway workers list
@@ -97,6 +98,13 @@ sessions, skills, memory, and TODOs without starting Ink. Jobs with attempts
 remaining return to `pending` after a worker failure; `sd gateway jobs retry
 <job_id>` requeues terminal failed jobs for operator or executive-agent
 recovery.
+
+`sd gateway sandboxes lease` creates a local git worktree sandbox and records a
+lease under the gateway root. When the Rust gateway daemon is running, the lease
+is also registered with the durable gateway store and appears in REST/SSE/world
+snapshots. Without the daemon it remains usable as a local-only lease and the
+command reports that distinction. Future sandbox providers can keep this lease
+vocabulary while swapping out the backend.
 
 Agent jobs can also target external runtimes. `sd gateway agents register-pi`
 adds a Pi JSONL runtime descriptor for the installed `pi` command; adding

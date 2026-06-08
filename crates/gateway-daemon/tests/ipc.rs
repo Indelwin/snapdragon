@@ -234,6 +234,50 @@ async fn ipc_persists_jobs_events_and_logs() {
     .await;
     assert_eq!(retry["result"]["state"], "Pending");
 
+    let sandbox = request(
+        &path,
+        json!({
+            "id": 27,
+            "method": "sandboxes.register",
+            "params": {
+                "lease": {
+                    "id": "lease_test",
+                    "sandbox_id": "sandbox_test",
+                    "cwd": "/tmp/sandbox",
+                    "acquired_at_ms": 30,
+                    "expires_at_ms": 40,
+                    "backend": "worktree",
+                    "project": { "id": "project_test", "root": "/tmp/project", "branch": "main" },
+                    "reference_roots": ["/tmp/reference"]
+                }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(sandbox["result"]["id"], "lease_test");
+    let sandboxes = request(&path, json!({ "id": 28, "method": "sandboxes.list" })).await;
+    assert_eq!(sandboxes["result"][0]["sandbox_id"], "sandbox_test");
+    let sandbox = request(
+        &path,
+        json!({
+            "id": 29,
+            "method": "sandboxes.show",
+            "params": { "id": "lease_test" }
+        }),
+    )
+    .await;
+    assert_eq!(sandbox["result"]["cwd"], "/tmp/sandbox");
+    let sandbox = request(
+        &path,
+        json!({
+            "id": 30,
+            "method": "sandboxes.release",
+            "params": { "id": "lease_test" }
+        }),
+    )
+    .await;
+    assert_eq!(sandbox["result"]["id"], "lease_test");
+
     let event = request(
         &path,
         json!({
