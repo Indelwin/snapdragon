@@ -11,6 +11,7 @@ import { jobsCommand } from './gateway-command-jobs.js';
 import { learnCommand } from './gateway-command-learn.js';
 import { logsCommand } from './gateway-command-logs.js';
 import { registryCommand } from './gateway-command-registry.js';
+import { restCommand } from './gateway-command-rest.js';
 import { sandboxesCommand } from './gateway-command-sandboxes.js';
 import { servicesCommand } from './gateway-command-services.js';
 import { tablesCommand } from './gateway-command-tables.js';
@@ -30,6 +31,7 @@ const gatewayTopicHandlers: Record<string, GatewayTopicHandler> = {
   learn: (action, rest, args) => learnCommand(action ?? 'enqueue-eval', rest, args),
   logs: (action, rest, args) => logsCommand(action ?? 'tail', rest, args),
   registry: (action, rest, args) => registryCommand(action ?? 'list', rest, args),
+  rest: (action, rest, args) => restCommand(action ?? 'serve', rest, args),
   sandboxes: (action, rest, args) => sandboxesCommand(action ?? 'list', rest, args),
   services: (action, rest, args) => servicesCommand(action ?? 'list', rest, args),
   tables: (action, rest, args) => tablesCommand(action ?? 'list', rest, args),

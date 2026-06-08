@@ -18,6 +18,7 @@ Gateway commands:
   sd gateway agents run|enqueue [--runtime <id>]
   sd gateway agents status|cancel <job-id>
   sd gateway learn enqueue-eval <dataset.json> [--id <id>]
+  sd gateway rest serve [--host <host>] [--port <port>]
   sd gateway logs tail [target] [limit]
   sd gateway sandboxes list
   sd gateway sandboxes lease [project] [--id <id>] [--ref <path>] [--ttl-ms <ms>]
