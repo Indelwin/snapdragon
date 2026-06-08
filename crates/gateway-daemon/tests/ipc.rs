@@ -145,6 +145,17 @@ async fn ipc_persists_jobs_events_and_logs() {
     )
     .await;
     assert_eq!(lease["result"]["lease"]["worker"], "worker");
+    let worker = request(
+        &path,
+        json!({
+            "id": 20,
+            "method": "workers.show",
+            "params": { "id": "worker" }
+        }),
+    )
+    .await;
+    assert_eq!(worker["result"]["current_job_id"], "job_1");
+    assert_eq!(worker["result"]["state"], "running");
 
     let completed = request(
         &path,
@@ -156,6 +167,24 @@ async fn ipc_persists_jobs_events_and_logs() {
     )
     .await;
     assert_eq!(completed["result"]["state"], "Completed");
+    let worker = request(
+        &path,
+        json!({
+            "id": 21,
+            "method": "workers.heartbeat",
+            "params": {
+                "heartbeat": {
+                    "id": "worker",
+                    "state": "idle",
+                    "status": "waiting"
+                }
+            }
+        }),
+    )
+    .await;
+    assert_eq!(worker["result"]["status"], "waiting");
+    let workers = request(&path, json!({ "id": 22, "method": "workers.list" })).await;
+    assert_eq!(workers["result"][0]["id"], "worker");
 
     let event = request(
         &path,

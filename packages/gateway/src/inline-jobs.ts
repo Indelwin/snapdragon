@@ -13,6 +13,7 @@ interface InlineLogger {
 
 export class InlineJobStore {
   #jobs = new Map<string, GatewayJobStatus>();
+  #leases = new Map<string, GatewayLease>();
 
   constructor(private readonly logger: InlineLogger) {}
 
@@ -49,6 +50,7 @@ export class InlineJobStore {
   cancel(id: string): GatewayJobStatus | undefined {
     const job = this.#jobs.get(id);
     if (!job) return undefined;
+    this.#clearLease(job);
     job.state = 'cancelled';
     job.updatedAtMs = Date.now();
     job.leaseId = undefined;
@@ -75,6 +77,7 @@ export class InlineJobStore {
       leaseId: lease.id,
       leaseExpiresAtMs: lease.expiresAtMs,
     });
+    this.#leases.set(lease.id, lease);
     this.logger.log('info', job.id, 'job leased');
     return { job, lease };
   }
@@ -92,15 +95,7 @@ export class InlineJobStore {
   }
 
   activeLeases(): GatewayLease[] {
-    return [...this.#jobs.values()]
-      .filter((job) => job.state === 'running' && job.leaseId && job.leaseExpiresAtMs)
-      .map((job) => ({
-        id: job.leaseId as string,
-        jobId: job.id,
-        worker: 'inline',
-        acquiredAtMs: job.updatedAtMs,
-        expiresAtMs: job.leaseExpiresAtMs as number,
-      }));
+    return [...this.#leases.values()].sort((a, b) => a.expiresAtMs - b.expiresAtMs);
   }
 
   queueDepths(): GatewayQueueDepth[] {
@@ -129,6 +124,7 @@ export class InlineJobStore {
     const job = this.#jobs.get(id);
     if (!job) return undefined;
     if (job.state === 'cancelled') return job;
+    this.#clearLease(job);
     Object.assign(job, {
       state,
       result,
@@ -139,6 +135,12 @@ export class InlineJobStore {
     });
     this.logger.log(error ? 'error' : 'info', id, error ?? 'job finished');
     return job;
+  }
+
+  #clearLease(job: GatewayJobStatus): GatewayLease | undefined {
+    const lease = job.leaseId ? this.#leases.get(job.leaseId) : undefined;
+    if (job.leaseId) this.#leases.delete(job.leaseId);
+    return lease;
   }
 }
 
