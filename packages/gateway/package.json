@@ -19,7 +19,7 @@
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
     "test": "node --test --import tsx test/*.test.ts",
-    "test:reliability:gateway": "npm run build && npm run build --workspace @snapdragon-ai/learn && cargo test --manifest-path ../../Cargo.toml -p snapdragon-gateway-core -p snapdragon-gateway-daemon -- --test-threads=1 && node --test --import tsx test/reliability.test.ts test/pi-reliability.test.ts && node --test --import tsx ../sd/test/gateway-command.test.ts",
+    "test:reliability:gateway": "npm run build && npm run build --workspace @snapdragon-ai/learn && cargo test --manifest-path ../../Cargo.toml -p snapdragon-gateway-core -p snapdragon-gateway-daemon -- --test-threads=1 && node --test --import tsx test/reliability.test.ts test/pi-reliability.test.ts && node --test --import tsx ../sd/test/gateway-command.test.ts ../sd/test/gateway-learn-job-failure.test.ts",
     "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },
   "devDependencies": {
