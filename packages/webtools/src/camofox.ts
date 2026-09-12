@@ -1,4 +1,13 @@
-import type { FetchPageOptions, FetchPageResult } from './http.js';
+import { parseCamofoxResponse } from './camofox-response.js';
+import { type FetchPageOptions, type FetchPageResult, readLimitedText } from './http.js';
+import {
+  assertByteLength,
+  boundedInteger,
+  DEFAULT_HTTP_MAX_BYTES,
+  isResourceLimitError,
+  MAX_HTTP_MAX_BYTES,
+  MAX_URL_BYTES,
+} from './resource-limits.js';
 
 export interface CamofoxOptions {
   baseUrl?: string;
@@ -14,7 +23,13 @@ export class CamofoxClient {
       /\/$/,
       '',
     );
-    this.timeoutMs = options.timeoutMs ?? 25_000;
+    this.timeoutMs = boundedInteger(
+      options.timeoutMs,
+      25_000,
+      'Camofox timeout milliseconds',
+      1,
+      120_000,
+    );
   }
 
   async available(signal?: AbortSignal): Promise<boolean> {
@@ -24,53 +39,53 @@ export class CamofoxClient {
         signal,
       });
       if (!res.ok) return false;
-      const text = await res.text();
-      return /ok|healthy|ready/i.test(text) || text.length === 0;
+      const body = await readLimitedText(res, 1_024);
+      return !body.truncated && (/ok|healthy|ready/i.test(body.text) || body.text.length === 0);
     } catch {
       return false;
     }
   }
 
   async fetchPage(url: string, options: FetchPageOptions = {}): Promise<FetchPageResult> {
+    assertByteLength(url, 'Camofox URL bytes', MAX_URL_BYTES);
+    const maxBytes = boundedInteger(
+      options.maxBytes,
+      DEFAULT_HTTP_MAX_BYTES,
+      'Camofox response bytes',
+      1,
+      MAX_HTTP_MAX_BYTES,
+    );
+    const timeoutMs = boundedInteger(
+      options.timeoutMs,
+      this.timeoutMs,
+      'Camofox render timeout milliseconds',
+      1,
+      120_000,
+    );
     const payload = JSON.stringify({
       url,
       wait_until: 'networkidle',
-      timeout_ms: options.timeoutMs ?? this.timeoutMs,
+      timeout_ms: timeoutMs,
     });
     const candidates = ['/fetch', '/render', '/page'];
     let lastError: unknown;
     for (const path of candidates) {
       try {
-        const res = await this.fetchWithTimeout(`${this.baseUrl}${path}`, {
-          method: 'POST',
-          signal: options.signal,
-          headers: { 'content-type': 'application/json', accept: 'application/json,text/html' },
-          body: payload,
-        });
+        const res = await this.fetchWithTimeout(
+          `${this.baseUrl}${path}`,
+          {
+            method: 'POST',
+            signal: options.signal,
+            headers: { 'content-type': 'application/json', accept: 'application/json,text/html' },
+            body: payload,
+          },
+          timeoutMs,
+        );
         if (res.status === 404) continue;
-        const contentType = res.headers.get('content-type') ?? '';
-        const body = await res.text();
-        if (contentType.includes('application/json')) {
-          const json = JSON.parse(body) as Record<string, unknown>;
-          const html =
-            stringField(json, 'html') ??
-            stringField(json, 'content') ??
-            stringField(json, 'body') ??
-            '';
-          const finalUrl = stringField(json, 'url') ?? stringField(json, 'final_url') ?? url;
-          const status = numberField(json, 'status') ?? res.status;
-          return { url, finalUrl, status, ok: res.ok, contentType, html, source: 'camofox' };
-        }
-        return {
-          url,
-          finalUrl: res.url || url,
-          status: res.status,
-          ok: res.ok,
-          contentType,
-          html: body,
-          source: 'camofox',
-        };
+        const body = await readLimitedText(res, maxBytes);
+        return parseCamofoxResponse(url, res, body, maxBytes);
       } catch (error) {
+        if (isResourceLimitError(error)) throw error;
         lastError = error;
       }
     }
@@ -79,9 +94,13 @@ export class CamofoxClient {
       : new Error(String(lastError ?? 'Camofox request failed'));
   }
 
-  private async fetchWithTimeout(input: string, init: RequestInit): Promise<Response> {
+  private async fetchWithTimeout(
+    input: string,
+    init: RequestInit,
+    timeoutMs = this.timeoutMs,
+  ): Promise<Response> {
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), this.timeoutMs);
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
     const onAbort = () => ac.abort();
     init.signal?.addEventListener('abort', onAbort, { once: true });
     try {
@@ -91,13 +110,4 @@ export class CamofoxClient {
       init.signal?.removeEventListener('abort', onAbort);
     }
   }
-}
-
-function stringField(obj: Record<string, unknown>, key: string): string | undefined {
-  const v = obj[key];
-  return typeof v === 'string' ? v : undefined;
-}
-function numberField(obj: Record<string, unknown>, key: string): number | undefined {
-  const v = obj[key];
-  return typeof v === 'number' && Number.isFinite(v) ? v : undefined;
 }

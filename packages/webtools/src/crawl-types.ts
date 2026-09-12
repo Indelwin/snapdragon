@@ -3,6 +3,8 @@ import type { WebExtractOptions, WebExtractResult } from './extract-page.js';
 export interface WebCrawlOptions extends WebExtractOptions {
   maxPages?: number;
   maxDepth?: number;
+  maxQueuedUrls?: number;
+  maxResultBytes?: number;
   sameDomain?: boolean;
   includePatterns?: string[];
   excludePatterns?: string[];
@@ -28,9 +30,21 @@ export interface CrawlStatus {
   finishedAt?: string;
   pagesVisited: number;
   queued: number;
+  resultBytes: number;
   errors: string[];
   pages: CrawlPage[];
+  retention: 'running' | 'retained' | 'not-retained';
+  retentionReason?: 'result-too-large' | 'store-disposed' | 'no-store-owner' | 'deleted';
 }
+
+export interface CrawlNotRetainedStatus {
+  id: string;
+  status: 'not-retained';
+  reason: 'result-too-large' | 'evicted' | 'expired' | 'deleted' | 'store-disposed';
+  recordedAt: string;
+}
+
+export type CrawlLookupResult = CrawlStatus | CrawlNotRetainedStatus;
 
 export interface CrawlQueueItem {
   url: string;

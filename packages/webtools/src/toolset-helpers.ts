@@ -9,6 +9,22 @@ export interface HttpDefaults {
   timeoutMs?: number;
 }
 
+interface DisposableResource {
+  dispose(): void;
+}
+
+export async function withDisposable<Resource extends DisposableResource, Result>(
+  load: () => Promise<Resource>,
+  use: (resource: Resource) => Result | Promise<Result>,
+): Promise<Result> {
+  const resource = await load();
+  try {
+    return await use(resource);
+  } finally {
+    resource.dispose();
+  }
+}
+
 export function schema(properties: Record<string, JsonObject>, required: string[]): JsonObject {
   return { type: 'object', properties, required, additionalProperties: false };
 }

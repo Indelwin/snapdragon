@@ -11,6 +11,10 @@ export interface RobotsCheck {
 export class Robots {
   constructor(private readonly core: WebtoolsCore) {}
 
+  dispose(): void {
+    this.core.dispose();
+  }
+
   check(body: string, url: string, userAgent = 'SnapdragonCrawler/0.1'): RobotsCheck {
     return callWasm<RobotsCheck>(this.core, 'robots', 'check', {
       body,

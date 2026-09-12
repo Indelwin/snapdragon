@@ -1,5 +1,6 @@
 import type { CrawlQueueItem, WebCrawlOptions } from './crawl-types.js';
 import type { WebExtractResult } from './extract-page.js';
+import { MAX_CRAWL_QUEUE, WebtoolsResourceLimitError } from './resource-limits.js';
 import type { UrlUtils } from './url.js';
 
 export function withinCrawlScope(
@@ -18,11 +19,21 @@ export function enqueueLinks(
   result: WebExtractResult,
   options: WebCrawlOptions,
   utils: UrlUtils,
+  scheduled?: Set<string>,
 ): void {
   if (current.depth >= (options.maxDepth ?? 2)) return;
   for (const link of result.links) {
     const resolved = utils.resolve(result.finalUrl || current.url, link.href);
-    if (resolved && !seen.has(resolved)) queue.push({ url: resolved, depth: current.depth + 1 });
+    const alreadyScheduled = scheduled
+      ? scheduled.has(resolved ?? '')
+      : queue.some((item) => item.url === resolved);
+    if (!resolved || seen.has(resolved) || alreadyScheduled) continue;
+    const limit = options.maxQueuedUrls ?? MAX_CRAWL_QUEUE;
+    if (queue.length >= limit) {
+      throw new WebtoolsResourceLimitError('crawl queued URLs', limit, queue.length + 1);
+    }
+    queue.push({ url: resolved, depth: current.depth + 1 });
+    scheduled?.add(resolved);
   }
 }
 
