@@ -5,7 +5,7 @@
 // and pass the result to `agent.registry.register(...)`.
 //
 // Tool surface:
-//   - web_search, web_extract, web_crawl, web_crawl_status
+//   - web_search, web_extract, web_crawl, web_crawl_status, web_crawl_delete
 //   - url_normalize, url_canonicalize, url_cleanup, url_host,
 //     url_resolve, url_same_or_subdomain, url_pattern_match
 //   - robots_check, robots_sitemaps
@@ -16,6 +16,7 @@
 // structured value in `data`.
 
 import type { Toolset } from '@snapdragon-ai/tools';
+import { CrawlStore, type CrawlStoreOptions } from './crawl.js';
 import { contentFilterBestTool, contentFilterChunkTool } from './toolset-content-filter.js';
 import {
   extractDetectJsOnlyTool,
@@ -33,20 +34,34 @@ import {
   urlResolveTool,
   urlSameOrSubdomainTool,
 } from './toolset-url.js';
-import { webCrawlStatusTool, webCrawlTool, webExtractTool, webSearchTool } from './toolset-web.js';
+import {
+  webCrawlDeleteTool,
+  webCrawlStatusTool,
+  webCrawlTool,
+  webExtractTool,
+  webSearchTool,
+} from './toolset-web.js';
 
 export interface WebtoolsToolsetOptions {
   /** Default User-Agent applied to HTTP-bearing tools. */
   defaultUserAgent?: string;
   /** Default per-request timeout (ms) for HTTP-bearing tools. */
   defaultTimeoutMs?: number;
+  /** Completed crawl retention and concurrent crawl limits for this toolset. */
+  crawlStore?: CrawlStoreOptions;
 }
 
-export function webtoolsToolset(options: WebtoolsToolsetOptions = {}): Toolset {
+export interface DisposableWebtoolsToolset extends Toolset {
+  readonly crawlStore: CrawlStore;
+  dispose(): Promise<void>;
+}
+
+export function webtoolsToolset(options: WebtoolsToolsetOptions = {}): DisposableWebtoolsToolset {
   const httpDefaults: HttpDefaults = {
     userAgent: options.defaultUserAgent,
     timeoutMs: options.defaultTimeoutMs,
   };
+  const crawlStore = new CrawlStore(options.crawlStore);
   return {
     name: 'webtools',
     title: 'Web tools',
@@ -55,8 +70,9 @@ export function webtoolsToolset(options: WebtoolsToolsetOptions = {}): Toolset {
     tools: [
       webSearchTool(httpDefaults),
       webExtractTool(httpDefaults),
-      webCrawlTool(httpDefaults),
-      webCrawlStatusTool(),
+      webCrawlTool(httpDefaults, crawlStore),
+      webCrawlStatusTool(crawlStore),
+      webCrawlDeleteTool(crawlStore),
       urlNormalizeTool(),
       urlCanonicalizeTool(),
       urlCleanupTool(),
@@ -72,5 +88,9 @@ export function webtoolsToolset(options: WebtoolsToolsetOptions = {}): Toolset {
       contentFilterChunkTool(),
       contentFilterBestTool(),
     ],
+    crawlStore,
+    async dispose() {
+      await crawlStore.dispose();
+    },
   };
 }

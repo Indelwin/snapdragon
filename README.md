@@ -66,9 +66,9 @@ sd gateway stop
 
 Current gateway state is local-first. The Rust crates already model mailboxes,
 registry entries, service specs, ETS-like tables, links, monitors, supervision
-types, agent runtime descriptors, durable jobs, leases, logs, and Wasmtime
-budget exits. The npm facade can register external runtimes such as `sd`,
-Codex, Hermes Agent, Pi Agent, or custom workers; it also exposes world
+types, agent runtime descriptors, durable jobs, leases, logs, and a synthetic
+WASM fuel-meter scaffold. The npm facade can register external runtimes such as
+`sd`, Codex, Hermes Agent, Pi Agent, or custom workers; it also exposes world
 snapshots and a dependency-free local REST/SSE facade for integration and UI
 work. Distributed clustering and Iroh transport are intentionally deferred until
 local semantics are solid.
@@ -120,6 +120,8 @@ npm test
 npm run build
 ```
 
-The Rust kernel builds to `wasm32-wasip2`; install that target with rustup before running the full build if it is missing.
+The Rust kernel builds to `wasm32-wasip2`, while the pure-compute webtools crate
+builds to `wasm32-unknown-unknown`. Both targets are declared in
+`rust-toolchain.toml` for full repository builds.
 
 # Examples Roadmap

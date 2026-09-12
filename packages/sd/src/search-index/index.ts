@@ -12,6 +12,7 @@ import type { SdIndexedKind, SdIndexInputEntry, SdSearchOptions } from './types.
 export class SdSearchIndex {
   readonly path: string;
   #db: DatabaseSync;
+  #closed = false;
 
   private constructor(path: string, db: DatabaseSync) {
     this.path = path;
@@ -33,6 +34,8 @@ export class SdSearchIndex {
   }
 
   close(): void {
+    if (this.#closed) return;
+    this.#closed = true;
     this.#db.close();
   }
 

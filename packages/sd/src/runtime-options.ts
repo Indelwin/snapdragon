@@ -18,6 +18,8 @@ export interface SdRuntimeOptions {
   noBackground?: boolean;
   /** Override background execution for this process. */
   backgroundMode?: 'daemon' | 'inline' | 'off';
+  /** Write bounded, privacy-safe process metrics for this run. */
+  diagnostics?: boolean;
 }
 
 export function normalizeRuntimeOptions(args: SdRuntimeOptions | SdCliArgs): SdRuntimeOptions {
@@ -36,5 +38,6 @@ export function normalizeRuntimeOptions(args: SdRuntimeOptions | SdCliArgs): SdR
     noMemoryWorker: 'noMemoryWorker' in args ? args.noMemoryWorker : undefined,
     noBackground: 'noBackground' in args ? args.noBackground : undefined,
     backgroundMode: 'backgroundMode' in args ? args.backgroundMode : undefined,
+    diagnostics: 'diagnostics' in args ? args.diagnostics : undefined,
   };
 }

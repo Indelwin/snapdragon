@@ -33,6 +33,29 @@ Memory uses an active provider contract. The default `sd` provider is a
 profile-local or global `MEMORY.md` file that can be read, searched, appended
 by tools, and auto-captured from stable user preferences.
 
+## Runtime Diagnostics
+
+```sh
+sd doctor --json
+sd --diagnostics --resume
+```
+
+`doctor` reports the executable/package paths, renderer identity, source and compiled
+fingerprints, and WASM hashes without starting a provider or the TUI. A global install
+without source files is not reported as a source mismatch. `--version` is unchanged.
+
+Memory diagnostics are off by default. When enabled, bounded, rotated JSONL files contain
+heap/RSS/external memory, resource counts, fixed run phases, and available WASM page counts.
+They never contain prompts, tool arguments, credentials, or automatic heap snapshots.
+
+The CLI defaults to production React before loading Ink. An explicitly configured
+`NODE_ENV` is preserved, and importing the library does not change the host environment.
+Use production rendering for long-lived embedded TUIs. The bundled Ink fork bounds text
+caches; mouse scrolling uses an owned input adapter and remains enabled.
+
+See [reliability verification](../../docs/reliability.md) for stress-test commands and the
+distinction between reproduced defects and remaining historical-crash hypotheses.
+
 ## Gateway and Background Services
 
 `sd` uses the Snapdragon gateway for background work. The default runtime is

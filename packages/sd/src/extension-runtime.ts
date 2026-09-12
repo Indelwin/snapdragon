@@ -1,14 +1,19 @@
-import { existsSync, statSync } from 'node:fs';
-import { relative, resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import type { ExtensionDescriptor, ExtensionGatewayServiceManifest } from '@snapdragon-ai/content';
 import type { GatewayServiceSpec } from '@snapdragon-ai/gateway';
 import type { SdConfig } from './config.js';
+import { activateExtensionModule } from './extension-activation.js';
+import {
+  disposeExtensions,
+  type ExtensionDisposalState,
+  extensionDisposalState,
+} from './extension-disposal.js';
+import { resolveExtensionPath } from './extension-module.js';
 import type { SdExtensionStore } from './extensions.js';
 import type { SdProfileInfo } from './profile.js';
 
 export type {
   SdExtensionActivationContext,
+  SdExtensionDisposable,
   SdExtensionModule,
   SdExtensionProviderCreateOptions,
   SdExtensionProviderFactory,
@@ -17,11 +22,7 @@ export type {
   SdExtensionSkillRoot,
 } from './extension-runtime-types.js';
 
-import type {
-  SdExtensionActivationContext,
-  SdExtensionModule,
-  SdExtensionRuntime,
-} from './extension-runtime-types.js';
+import type { SdExtensionRuntime } from './extension-runtime-types.js';
 import type { SdRuntimeOptions } from './runtime-options.js';
 
 export async function activateSdExtensions(options: {
@@ -31,15 +32,12 @@ export async function activateSdExtensions(options: {
   runtimeOptions: SdRuntimeOptions;
   env: NodeJS.ProcessEnv;
 }): Promise<SdExtensionRuntime> {
-  const runtime = emptyExtensionRuntime();
+  const disposal = extensionDisposalState();
+  const runtime = emptyExtensionRuntime(disposal);
   for (const descriptor of options.store.enabledList()) {
-    collectManifestContributions(runtime, descriptor);
-    if (!descriptor.main) continue;
     try {
-      const mod = await importExtensionModule(descriptor, options.config.extensions?.hot_reload);
-      if (typeof mod.activate === 'function') {
-        await mod.activate(extensionContext(descriptor, runtime, options));
-      }
+      collectManifestContributions(runtime, descriptor);
+      await activateExtensionModule(descriptor, runtime, options, disposal);
     } catch (error) {
       runtime.errors.push({ extensionId: descriptor.id, message: errorMessage(error) });
     }
@@ -47,8 +45,8 @@ export async function activateSdExtensions(options: {
   return runtime;
 }
 
-function emptyExtensionRuntime(): SdExtensionRuntime {
-  return {
+function emptyExtensionRuntime(disposal: ExtensionDisposalState): SdExtensionRuntime {
+  const runtime: SdExtensionRuntime = {
     toolsets: [],
     skillRoots: [],
     memoryProviders: new Map(),
@@ -57,7 +55,10 @@ function emptyExtensionRuntime(): SdExtensionRuntime {
     appliances: [],
     logs: [],
     errors: [],
+    dispose: () => disposeExtensions(disposal),
   };
+  disposal.errors = runtime.errors;
+  return runtime;
 }
 
 function collectManifestContributions(
@@ -80,51 +81,6 @@ function collectManifestContributions(
   }
 }
 
-function extensionContext(
-  descriptor: ExtensionDescriptor,
-  runtime: SdExtensionRuntime,
-  options: {
-    config: SdConfig;
-    profile?: SdProfileInfo;
-    runtimeOptions: SdRuntimeOptions;
-    env: NodeJS.ProcessEnv;
-  },
-): SdExtensionActivationContext {
-  return {
-    descriptor,
-    config: options.config,
-    profile: options.profile,
-    options: options.runtimeOptions,
-    env: options.env,
-    registerToolset(toolset) {
-      runtime.toolsets.push(toolset);
-    },
-    registerSkillRoot(path, rootOptions = {}) {
-      runtime.skillRoots.push({
-        root: resolveExtensionPath(descriptor, path),
-        source: 'extension',
-        extensionId: descriptor.id,
-        writable: rootOptions.writable ?? false,
-      });
-    },
-    registerMemoryProvider(id, provider) {
-      runtime.memoryProviders.set(id, provider);
-    },
-    registerProvider(id, provider) {
-      runtime.providers.set(id, provider);
-    },
-    registerGatewayService(service) {
-      runtime.gatewayServices.push(service);
-    },
-    registerAppliance(appliance) {
-      runtime.appliances.push({ ...appliance });
-    },
-    log(message) {
-      runtime.logs.push({ extensionId: descriptor.id, message });
-    },
-  };
-}
-
 function gatewayServiceFromManifest(service: ExtensionGatewayServiceManifest): GatewayServiceSpec {
   return {
     name: service.name,
@@ -132,38 +88,6 @@ function gatewayServiceFromManifest(service: ExtensionGatewayServiceManifest): G
     intervalMs: service.interval_ms,
     startupDelayMs: service.startup_delay_ms,
   };
-}
-
-async function importExtensionModule(
-  descriptor: ExtensionDescriptor,
-  hotReload = true,
-): Promise<SdExtensionModule> {
-  const main = requiredMainPath(descriptor);
-  const url = pathToFileURL(main);
-  if (hotReload) {
-    url.searchParams.set('mtime', String(statSync(main).mtimeMs));
-  }
-  return (await import(url.href)) as SdExtensionModule;
-}
-
-function requiredMainPath(descriptor: ExtensionDescriptor): string {
-  if (!descriptor.main) throw new Error(`Extension ${descriptor.id} does not declare main.`);
-  const path = resolveExtensionPath(descriptor, descriptor.main);
-  if (!existsSync(path) || !statSync(path).isFile()) {
-    throw new Error(`Extension ${descriptor.id} main not found: ${descriptor.main}`);
-  }
-  return path;
-}
-
-function resolveExtensionPath(descriptor: ExtensionDescriptor, path: string): string {
-  if (!descriptor.dir) throw new Error(`Extension ${descriptor.id} has no directory.`);
-  const root = resolve(descriptor.dir);
-  const target = resolve(root, path);
-  const rel = relative(root, target);
-  if (rel === '..' || rel.startsWith('../') || rel.startsWith('..\\')) {
-    throw new Error(`Extension path escapes root: ${path}`);
-  }
-  return target;
 }
 
 function errorMessage(error: unknown): string {

@@ -41,6 +41,7 @@ export function anthropicProvider(options: AnthropicProviderOptions): StreamingC
         method: 'POST',
         headers: requestHeaders(options),
         body: JSON.stringify(anthropicBody(options, request)),
+        signal: context.signal,
       },
     );
     context.emit({

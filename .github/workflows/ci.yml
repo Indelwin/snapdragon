@@ -4,6 +4,7 @@ on:
   pull_request:
     branches:
       - main
+      - 'shannonsands/reliability-*'
   push:
     branches:
       - main

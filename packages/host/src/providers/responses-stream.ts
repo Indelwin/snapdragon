@@ -23,7 +23,7 @@ export async function readResponsesStream(
   let finishReason: string | undefined;
   let streamError: string | undefined;
 
-  for await (const payload of sseLines(body)) {
+  for await (const payload of sseLines(body, context.signal)) {
     const event = safeJson<Record<string, unknown>>(payload);
     if (!event) continue;
     const type = event.type;

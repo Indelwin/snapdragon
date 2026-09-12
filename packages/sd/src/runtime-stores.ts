@@ -16,6 +16,6 @@ export function createIndexedRuntimeStores(
   const memory = createSdMemoryStore(config, profile, extensionRuntime.memoryProviders);
   const todo = createSdTodoStore(config, profile);
   const channels = createSdGatewayChannelStore(config);
-  attachSdSearchIndex(config, profile, memory, skills);
-  return { skills, memory, todo, channels };
+  const searchIndex = attachSdSearchIndex(config, profile, memory, skills);
+  return { skills, memory, todo, channels, searchIndex };
 }

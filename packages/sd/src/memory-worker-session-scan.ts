@@ -1,14 +1,20 @@
-import { readMessagePreviews, type SessionMessagePreview } from '@snapdragon-ai/session';
+import { type MessagePreviewBatch, readMessagePreviewBatch } from '@snapdragon-ai/session';
 
 export async function readMemoryWorkerMessages(args: {
   path: string;
-  watermark: number;
+  byteOffset: number;
+  skipPartialLine: boolean;
+  maxRecords: number;
+  maxBytes: number;
   includeAssistant: boolean;
   maxEntryChars?: number;
-}): Promise<SessionMessagePreview[]> {
-  return readMessagePreviews(args.path, {
+}): Promise<MessagePreviewBatch> {
+  return readMessagePreviewBatch(args.path, {
+    startOffset: args.byteOffset,
+    skipPartialLine: args.skipPartialLine,
+    maxRecords: args.maxRecords,
+    maxBytes: args.maxBytes,
     roles: args.includeAssistant ? ['user', 'assistant'] : ['user'],
-    afterCreatedAt: args.watermark,
     includeContent: true,
     includeToolCalls: false,
     maxContentChars: Math.max(1_500, (args.maxEntryChars ?? 1_200) + 300),

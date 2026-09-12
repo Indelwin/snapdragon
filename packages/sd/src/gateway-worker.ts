@@ -66,15 +66,17 @@ export async function runGatewayWorkerService(
     runtimeOptions: options,
     env,
   });
-  const stores = createIndexedRuntimeStores(config, profile, extensionRuntime);
-  const logs: string[] = [];
-
-  const sessionIndexResolution = resolveSessionIndexForWorker(name, config);
-  if (sessionIndexResolution.disabled) {
-    return { service: name, summary: `${name} disabled`, metrics: {}, logs };
-  }
-  const sessionIndex = sessionIndexResolution.index;
+  let searchIndex: ReturnType<typeof createIndexedRuntimeStores>['searchIndex'];
+  let sessionIndex: SdSessionIndex | undefined;
   try {
+    const stores = createIndexedRuntimeStores(config, profile, extensionRuntime);
+    searchIndex = stores.searchIndex;
+    const logs: string[] = [];
+    const sessionIndexResolution = resolveSessionIndexForWorker(name, config);
+    if (sessionIndexResolution.disabled) {
+      return { service: name, summary: `${name} disabled`, metrics: {}, logs };
+    }
+    sessionIndex = sessionIndexResolution.index;
     const service = serviceByName(name, config, sessionIndex);
     if (!service) throw new Error(`Unknown gateway service: ${name}`);
     const chat = tryBackgroundChat(config, args);
@@ -100,6 +102,8 @@ export async function runGatewayWorkerService(
     };
   } finally {
     sessionIndex?.close();
+    searchIndex?.close();
+    await extensionRuntime.dispose();
   }
 }
 

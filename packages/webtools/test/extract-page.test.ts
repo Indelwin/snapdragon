@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { CamofoxClient } from '../src/camofox.js';
 import { type WebExtractOptions, webExtract } from '../src/extract-page.js';
 import { fetchPage } from '../src/http.js';
+import { WebtoolsResourceLimitError } from '../src/resource-limits.js';
+import { getWebtoolsWasmMemoryStats } from '../src/wasm.js';
 
 const encoder = new TextEncoder();
 
@@ -21,6 +24,7 @@ test('fetchPage truncates streaming bodies at maxBytes', async () => {
   try {
     const page = await fetchPage('https://example.com/large', { maxBytes: 8 });
     assert.equal(page.html, 'abcdefgh');
+    assert.equal(page.truncated, true);
     assert.equal(page.status, 200);
     assert.equal(page.contentType, 'text/html');
   } finally {
@@ -29,6 +33,7 @@ test('fetchPage truncates streaming bodies at maxBytes', async () => {
 });
 
 test('webExtract uses an available Camofox client before static fetch', async () => {
+  const statsBefore = getWebtoolsWasmMemoryStats();
   const restore = mockFetch(new Response('<html>unused</html>'));
   const calls: string[] = [];
   const camofox: NonNullable<WebExtractOptions['camofox']> = {
@@ -42,6 +47,7 @@ test('webExtract uses an available Camofox client before static fetch', async ()
         ok: true,
         contentType: 'text/html',
         html: '<html><body><main><h1>Camofox</h1><p>Rendered page.</p></main></body></html>',
+        truncated: false,
         source: 'camofox',
       };
     },
@@ -51,6 +57,46 @@ test('webExtract uses an available Camofox client before static fetch', async ()
     assert.equal(page.source, 'camofox');
     assert.deepEqual(calls, ['https://example.com/rendered']);
     assert.match(page.markdown, /Rendered page/);
+    assert.deepEqual(getWebtoolsWasmMemoryStats(), statsBefore);
+  } finally {
+    restore();
+  }
+});
+
+test('webExtract disposes its core when validation fails', async () => {
+  const statsBefore = getWebtoolsWasmMemoryStats();
+  await assert.rejects(() => webExtract('not a url', { preferCamofox: false }), /invalid URL/);
+  assert.deepEqual(getWebtoolsWasmMemoryStats(), statsBefore);
+});
+
+test('fetchPage rejects maxBytes above the validated HTML response ceiling', async () => {
+  await assert.rejects(
+    () => fetchPage('https://example.com/large', { maxBytes: 2_000_001 }),
+    (error) =>
+      error instanceof WebtoolsResourceLimitError && error.resource === 'HTTP response bytes',
+  );
+});
+
+test('webExtract reports a truncated Camofox JSON response as a budget error', async () => {
+  const statsBefore = getWebtoolsWasmMemoryStats();
+  const restore = mockFetch((url) => {
+    if (String(url).endsWith('/health')) return new Response('ok');
+    return new Response('{"html":"rendered content"}', {
+      headers: { 'content-type': 'application/json' },
+    });
+  });
+  try {
+    await assert.rejects(
+      () =>
+        webExtract('https://example.com/rendered', {
+          camofox: new CamofoxClient({ baseUrl: 'http://camofox.test' }),
+          maxBytes: 8,
+        }),
+      (error) =>
+        error instanceof WebtoolsResourceLimitError &&
+        error.resource === 'Camofox JSON response bytes',
+    );
+    assert.deepEqual(getWebtoolsWasmMemoryStats(), statsBefore);
   } finally {
     restore();
   }

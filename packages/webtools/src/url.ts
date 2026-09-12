@@ -10,6 +10,7 @@
 
 import { callWasm } from './common.js';
 import { loadWebtools, type WebtoolsCore } from './wasm.js';
+import { disposeOwnedCore, type WebtoolsCoreOwnership } from './wasm-ownership.js';
 
 export interface UrlUtilRequest {
   op: string;
@@ -18,7 +19,14 @@ export interface UrlUtilRequest {
 
 /** Convenience helpers — each is a one-line dispatch into the wasm core. */
 export class UrlUtils {
-  constructor(private readonly core: WebtoolsCore) {}
+  constructor(
+    private readonly core: WebtoolsCore,
+    private readonly ownership: WebtoolsCoreOwnership,
+  ) {}
+
+  dispose(): void {
+    disposeOwnedCore(this.core, this.ownership);
+  }
 
   /** Parse, repair (add `https://` when missing), canonicalize, drop tracking. */
   normalize(raw: string): string | null {
@@ -81,5 +89,5 @@ export class UrlUtils {
 /** Load wasm (cached) and return a ready-to-use `UrlUtils` instance. */
 export async function urlUtils(): Promise<UrlUtils> {
   const core = await loadWebtools();
-  return new UrlUtils(core);
+  return new UrlUtils(core, 'owned');
 }

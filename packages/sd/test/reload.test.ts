@@ -1,11 +1,13 @@
 import assert from 'node:assert/strict';
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable, Writable } from 'node:stream';
 import test from 'node:test';
 import { parseArgs } from '../src/args.ts';
+import { RELOAD_OUTPUT_TAIL_BYTES } from '../src/bounded-output-tail.ts';
 import {
+  defaultReloadShellRunner,
   formatReloadReport,
   parseReloadArg,
   type ReloadShellResult,
@@ -54,6 +56,11 @@ test('reloadSdRuntime rebuilds runtime without spawning anything by default', as
     const runtime = await createSdRuntime(parseArgs(['--config', configPath, '--cwd', workspace]));
     const initialAgent = runtime.agent;
     const { runner, calls } = fakeRunner();
+    await writeFile(
+      configPath,
+      `${await readFile(configPath, 'utf8')}agent:\n  max_tokens: 64000\n`,
+      'utf8',
+    );
 
     const report = await reloadSdRuntime(runtime, { runner });
 
@@ -63,6 +70,7 @@ test('reloadSdRuntime rebuilds runtime without spawning anything by default', as
     assert.equal(report.built, undefined);
     assert.ok(report.durationMs >= 0);
     assert.match(report.provider, /\//);
+    assert.equal(runtime.config.agent?.max_tokens, 64_000, 'bare reload re-reads data config');
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
@@ -77,7 +85,8 @@ test('reloadSdRuntime with pull invokes git and proceeds even on success', async
       'git pull --ff-only': { stdout: 'Already up to date.\n', stderr: '', code: 0 },
     });
 
-    const report = await reloadSdRuntime(runtime, { pull: true, runner });
+    const initialAgent = runtime.agent;
+    const report = await reloadSdRuntime(runtime, { pull: true, runner, draft: 'pending text' });
 
     assert.deepEqual(
       calls.map((c) => ({ command: c.command, args: c.args })),
@@ -86,6 +95,9 @@ test('reloadSdRuntime with pull invokes git and proceeds even on success', async
     assert.equal(calls[0].cwd, runtime.agent.cwd);
     assert.equal(report.pulled?.ok, true);
     assert.match(report.pulled?.tail ?? '', /up to date/);
+    assert.strictEqual(runtime.agent, initialAgent, 'executable reload waits for a restart');
+    assert.equal(report.restart?.state.sessionId, runtime.session?.sessionId);
+    assert.equal(report.restart?.state.draft, 'pending text');
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
@@ -127,12 +139,9 @@ test('reloadSdRuntime calls progress before each step', async () => {
       progress: (label) => labels.push(label),
     });
 
-    // Three beats: pull → build → rebuild. Bare reload only fires the rebuild
-    // beat; tested separately below.
-    assert.equal(labels.length, 3);
+    assert.equal(labels.length, 2);
     assert.match(labels[0] ?? '', /git pull/);
     assert.match(labels[1] ?? '', /building/);
-    assert.match(labels[2] ?? '', /rebuilding/);
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
@@ -154,25 +163,26 @@ test('reloadSdRuntime bare reload still emits the rebuild progress beat', async 
   }
 });
 
-test('reloadSdRuntime sync runs pull then build then rebuild', async () => {
+test('reloadSdRuntime sync runs pull then build and requests restart', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-reload-sync-'));
   try {
     const configPath = await writeMockConfig(workspace);
     const runtime = await createSdRuntime(parseArgs(['--config', configPath, '--cwd', workspace]));
     const { runner, calls } = fakeRunner();
 
-    await reloadSdRuntime(runtime, { pull: true, build: true, runner });
+    const report = await reloadSdRuntime(runtime, { pull: true, build: true, runner });
 
     assert.deepEqual(
       calls.map((c) => `${c.command} ${c.args.join(' ')}`),
       ['git pull --ff-only', 'npm run build'],
     );
+    assert.equal(report.restart?.kind, 'restart');
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
 });
 
-test('reloadSdRuntime reports failures but still rebuilds runtime', async () => {
+test('reloadSdRuntime reports executable failures and keeps the current runtime', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-reload-fail-'));
   try {
     const configPath = await writeMockConfig(workspace);
@@ -186,13 +196,33 @@ test('reloadSdRuntime reports failures but still rebuilds runtime', async () => 
 
     assert.equal(report.built?.ok, false);
     assert.match(report.built?.tail ?? '', /TS1234/);
-    assert.notStrictEqual(runtime.agent, initialAgent, 'rebuild still runs after a build failure');
+    assert.strictEqual(runtime.agent, initialAgent, 'failed build keeps the current runtime');
+    assert.equal(report.restart, undefined);
   } finally {
     await rm(workspace, { force: true, recursive: true });
   }
 });
 
-test('formatReloadReport always includes the restart-required disclosure', () => {
+test('default reload runner retains bounded stdout and stderr tails', async () => {
+  const marker = 'reload-output-end';
+  const result = await defaultReloadShellRunner(
+    process.execPath,
+    [
+      '-e',
+      `process.stdout.write('o'.repeat(${RELOAD_OUTPUT_TAIL_BYTES * 4}) + '${marker}');` +
+        `process.stderr.write('e'.repeat(${RELOAD_OUTPUT_TAIL_BYTES * 4}) + '${marker}');`,
+    ],
+    process.cwd(),
+  );
+
+  assert.equal(result.code, 0);
+  assert.ok(Buffer.byteLength(result.stdout) <= RELOAD_OUTPUT_TAIL_BYTES);
+  assert.ok(Buffer.byteLength(result.stderr) <= RELOAD_OUTPUT_TAIL_BYTES);
+  assert.match(result.stdout, new RegExp(`${marker}$`));
+  assert.match(result.stderr, new RegExp(`${marker}$`));
+});
+
+test('formatReloadReport distinguishes data reloads from executable restart requests', () => {
   const text = formatReloadReport({
     extensions: 2,
     extensionErrors: 0,
@@ -204,11 +234,24 @@ test('formatReloadReport always includes the restart-required disclosure', () =>
   });
   assert.match(text, /Reload complete/);
   assert.match(text, /extensions: 2/);
-  assert.match(text, /Restart required for changes to:/);
-  assert.match(text, /@snapdragon-ai\/host/);
-  assert.match(text, /@snapdragon-ai\/agent/);
-  assert.match(text, /@snapdragon-ai\/tools/);
-  assert.match(text, /@snapdragon-ai\/sd/);
+  assert.doesNotMatch(text, /Restart/);
+
+  const restartText = formatReloadReport({
+    extensions: 2,
+    extensionErrors: 0,
+    skills: 5,
+    profiles: 1,
+    services: 2,
+    provider: 'mock/mock',
+    durationMs: 7,
+    restart: {
+      kind: 'restart',
+      reason: 'executable_reload',
+      state: { noSession: true, provider: 'mock', model: 'mock', noProfile: true },
+    },
+  });
+  assert.match(restartText, /Reload prepared/);
+  assert.match(restartText, /Restart requested after the current run drains/);
 });
 
 test('formatReloadReport surfaces extension errors when present', () => {
@@ -236,7 +279,7 @@ test('handleCommand /reload routes through reloadSdRuntime and prints the report
       await handleCommand('/reload', runtime, [], io.io);
       assert.equal(calls.length, 0, 'bare /reload does not shell out');
       assert.match(io.output(), /Reload complete/);
-      assert.match(io.output(), /Restart required/);
+      assert.doesNotMatch(io.output(), /Restart/);
     } finally {
       setReloadShellRunnerForTests(undefined);
     }
@@ -254,13 +297,14 @@ test('handleCommand /reload sync triggers pull and build through the injected ru
     setReloadShellRunnerForTests(runner);
     try {
       const io = memoryIo();
-      await handleCommand('/reload sync', runtime, [], io.io);
+      const result = await handleCommand('/reload sync', runtime, [], io.io);
       assert.deepEqual(
         calls.map((c) => `${c.command} ${c.args.join(' ')}`),
         ['git pull --ff-only', 'npm run build'],
       );
       assert.match(io.output(), /pull\s+ok/);
       assert.match(io.output(), /build\s+ok/);
+      assert.equal(result.restart?.state.sessionId, runtime.session?.sessionId);
     } finally {
       setReloadShellRunnerForTests(undefined);
     }

@@ -46,7 +46,7 @@ async function runService(name: string | undefined, args: SdCliArgs): Promise<st
       ? `${name}: runs=${status.runs} errors=${status.errors} ${status.last_summary ?? ''}\n`
       : `Unknown gateway service: ${name}\n`;
   } finally {
-    stopSdRuntime(runtime);
+    await stopSdRuntime(runtime);
   }
 }
 

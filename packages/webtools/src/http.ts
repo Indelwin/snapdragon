@@ -1,3 +1,10 @@
+import {
+  assertByteLength,
+  boundedInteger,
+  DEFAULT_HTTP_MAX_BYTES,
+  MAX_HTTP_MAX_BYTES,
+  MAX_URL_BYTES,
+} from './resource-limits.js';
 import { type UrlUtils, urlUtils } from './url.js';
 
 export interface FetchPageOptions {
@@ -14,22 +21,37 @@ export interface FetchPageResult {
   ok: boolean;
   contentType: string;
   html: string;
+  truncated: boolean;
   source: 'fetch' | 'jina' | 'camofox';
 }
 
 const DEFAULT_UA = 'SnapdragonCrawler/0.1 (+https://github.com/Indelwin/snapdragon)';
 const DEFAULT_TIMEOUT_MS = 20_000;
-const DEFAULT_MAX_BYTES = 2_000_000;
 
 export async function fetchPage(
   url: string,
   options: FetchPageOptions = {},
 ): Promise<FetchPageResult> {
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  assertByteLength(url, 'HTTP URL bytes', MAX_URL_BYTES);
+  const timeoutMs = boundedInteger(
+    options.timeoutMs,
+    DEFAULT_TIMEOUT_MS,
+    'HTTP timeout milliseconds',
+    1,
+    120_000,
+  );
+  const maxBytes = boundedInteger(
+    options.maxBytes,
+    DEFAULT_HTTP_MAX_BYTES,
+    'HTTP response bytes',
+    1,
+    MAX_HTTP_MAX_BYTES,
+  );
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
-  const onAbort = () => ac.abort();
+  const onAbort = () => ac.abort(options.signal?.reason);
   options.signal?.addEventListener('abort', onAbort, { once: true });
+  if (options.signal?.aborted) onAbort();
   try {
     const res = await fetch(url, {
       redirect: 'follow',
@@ -40,14 +62,15 @@ export async function fetchPage(
       },
     });
     const contentType = res.headers.get('content-type') ?? '';
-    const html = await readLimitedText(res, options.maxBytes ?? DEFAULT_MAX_BYTES);
+    const body = await readLimitedText(res, maxBytes);
     return {
       url,
       finalUrl: res.url || url,
       status: res.status,
       ok: res.ok,
       contentType,
-      html,
+      html: body.text,
+      truncated: body.truncated,
       source: 'fetch',
     };
   } finally {
@@ -70,16 +93,31 @@ export async function fetchViaJina(
 }
 
 export async function shouldUseJina(url: string, helper?: UrlUtils): Promise<boolean> {
-  const utils = helper ?? (await urlUtils());
+  if (helper) return hasJinaPreferredHost(url, helper);
+  const utils = await urlUtils();
+  try {
+    return hasJinaPreferredHost(url, utils);
+  } finally {
+    utils.dispose();
+  }
+}
+
+function hasJinaPreferredHost(url: string, utils: UrlUtils): boolean {
   const host = utils.host(url) ?? '';
   return host.endsWith('x.com') || host.endsWith('twitter.com') || host.endsWith('medium.com');
 }
 
-async function readLimitedText(res: Response, maxBytes: number): Promise<string> {
+export async function readLimitedText(
+  res: Response,
+  maxBytes: number,
+): Promise<{ text: string; truncated: boolean; bytesRead: number }> {
   const reader = res.body?.getReader();
-  if (!reader) return await res.text();
+  if (!reader) {
+    return { text: '', truncated: false, bytesRead: 0 };
+  }
   const chunks: Uint8Array[] = [];
   let total = 0;
+  let truncated = false;
   while (true) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -88,6 +126,8 @@ async function readLimitedText(res: Response, maxBytes: number): Promise<string>
     if (total > maxBytes) {
       const allowed = value.byteLength - (total - maxBytes);
       chunks.push(value.slice(0, Math.max(0, allowed)));
+      truncated = true;
+      await reader.cancel('webtools HTTP response byte budget reached');
       break;
     }
     chunks.push(value);
@@ -98,5 +138,5 @@ async function readLimitedText(res: Response, maxBytes: number): Promise<string>
     out.set(c, offset);
     offset += c.byteLength;
   }
-  return new TextDecoder().decode(out);
+  return { text: new TextDecoder().decode(out), truncated, bytesRead: total };
 }

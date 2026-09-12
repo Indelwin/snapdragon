@@ -237,9 +237,12 @@ export {
 } from './skill-builder.js';
 export type { SdTuiOptions } from './tui/index.js';
 
-export async function runTui(runtime: SdRuntime, options?: SdTuiOptions): Promise<void> {
+export async function runTui(
+  runtime: SdRuntime,
+  options?: SdTuiOptions,
+): Promise<import('./reload.js').SdRestartRequest | undefined> {
   const tui = await import('./tui/index.js');
-  await tui.runTui(runtime, options);
+  return tui.runTui(runtime, options);
 }
 
 export const sdPackageName = '@snapdragon-ai/sd';

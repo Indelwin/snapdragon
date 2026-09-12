@@ -63,6 +63,7 @@ export function codexProvider(options: CodexProviderOptions): StreamingChatHandl
       method: 'POST',
       headers: requestHeaders(auth),
       body: JSON.stringify(body),
+      signal: context.signal,
     });
     if (!response.ok) await throwCodexProviderError(response);
     if (!response.body) throw new Error('openai-codex: missing response body');

@@ -5,8 +5,10 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import { mockProvider } from '@snapdragon-ai/host';
 import { estimateMessagesTokens, SessionStore } from '@snapdragon-ai/session';
-import { createAgent, createCodingReplAgent } from '../src/index.ts';
+import { ToolRegistry } from '@snapdragon-ai/tools';
+import { ContextBudgetExceededError, createAgent, createCodingReplAgent } from '../src/index.ts';
 import { transientProviderRetryDelayMs } from '../src/provider-retry.ts';
+import { estimateRequestTokens } from '../src/request-context.ts';
 import { parseToolArgs } from '../src/tool-args.ts';
 
 test('coding repl agent can call the REPL tool and continue', async () => {
@@ -332,7 +334,7 @@ test('agent sends compacted session context when context windowing is enabled', 
       chunkTargetTokens: 100,
       summaryTargetTokens: 12,
       minChunkMessages: 2,
-      maxRequestTokens: 40,
+      maxRequestTokens: 200,
     },
   });
   await agent.prompt('visible', { requestInput });
@@ -391,6 +393,117 @@ test('agent shrinks the fresh tail when the assembled request still exceeds budg
     false,
   );
   assert.ok(session.contextChunks().length > 0);
+});
+
+test('agent reserves system, tool, and invocation tokens before planning history', async () => {
+  const maxRequestTokens = 850;
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-agent-')) });
+  const session = store.create('agent_context_fixed_reserve');
+  for (let index = 0; index < 6; index += 1) {
+    session.appendMessage({
+      role: 'user',
+      content: `old fixed history ${index + 1} ${'x'.repeat(250)}`,
+    });
+  }
+  assert.ok(
+    estimateMessagesTokens(session.assembleContext({ freshTailCount: 1 })) < maxRequestTokens,
+  );
+
+  const registry = new ToolRegistry({ cwd: process.cwd() });
+  await registry.register({
+    name: 'fixed-input',
+    title: 'Fixed input',
+    description: 'Fixed input fixture',
+    tools: [
+      {
+        name: 'large_schema_tool',
+        toolset: 'fixed-input',
+        description: 'tool schema '.repeat(80),
+        parameters: { type: 'object', properties: {}, additionalProperties: false },
+        async run() {
+          return { content: 'unused' };
+        },
+      },
+    ],
+  });
+  let requestTokens = 0;
+  const agent = await createAgent({
+    provider: async (request) => {
+      requestTokens = estimateRequestTokens(request.messages, request.tools);
+      return { content: 'done' };
+    },
+    cwd: process.cwd(),
+    session,
+    tools: registry,
+    systemPrompt: 'fixed system input '.repeat(40),
+    context: {
+      enabled: true,
+      freshTailCount: 1,
+      chunkTargetTokens: 2_000,
+      summaryTargetTokens: 20,
+      maxRequestTokens,
+    },
+  });
+
+  await agent.prompt('visible', {
+    requestInput: [{ type: 'text', text: 'provider invocation context '.repeat(15) }],
+  });
+
+  assert.ok(session.contextChunks().length > 0);
+  assert.ok(requestTokens <= maxRequestTokens, `${requestTokens} exceeds ${maxRequestTokens}`);
+  await agent.dispose();
+  await registry.dispose();
+});
+
+test('agent fails preflight with a typed error when fixed context cannot fit', async () => {
+  let providerCalls = 0;
+  const store = new SessionStore({ root: mkdtempSync(join(tmpdir(), 'snapdragon-agent-')) });
+  const session = store.create('agent_context_irreducible');
+  const agent = await createAgent({
+    provider: async () => {
+      providerCalls += 1;
+      return { content: 'should not run' };
+    },
+    cwd: process.cwd(),
+    session,
+    systemPrompt: 'fixed system input '.repeat(200),
+    context: {
+      enabled: true,
+      freshTailCount: 1,
+      chunkTargetTokens: 20,
+      summaryTargetTokens: 10,
+      minChunkMessages: 1,
+      maxRequestTokens: 20,
+    },
+  });
+
+  await assert.rejects(
+    agent.prompt('fixed user input'),
+    (error) =>
+      error instanceof ContextBudgetExceededError &&
+      error.maxRequestTokens === 20 &&
+      error.estimatedTokens > error.maxRequestTokens,
+  );
+  assert.equal(providerCalls, 0);
+});
+
+test('agent fails typed preflight without a session instead of discarding history', async () => {
+  let providerCalls = 0;
+  const agent = await createAgent({
+    provider: async () => {
+      providerCalls += 1;
+      return { content: 'should not run' };
+    },
+    cwd: process.cwd(),
+    systemPrompt: 'fixed system input '.repeat(100),
+    context: { enabled: true, maxRequestTokens: 20 },
+  });
+
+  await assert.rejects(agent.prompt('preserve this visible history'), ContextBudgetExceededError);
+
+  assert.equal(providerCalls, 0);
+  assert.equal(agent.messages.at(-1)?.content, 'preserve this visible history');
+  await agent.dispose();
 });
 
 test('agent retries context-window provider errors with stronger compaction pressure', async () => {
@@ -515,4 +628,128 @@ test('agent does not emit an empty-content error when tool calls are present', a
 
   await agent.prompt('do thing');
   assert.equal(errorEvents, 0);
+});
+
+test('agent disposal aborts and awaits active tool work before clearing listeners', async () => {
+  let markToolStarted: (() => void) | undefined;
+  const toolStarted = new Promise<void>((resolve) => {
+    markToolStarted = resolve;
+  });
+  let toolAborted = false;
+  const registry = new ToolRegistry({ cwd: process.cwd() });
+  await registry.register({
+    name: 'waiter',
+    title: 'Waiter',
+    description: 'Wait for cancellation',
+    tools: [
+      {
+        name: 'wait_for_abort',
+        toolset: 'waiter',
+        description: 'Wait for cancellation',
+        parameters: { type: 'object', properties: {}, additionalProperties: false },
+        async run(_args, context) {
+          markToolStarted?.();
+          return new Promise((resolve) => {
+            context.signal?.addEventListener(
+              'abort',
+              () => {
+                toolAborted = true;
+                resolve({ content: 'cancelled' });
+              },
+              { once: true },
+            );
+          });
+        },
+      },
+    ],
+  });
+  let providerCalls = 0;
+  const agent = await createAgent({
+    cwd: process.cwd(),
+    systemPrompt: '',
+    tools: registry,
+    provider: async () => {
+      providerCalls += 1;
+      return {
+        content: '',
+        tool_calls: [{ id: 'wait-1', name: 'wait_for_abort', args_json: '{}' }],
+      };
+    },
+  });
+  agent.subscribe(() => undefined);
+
+  const prompt = agent.prompt('wait');
+  await toolStarted;
+  await Promise.all([agent.dispose(), agent.dispose()]);
+
+  await assert.rejects(prompt, /Agent run aborted/);
+  assert.equal(toolAborted, true);
+  assert.equal(providerCalls, 1);
+  assert.equal(agent.listeners.size, 0);
+  agent.subscribe(() => undefined);
+  assert.equal(agent.listeners.size, 0);
+});
+
+test('agent disposal owns created toolsets but preserves injected registries', async () => {
+  let ownedDisposals = 0;
+  const owned = await createAgent({
+    cwd: process.cwd(),
+    systemPrompt: '',
+    provider: async () => ({ content: 'unused' }),
+    tools: [
+      {
+        name: 'owned',
+        title: 'Owned',
+        description: 'Owned lifecycle fixture',
+        tools: [],
+        dispose: () => {
+          ownedDisposals += 1;
+        },
+      },
+    ],
+  });
+  await Promise.all([owned.dispose(), owned.dispose()]);
+  assert.equal(ownedDisposals, 1);
+
+  let sharedDisposals = 0;
+  const sharedRegistry = new ToolRegistry({ cwd: process.cwd() });
+  await sharedRegistry.register({
+    name: 'shared',
+    title: 'Shared',
+    description: 'Shared lifecycle fixture',
+    tools: [],
+    dispose: () => {
+      sharedDisposals += 1;
+    },
+  });
+  const shared = await createAgent({
+    cwd: process.cwd(),
+    systemPrompt: '',
+    provider: async () => ({ content: 'unused' }),
+    tools: sharedRegistry,
+  });
+  await shared.dispose();
+  assert.equal(sharedDisposals, 0);
+  await Promise.all([sharedRegistry.dispose(), sharedRegistry.dispose()]);
+  assert.equal(sharedDisposals, 1);
+});
+
+test('coding agent owns toolsets registered on its runtime registry', async () => {
+  let disposals = 0;
+  const agent = await createCodingReplAgent({
+    cwd: process.cwd(),
+    provider: async () => ({ content: 'unused' }),
+  });
+  await agent.registry.register({
+    name: 'runtime-owned',
+    title: 'Runtime owned',
+    description: 'Runtime lifecycle fixture',
+    tools: [],
+    dispose: () => {
+      disposals += 1;
+    },
+  });
+
+  await Promise.all([agent.dispose(), agent.dispose()]);
+  assert.equal(disposals, 1);
 });

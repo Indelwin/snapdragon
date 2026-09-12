@@ -1,4 +1,6 @@
 /node_modules
+**/node_modules/
+.quality/reliability/
 /target
 packages/*/dist
 examples/*/dist

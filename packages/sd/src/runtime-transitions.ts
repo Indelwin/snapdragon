@@ -1,17 +1,13 @@
 import type { JsonlSession } from '@snapdragon-ai/session';
-import { activateSdExtensions } from './extension-runtime.js';
-import { createSdExtensionStore } from './extensions.js';
-import { ensureFirstPartyExtensionsForConfig } from './first-party.js';
 import type { SdProfileInfo } from './profile.js';
 import { resolveSdRuntimeConfig, type SdRuntimeCliOverrides } from './profile-runtime.js';
-import { makeSdProvider } from './provider.js';
 import type { SdRuntime } from './runtime.js';
 import { applyRuntimeRebuild } from './runtime-rebuild-services.js';
-import { runtimeSessionStore } from './runtime-session.js';
-import { runtimeSessionMeta } from './runtime-session-meta-record.js';
 import { recordSystemCommand } from './runtime-system-command.js';
 
 export interface SdRuntimeRebuildOptions {
+  baseConfig?: import('./config.js').SdConfig;
+  createSession?: boolean;
   profile?: SdProfileInfo | null;
   session?: JsonlSession | null;
   provider?: string;
@@ -26,6 +22,8 @@ export async function rebuildSdRuntime(
   const profile = profileOrCurrent(options, runtime.profile);
   const session = sessionOrCurrent(options, runtime.session);
   await applyRuntimeRebuild(runtime, {
+    baseConfig: options.baseConfig,
+    createSession: options.createSession,
     profile,
     session,
     overrides: runtimeOverrides(runtime, options),
@@ -43,24 +41,8 @@ export async function switchRuntimeProfile(
     profile,
     runtimeOverrides(runtime, {}),
   );
-  ensureFirstPartyExtensionsForConfig(config);
-  const extensions = createSdExtensionStore(config, profile);
-  const extensionRuntime = await activateSdExtensions({
-    store: extensions,
-    config,
-    profile,
-    runtimeOptions: runtime.options,
-    env: runtime.env,
-  });
-  const provider = makeSdProvider(config, {}, runtime.env, extensionRuntime.providers);
-  const session =
-    runtime.options.noSession || config.sessions?.enabled === false
-      ? undefined
-      : runtimeSessionStore(config).create(
-          undefined,
-          runtimeSessionMeta(runtime.options, provider, profile),
-        );
-  await rebuildSdRuntime(runtime, { profile, session });
+  const createSession = !runtime.options.noSession && config.sessions?.enabled !== false;
+  await rebuildSdRuntime(runtime, { profile, session: null, createSession });
   recordSystemCommand(
     runtime,
     profile ? `Switched profile to ${profile.name}.` : 'Profile cleared.',

@@ -29,10 +29,23 @@ export interface SdSkillPattern {
   examples?: CandidateExample[];
 }
 
+export interface PersistedNgramEntry {
+  ngram: string[];
+  count: number;
+  sessions: string[];
+  examples: CandidateExample[];
+}
+
 export interface BuilderState {
   version: 1;
   /** Per-session high-watermark message timestamp processed. */
-  sessions: Record<string, { last_processed_at: number }>;
+  sessions: Record<
+    string,
+    { last_processed_at: number; byte_offset?: number; skip_partial_line?: boolean }
+  >;
+  next_session_id?: string;
+  ngram_stats?: PersistedNgramEntry[];
+  session_tails?: Record<string, SkillBuilderMessageRecord[]>;
   /** Hashes of candidates already surfaced — never re-emit the same one. */
   emitted: string[];
   /** Hashes of candidates already turned into a draft SKILL.md. */

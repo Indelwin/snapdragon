@@ -22,11 +22,18 @@
     "dist",
     "README.md"
   ],
+  "bundleDependencies": [
+    "ink"
+  ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && rm -rf dist/first-party && cp -R src/first-party dist/first-party && chmod +x dist/cli.js",
-    "clean": "rm -rf dist",
+    "prepack": "npm run build --workspace @snapdragon-ai/ink && node ../../scripts/pack-renderer.mjs",
+    "postpack": "node ../../scripts/pack-renderer.mjs --clean",
+    "build": "rm -rf dist tsconfig.build.tsbuildinfo && tsc -p tsconfig.build.json && cp -R src/first-party dist/first-party && chmod +x dist/cli.js && node ../../scripts/build-info.mjs",
+    "clean": "rm -rf dist tsconfig.build.tsbuildinfo",
     "typecheck": "tsc -b tsconfig.build.json --pretty false",
-    "test": "node --test --import tsx test/*.test.ts"
+    "test": "node --test --import tsx test/*.test.ts",
+    "test:reliability:tui": "node ../../scripts/reliability/run.mjs",
+    "test:reliability:sessions": "npm --prefix ../.. test --workspace @snapdragon-ai/session && npm --prefix ../.. test --workspace @snapdragon-ai/agent && node --test --import tsx test/cli.test.ts test/cli-shutdown.test.ts test/memory-worker.test.ts test/reliability-sessions.test.ts test/reload.test.ts test/runtime.test.ts test/skill-builder.test.ts && node --max-old-space-size=128 --expose-gc ../../scripts/reliability/session-archive.mjs && node --max-old-space-size=128 --expose-gc ../../scripts/reliability/session-context-archive.mjs"
   },
   "dependencies": {
     "@snapdragon-ai/agent": "0.1.1",
@@ -39,13 +46,12 @@
     "@snapdragon-ai/webtools": "0.1.0",
     "@snapdragon-ai/ui": "0.1.1",
     "@types/figlet": "^1.7.0",
-    "@zenobius/ink-mouse": "^1.0.3",
     "dotenv": "^17.2.3",
     "figlet": "^1.11.0",
-    "ink": "^7.0.1",
-    "ink-picture": "^1.3.5",
+    "ink": "npm:@snapdragon-ai/ink@7.0.2",
     "react": "^19.2.5",
     "react-devtools-core": "^6.1.2",
+    "sharp": "^0.34.3",
     "yaml": "^2.8.1"
   },
   "devDependencies": {

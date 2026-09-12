@@ -1,4 +1,4 @@
-import type { SessionMessagePreview } from '@snapdragon-ai/session';
+import type { MessagePreviewBatch, SessionMessagePreview } from '@snapdragon-ai/session';
 import { captureMemoryRecord } from './memory-worker-capture.js';
 import {
   type MemoryWorkerScanContext,
@@ -14,7 +14,12 @@ export async function runMemoryWorkerScan(
   result: SdMemoryWorkerScanResult,
 ): Promise<void> {
   const context = memoryWorkerScanContext(options, result);
-  for (const session of context.sessions) await scanMemorySession(context, session);
+  for (const [index, session] of context.sessions.entries()) {
+    if (context.remainingRecords <= 0 || context.remainingBytes <= 0) break;
+    await scanMemorySession(context, session);
+    context.state.next_session_id =
+      context.sessions[(index + 1) % context.sessions.length]?.session_id;
+  }
   writeMemoryWorkerState(context.statePath, context.state);
 }
 
@@ -23,23 +28,41 @@ async function scanMemorySession(
   session: MemoryWorkerSession,
 ): Promise<void> {
   context.result.scanned_sessions += 1;
-  const watermark = context.state.sessions[session.session_id]?.last_processed_at ?? 0;
-  const records = await readRecordsForMemorySession(context, session, watermark);
-  if (!records) return;
+  const previous = context.state.sessions[session.session_id];
+  const watermark = previous?.last_processed_at ?? 0;
+  const batch = await readRecordsForMemorySession(
+    context,
+    session,
+    previous?.byte_offset ?? 0,
+    previous?.skip_partial_line ?? false,
+  );
+  if (!batch) return;
+  consumeBudget(context, batch);
+  const records =
+    previous && previous.byte_offset === undefined
+      ? batch.records.filter((record) => record.created_at > watermark)
+      : batch.records;
   const highest = await scanMemoryRecords(context, session.session_id, records, watermark);
-  if (highest > watermark)
-    context.state.sessions[session.session_id] = { last_processed_at: highest };
+  context.state.sessions[session.session_id] = {
+    last_processed_at: highest,
+    byte_offset: batch.nextOffset,
+    skip_partial_line: batch.skipPartialLine,
+  };
 }
 
 async function readRecordsForMemorySession(
   context: MemoryWorkerScanContext,
   session: MemoryWorkerSession,
-  watermark: number,
-): Promise<SessionMessagePreview[] | undefined> {
+  byteOffset: number,
+  skipPartialLine: boolean,
+): Promise<MessagePreviewBatch | undefined> {
   try {
     return await readMemoryWorkerMessages({
       path: session.jsonl_path,
-      watermark,
+      byteOffset,
+      skipPartialLine,
+      maxRecords: context.remainingRecords,
+      maxBytes: context.remainingBytes,
       includeAssistant: context.includeAssistant,
       maxEntryChars: context.options.config.memory?.auto?.max_entry_chars,
     });
@@ -48,6 +71,13 @@ async function readRecordsForMemorySession(
       `Failed to read ${session.jsonl_path}: ${error instanceof Error ? error.message : String(error)}`,
     );
   }
+}
+
+function consumeBudget(context: MemoryWorkerScanContext, batch: MessagePreviewBatch): void {
+  context.remainingRecords -= batch.scannedRecords;
+  context.remainingBytes -= batch.scannedBytes;
+  context.result.scanned_records += batch.scannedRecords;
+  context.result.scanned_bytes += batch.scannedBytes;
 }
 
 async function scanMemoryRecords(

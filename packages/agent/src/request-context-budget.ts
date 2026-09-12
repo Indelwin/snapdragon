@@ -4,6 +4,7 @@ import {
   estimateMessagesTokens,
   HeuristicTokenCounter,
 } from '@snapdragon-ai/session';
+import type { RequestReplacement } from './request-context-messages.js';
 import type { AgentContextOptions } from './types.js';
 
 const MAX_PREFLIGHT_COMPACTION_PASSES = 96;
@@ -37,16 +38,36 @@ export function tailCandidates(freshTailCount: number | undefined, pressure = 0)
 export function contextOptions(
   context: AgentContextOptions,
   freshTailCount: number,
+  maxRequestTokens = context.maxRequestTokens,
 ): AgentContextOptions {
   return {
     ...context,
     freshTailCount,
+    maxRequestTokens,
     minChunkMessages: 1,
     maxCompactionPasses: Math.max(
       positiveInteger(context.maxCompactionPasses) ?? 0,
       MAX_PREFLIGHT_COMPACTION_PASSES,
     ),
   };
+}
+
+export function requestHistoryBudget(
+  budget: number | undefined,
+  systemMessages: Message[],
+  tools: ToolDefinition[],
+  replacement: RequestReplacement | undefined,
+): number | undefined {
+  if (budget === undefined) return undefined;
+  const fixedTokens = estimateRequestTokens(systemMessages, tools);
+  const replacementDelta = replacement
+    ? Math.max(
+        0,
+        estimateMessagesTokens([replacement.request]) -
+          estimateMessagesTokens([replacement.visible]),
+      )
+    : 0;
+  return Math.max(1, budget - fixedTokens - replacementDelta);
 }
 
 export function maxContextPressure(): number {
