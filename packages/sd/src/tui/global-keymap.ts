@@ -1,7 +1,6 @@
 import type { MutableRefObject } from 'react';
 import { scrollChat, scrollChatToBottom } from './chat-scroll.js';
 import type { KeyLike, SetDraft } from './input-keymap.js';
-import { isMouseSgrSequence } from './mouse-sgr-filter.js';
 import type { PaletteState } from './palette-state.js';
 import type { SdUiController } from './ui.js';
 
@@ -15,7 +14,6 @@ export interface GlobalInputArgs {
 }
 
 export function handleGlobalInput(input: string, key: KeyLike, args: GlobalInputArgs): boolean {
-  if (isMouseSgrSequence(input)) return true;
   if (handleExitOrCancel(input, key, args)) return true;
   if (handleScrollKeys(key, args.controller)) return true;
   return handleDraftAndPanelKeys(input, key, args);

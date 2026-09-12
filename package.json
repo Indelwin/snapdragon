@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "workspaces": [
+    "packages/ink",
     "packages/core",
     "packages/host",
     "packages/ui",
@@ -49,13 +50,15 @@
     "test:js:coverage": "node scripts/quality/test-js-coverage.mjs",
     "test:quality": "node --test scripts/quality/test/*.test.mjs",
     "test:reliability": "node scripts/reliability/check.mjs",
+    "test:reliability:soak": "NODE_ENV=production SD_SOAK_SECONDS=3600 node --expose-gc --max-old-space-size=512 scripts/reliability/tui-soak.mjs",
     "test:rust": "cargo test --workspace -- --test-threads=1",
-    "typecheck": "npm run typecheck --workspaces --if-present",
+    "typecheck": "npm run build --workspace @snapdragon-ai/ink && npm run typecheck --workspaces --if-present",
     "version": "changeset version && npm install --package-lock-only --ignore-scripts",
     "release": "npm run build && changeset publish",
     "publish:dry": "npm run pack:dry"
   },
   "devDependencies": {
+    "ink": "file:packages/ink",
     "@biomejs/biome": "2.4.13",
     "@changesets/cli": "^2.31.0",
     "@cucumber/gherkin": "39.0.0",
@@ -64,6 +67,9 @@
     "@stryker-mutator/typescript-checker": "9.6.1",
     "@types/node": "^22.10.5",
     "typescript": "^5.9.2"
+  },
+  "overrides": {
+    "ink": "$ink"
   },
   "engines": {
     "node": ">=22.0.0",

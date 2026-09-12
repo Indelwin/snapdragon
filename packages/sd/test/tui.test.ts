@@ -797,7 +797,7 @@ test('prompt typing inserts at cursor, not just at end', () => {
   assert.equal(args.cursorRef.current, 3);
 });
 
-test('global keymap swallows xterm SGR mouse sequences before they reach the prompt', () => {
+test('global keymap leaves mouse-like text untouched after raw adapter filtering', () => {
   const consumed = handleGlobalInput(
     '[<64;10;5M',
     {},
@@ -813,7 +813,7 @@ test('global keymap swallows xterm SGR mouse sequences before they reach the pro
       historyIndexRef: { current: -1 },
     },
   );
-  assert.equal(consumed, true);
+  assert.equal(consumed, false);
 });
 
 test('prompt backspace removes char before cursor (not always last char)', () => {

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import type { SdCliArgs } from './args.js';
 import { parseArgs } from './args.js';
 import { runPreRuntimeCommand } from './cli-commands.js';
+import { prepareCliEnvironment } from './cli-environment.js';
 import { isRunMode } from './modes.js';
 import { suppressKnownNodeWarnings } from './node-warnings.js';
 import type { SdRestartRequest, SdRestartState } from './reload.js';
@@ -26,7 +27,10 @@ export async function main(
   ]);
   const runtime = await createSdRuntime(args);
   try {
-    return await runSelectedMode(args.mode, runtime, args.prompt, restartState?.draft, signal);
+    return await runSelectedMode(args.mode, runtime, args.prompt, {
+      draft: restartState?.draft,
+      signal,
+    });
   } finally {
     await stopSdRuntime(runtime);
   }
@@ -54,6 +58,7 @@ export function isDirectEntrypoint(metaUrl: string, entrypoint = process.argv[1]
 }
 
 if (isDirectEntrypoint(import.meta.url)) {
+  prepareCliEnvironment();
   runDirectEntrypoint()
     .then((code) => {
       process.exitCode = code;
