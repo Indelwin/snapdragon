@@ -1,4 +1,4 @@
-export type GatewayWorkerProcessState = 'running' | 'exited' | 'timed_out' | 'failed';
+export type GatewayWorkerProcessState = 'running' | 'exited' | 'timed_out' | 'cancelled' | 'failed';
 export type GatewayWorkerState = 'idle' | 'running' | 'offline';
 
 export interface GatewayWorkerProcess {
@@ -15,6 +15,10 @@ export interface GatewayWorkerProcess {
   exitCode?: number;
   signal?: string;
   lastError?: string;
+  stdoutPreview?: string;
+  stderrPreview?: string;
+  stdoutLog?: string;
+  stderrLog?: string;
 }
 
 export interface GatewayWorkerRegistration {

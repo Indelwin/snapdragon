@@ -1,78 +1,82 @@
+import { InlineServiceLifecycles } from './inline-service-lifecycle.js';
+import { executeServiceRun, type RunReservation, reserveServiceRun } from './inline-service-run.js';
+import { type InlineServiceState, serviceState } from './inline-service-state.js';
 import type { GatewayServiceRunner, GatewayServiceSpec, GatewayServiceStatus } from './types.js';
 
-interface ServiceState {
-  spec: GatewayServiceSpec;
-  status: GatewayServiceStatus;
-  runner?: GatewayServiceRunner;
-}
-
 export class InlineServiceStore {
-  #services = new Map<string, ServiceState>();
+  #services = new Map<string, InlineServiceState>();
+  #lifecycles = new InlineServiceLifecycles();
+  #closed = false;
 
-  register(spec: GatewayServiceSpec, runner?: GatewayServiceRunner): void {
-    this.#services.set(spec.name, serviceState(spec, runner));
+  async register(spec: GatewayServiceSpec, runner?: GatewayServiceRunner): Promise<void> {
+    await this.#withLifecycle(spec.name, async () => {
+      if (this.#closed) throw new Error('gateway services are closed');
+      const previous = this.#services.get(spec.name);
+      if (previous) {
+        previous.status.enabled = false;
+        previous.abort?.abort(new Error(`gateway service ${spec.name} replaced`));
+        await previous.tail;
+      }
+      if (this.#closed) throw new Error('gateway services are closed');
+      this.#services.set(spec.name, serviceState(spec, runner));
+    });
   }
 
-  enable(name: string, enabled: boolean): void {
-    const service = this.#require(name);
-    service.spec = { ...service.spec, enabled };
-    service.status.enabled = enabled;
-    service.status.state = enabled ? 'running' : 'stopped';
-    service.status.nextRunAtMs = undefined;
-    service.status.restartSuppressed = false;
+  async enable(name: string, enabled: boolean): Promise<void> {
+    await this.#withLifecycle(name, async () => {
+      if (this.#closed && enabled) throw new Error('gateway services are closed');
+      const service = this.#require(name);
+      service.spec = { ...service.spec, enabled };
+      service.status.enabled = enabled;
+      service.status.state = enabled ? 'running' : 'stopped';
+      service.status.nextRunAtMs = undefined;
+      service.status.restartSuppressed = false;
+      if (!enabled) {
+        service.abort?.abort(new Error(`gateway service ${name} disabled`));
+        await service.tail;
+      }
+    });
   }
 
   async run(name: string, signal?: AbortSignal): Promise<GatewayServiceStatus | undefined> {
-    const service = this.#services.get(name);
-    if (!service) return undefined;
-    if (!service.status.enabled) return { ...service.status };
-    await runServiceState(service, signal);
-    return { ...service.status };
+    const reservation = await this.#withLifecycle<RunReservation | undefined>(name, () => {
+      const service = this.#services.get(name);
+      if (!service) return undefined;
+      return reserveServiceRun(service, this.#closed);
+    });
+    if (!reservation) return undefined;
+    if ('status' in reservation) return reservation.status;
+    return executeServiceRun(reservation, signal);
   }
 
   list(): GatewayServiceStatus[] {
     return [...this.#services.values()].map((service) => ({ ...service.status }));
   }
 
-  #require(name: string): ServiceState {
+  async close(): Promise<void> {
+    if (this.#closed) return;
+    this.#closed = true;
+    await Promise.all(
+      [...this.#services.keys()].map((name) =>
+        this.#withLifecycle(name, async () => {
+          const service = this.#services.get(name);
+          if (!service) return;
+          service.status.enabled = false;
+          service.status.state = 'stopped';
+          service.abort?.abort(new Error(`gateway service ${service.spec.name} closed`));
+          await service.tail;
+        }),
+      ),
+    );
+  }
+
+  #require(name: string): InlineServiceState {
     const service = this.#services.get(name);
     if (!service) throw new Error(`Unknown gateway service: ${name}`);
     return service;
   }
-}
 
-function serviceState(spec: GatewayServiceSpec, runner?: GatewayServiceRunner): ServiceState {
-  const enabled = spec.enabled ?? true;
-  return {
-    spec,
-    runner,
-    status: {
-      name: spec.name,
-      enabled,
-      state: enabled ? 'running' : 'stopped',
-      runs: 0,
-      errors: 0,
-      consecutiveErrors: 0,
-      restartSuppressed: false,
-    },
-  };
-}
-
-async function runServiceState(service: ServiceState, signal?: AbortSignal): Promise<void> {
-  try {
-    const result = await service.runner?.run(signal);
-    service.status.runs += 1;
-    service.status.consecutiveErrors = 0;
-    service.status.lastRunAtMs = Date.now();
-    service.status.lastSummary = result?.summary;
-    service.status.state = 'running';
-    service.status.lastExitReason = 'ok';
-  } catch (error) {
-    service.status.errors += 1;
-    service.status.consecutiveErrors = (service.status.consecutiveErrors ?? 0) + 1;
-    const message = error instanceof Error ? error.message : String(error);
-    service.status.lastError = message;
-    service.status.lastExitReason = message;
-    service.status.state = 'failed';
+  async #withLifecycle<T>(name: string, operation: () => T | Promise<T>): Promise<T> {
+    return this.#lifecycles.run(name, operation);
   }
 }

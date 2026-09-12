@@ -1,3 +1,11 @@
+import type {
+  GatewayJobLease,
+  GatewayJobSpec,
+  GatewayJobStatus,
+  GatewayLease,
+  GatewayLeaseFence,
+  GatewayQueueDepth,
+} from './types-jobs.js';
 import type { GatewaySandboxLease } from './types-sandboxes.js';
 import type {
   GatewayWorkerHeartbeat,
@@ -6,6 +14,15 @@ import type {
   GatewayWorkerRegistration,
 } from './types-workers.js';
 
+export type {
+  GatewayJobLease,
+  GatewayJobSpec,
+  GatewayJobState,
+  GatewayJobStatus,
+  GatewayLease,
+  GatewayLeaseFence,
+  GatewayQueueDepth,
+} from './types-jobs.js';
 export type {
   GatewayWorkerHeartbeat,
   GatewayWorkerProcess,
@@ -38,7 +55,6 @@ export type GatewaySupervisorStrategy = 'one_for_one' | 'one_for_all' | 'rest_fo
 export type GatewayChildRestart = 'permanent' | 'transient' | 'temporary';
 export type GatewayTableAccess = 'public' | 'protected' | 'private';
 export type GatewayServiceState = 'starting' | 'running' | 'stopped' | 'failed';
-export type GatewayJobState = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 export type GatewayEventState = 'pending' | 'running' | 'done' | 'failed' | 'cancelled';
 export type GatewayAgentRuntimeKind = 'sd' | 'codex' | 'hermes' | 'pi' | 'custom';
 export type GatewayAgentRuntimeProtocol = 'embedded' | 'command' | 'jsonl' | 'http' | 'stdio';
@@ -134,47 +150,6 @@ export interface GatewayTableSnapshot {
   rows: number;
 }
 
-export interface GatewayJobSpec {
-  kind: string;
-  queue?: string;
-  payload?: unknown;
-  priority?: number;
-  maxAttempts?: number;
-  timeoutMs?: number;
-}
-
-export interface GatewayJobStatus {
-  id: string;
-  spec: Required<Omit<GatewayJobSpec, 'timeoutMs'>> & Pick<GatewayJobSpec, 'timeoutMs'>;
-  state: GatewayJobState;
-  attempts: number;
-  createdAtMs: number;
-  updatedAtMs: number;
-  leaseId?: string;
-  leaseExpiresAtMs?: number;
-  lastError?: string;
-  result?: unknown;
-}
-
-export interface GatewayLease {
-  id: string;
-  jobId: string;
-  worker: string;
-  acquiredAtMs: number;
-  expiresAtMs: number;
-}
-
-export interface GatewayQueueDepth {
-  queue: string;
-  pending: number;
-  running: number;
-}
-
-export interface GatewayJobLease {
-  job: GatewayJobStatus;
-  lease: GatewayLease;
-}
-
 export interface GatewayEventRecord {
   id: string;
   kind: string;
@@ -239,8 +214,21 @@ export interface GatewayClient extends GatewayTransport {
   cancelJob(id: string): Promise<GatewayJobStatus | undefined>;
   retryJob(id: string): Promise<GatewayJobStatus | undefined>;
   acquireJob(queue: string, worker: string, leaseMs?: number): Promise<GatewayJobLease | undefined>;
-  completeJob(id: string, result?: unknown): Promise<GatewayJobStatus | undefined>;
-  failJob(id: string, error: string): Promise<GatewayJobStatus | undefined>;
+  renewJob(
+    id: string,
+    fence: GatewayLeaseFence,
+    leaseMs?: number,
+  ): Promise<GatewayJobLease | undefined>;
+  completeJob(
+    id: string,
+    result: unknown,
+    fence: GatewayLeaseFence,
+  ): Promise<GatewayJobStatus | undefined>;
+  failJob(
+    id: string,
+    error: string,
+    fence: GatewayLeaseFence,
+  ): Promise<GatewayJobStatus | undefined>;
   appendEvent(input: {
     id?: string;
     kind: string;

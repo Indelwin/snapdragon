@@ -1,8 +1,17 @@
-import type { GatewayClient, GatewayJobLease, GatewayJobStatus } from '@snapdragon-ai/gateway';
+import type { GatewayClient } from '@snapdragon-ai/gateway';
 import type { SdCliArgs } from './args-types.js';
 import { loadSdConfig } from './config.js';
 import { gatewayErrorMessage, rustGatewayClientForConfig } from './gateway-command-client.js';
-import { acquireOptionsFromParts, resultFromParts } from './gateway-command-job-lifecycle-args.js';
+import {
+  acquireOptionsFromParts,
+  fenceOptionsFromParts,
+  resultFromParts,
+} from './gateway-command-job-lifecycle-args.js';
+import {
+  formatComplete,
+  formatFailure,
+  formatLease,
+} from './gateway-command-job-lifecycle-format.js';
 
 export async function acquireGatewayJob(rest: string[], args: SdCliArgs): Promise<string> {
   const options = acquireOptionsFromParts(rest);
@@ -18,21 +27,50 @@ export async function acquireGatewayJob(rest: string[], args: SdCliArgs): Promis
 }
 
 export async function completeGatewayJob(rest: string[], args: SdCliArgs): Promise<string> {
-  const [id, ...resultParts] = rest;
-  if (!id) return 'gateway jobs complete requires <id> [result]\n';
+  const [id, ...parts] = rest;
+  if (!id) {
+    return 'gateway jobs complete requires <id> --lease-id <id> --attempt <n> [result]\n';
+  }
+  const options = fenceOptionsFromParts(parts);
+  if (!options.ok) return options.error;
   return withGateway(args, async (client) => {
-    const job = await client.completeJob(id, resultFromParts(resultParts));
+    const job = await client.completeJob(id, resultFromParts(options.values), {
+      leaseId: options.leaseId,
+      attempt: options.attempt,
+    });
     return formatComplete(id, job);
   });
 }
 
 export async function failGatewayJob(rest: string[], args: SdCliArgs): Promise<string> {
-  const [id, ...messageParts] = rest;
-  const message = messageParts.join(' ').trim();
-  if (!id || !message) return 'gateway jobs fail requires <id> <error>\n';
+  const [id, ...parts] = rest;
+  if (!id) return 'gateway jobs fail requires <id> --lease-id <id> --attempt <n> <error>\n';
+  const options = fenceOptionsFromParts(parts);
+  if (!options.ok) return options.error;
+  const message = options.values.join(' ').trim();
+  if (!message) return 'gateway jobs fail requires an error message\n';
   return withGateway(args, async (client) => {
-    const job = await client.failJob(id, message);
+    const job = await client.failJob(id, message, {
+      leaseId: options.leaseId,
+      attempt: options.attempt,
+    });
     return formatFailure(id, message, job);
+  });
+}
+
+export async function renewGatewayJob(rest: string[], args: SdCliArgs): Promise<string> {
+  const [id, ...parts] = rest;
+  if (!id)
+    return 'gateway jobs renew requires <id> --lease-id <id> --attempt <n> [--lease-ms <n>]\n';
+  const options = fenceOptionsFromParts(parts);
+  if (!options.ok) return options.error;
+  return withGateway(args, async (client) => {
+    const renewed = await client.renewJob(
+      id,
+      { leaseId: options.leaseId, attempt: options.attempt },
+      options.leaseMs,
+    );
+    return renewed ? formatLease(renewed) : `Unknown gateway job: ${id}\n`;
   });
 }
 
@@ -46,23 +84,4 @@ async function withGateway(
   } catch (error) {
     return `Rust gateway unavailable: ${gatewayErrorMessage(error)}\n`;
   }
-}
-
-function formatLease(lease: GatewayJobLease): string {
-  const expires = new Date(lease.lease.expiresAtMs).toISOString();
-  return `acquired ${lease.job.id}\t${lease.job.spec.kind}\tqueue=${lease.job.spec.queue}\tworker=${lease.lease.worker}\tlease=${lease.lease.id}\texpires=${expires}\n`;
-}
-
-function formatComplete(id: string, job: GatewayJobStatus | undefined): string {
-  if (!job) return `Unknown gateway job: ${id}\n`;
-  return job.state === 'completed'
-    ? `completed ${job.id}\n`
-    : `job ${job.id} is ${job.state}; complete not applied\n`;
-}
-
-function formatFailure(id: string, message: string, job: GatewayJobStatus | undefined): string {
-  if (!job) return `Unknown gateway job: ${id}\n`;
-  return job.state === 'failed'
-    ? `failed ${job.id}\terror=${job.lastError ?? message}\n`
-    : `job ${job.id} is ${job.state}; failure not applied\n`;
 }

@@ -25,6 +25,7 @@ interface WireJobStatus {
   created_at_ms: number;
   updated_at_ms: number;
   lease_id?: string | null;
+  lease_attempt?: number | null;
   lease_expires_at_ms?: number | null;
   last_error?: string | null;
   result?: unknown;
@@ -53,6 +54,7 @@ interface WireLease {
   id: string;
   job_id: string;
   worker: string;
+  attempt: number;
   acquired_at_ms: number;
   expires_at_ms: number;
 }
@@ -90,6 +92,7 @@ export function fromWireJobStatus(value: WireJobStatus | undefined): GatewayJobS
     createdAtMs: Number(value.created_at_ms ?? 0),
     updatedAtMs: Number(value.updated_at_ms ?? 0),
     leaseId: value.lease_id ?? undefined,
+    leaseAttempt: value.lease_attempt ?? undefined,
     leaseExpiresAtMs: value.lease_expires_at_ms ?? undefined,
     lastError: value.last_error ?? undefined,
     result: value.result,
@@ -107,6 +110,7 @@ export function fromWireLease(value: WireLease): GatewayLease {
     id: value.id,
     jobId: value.job_id,
     worker: value.worker,
+    attempt: Number(value.attempt ?? 0),
     acquiredAtMs: Number(value.acquired_at_ms ?? 0),
     expiresAtMs: Number(value.expires_at_ms ?? 0),
   };

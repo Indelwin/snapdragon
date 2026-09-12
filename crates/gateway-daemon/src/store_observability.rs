@@ -2,14 +2,14 @@ use rusqlite::params;
 use snapdragon_gateway_core::{GatewayLease, GatewayLogRecord, GatewayQueueDepth};
 
 use crate::GatewayStore;
-use crate::store_events::log_from_row;
+use crate::{store_events::log_from_row, store_leases::lease_from_row};
 
 impl GatewayStore {
     pub fn active_leases(&self, now_ms: u64) -> Result<Vec<GatewayLease>, String> {
         self.with_conn(|conn| {
             let mut stmt = conn
                 .prepare(
-                    "select id, job_id, worker, acquired_at_ms, expires_at_ms
+                    "select id, job_id, worker, attempt, acquired_at_ms, expires_at_ms
                      from gateway_leases where expires_at_ms > ?1 order by expires_at_ms, id",
                 )
                 .map_err(|error| error.to_string())?;
@@ -57,16 +57,6 @@ impl GatewayStore {
             Ok(logs)
         })
     }
-}
-
-fn lease_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GatewayLease> {
-    Ok(GatewayLease {
-        id: row.get(0)?,
-        job_id: row.get(1)?,
-        worker: row.get(2)?,
-        acquired_at_ms: row.get(3)?,
-        expires_at_ms: row.get(4)?,
-    })
 }
 
 fn queue_depth_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GatewayQueueDepth> {

@@ -1,4 +1,5 @@
 import type { RustGatewayCall } from './rust-call.js';
+import { readAllRustPages } from './rust-pages.js';
 import {
   fromWireWorkerRecord,
   toWireWorkerHeartbeat,
@@ -31,9 +32,7 @@ export async function heartbeatRustWorker(
 }
 
 export async function listRustWorkers(call: RustGatewayCall): Promise<GatewayWorkerRecord[]> {
-  return ((await call('workers.list')) as unknown[])
-    .map((worker) => fromWireWorkerRecord(worker as any))
-    .filter((worker): worker is GatewayWorkerRecord => worker !== undefined);
+  return readAllRustPages(call, 'workers.list', (worker) => fromWireWorkerRecord(worker as any));
 }
 
 export async function showRustWorker(

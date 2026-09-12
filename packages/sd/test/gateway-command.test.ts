@@ -4,12 +4,14 @@ import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { InlineGatewayClient } from '@snapdragon-ai/gateway';
+import { type GatewayClient, InlineGatewayClient } from '@snapdragon-ai/gateway';
 import { stringify as stringifyYaml } from 'yaml';
 import { parseArgs } from '../src/args.ts';
+import { monitorJobCancellation } from '../src/gateway-agent-job-control.ts';
 import { registerAgentJobWorker, runGatewayAgentJob } from '../src/gateway-agent-job-service.ts';
 import { runGatewayCommand } from '../src/gateway-command.ts';
 import { serveGatewayRest } from '../src/gateway-command-rest.ts';
+import { leaseFence } from '../src/gateway-job-lease.ts';
 import { registerLearnJobWorker, runLearnEvalJob } from '../src/gateway-learn-job-service.ts';
 import { configuredRustGatewayServices } from '../src/gateway-rust-config.ts';
 import { formatRustGatewayStatus } from '../src/gateway-rust-status.ts';
@@ -52,21 +54,56 @@ test('gateway commands inspect live Rust services, registry, and tables', async 
         ...args,
         gatewayArgs: ['jobs', 'acquire', 'default', 'worker-1', '--lease-ms', '60000'],
       }),
-      /acquired job_1\tagent\.run\tqueue=default\tworker=worker-1\tlease=lease_1/,
+      /acquired job_1\tagent\.run\tqueue=default\tworker=worker-1\tlease=lease_1\tattempt=1/,
     );
     assert.match(
       await runGatewayCommand({
         ...args,
-        gatewayArgs: ['jobs', 'complete', 'job_1', '{"ok":true}'],
+        gatewayArgs: [
+          'jobs',
+          'complete',
+          'job_1',
+          '--lease-id',
+          'lease_1',
+          '--attempt',
+          '1',
+          '{"ok":true}',
+        ],
       }),
       /completed job_1/,
     );
     assert.match(
       await runGatewayCommand({
         ...args,
-        gatewayArgs: ['jobs', 'fail', 'job_1', 'worker failed clearly'],
+        gatewayArgs: [
+          'jobs',
+          'fail',
+          'job_1',
+          '--lease-id',
+          'lease_1',
+          '--attempt',
+          '1',
+          'worker failed clearly',
+        ],
       }),
       /failed job_1\terror=worker failed clearly/,
+    );
+    assert.match(
+      await runGatewayCommand({
+        ...args,
+        gatewayArgs: [
+          'jobs',
+          'renew',
+          'job_1',
+          '--lease-id',
+          'lease_1',
+          '--attempt',
+          '1',
+          '--lease-ms',
+          '60000',
+        ],
+      }),
+      /lease=lease_1\tattempt=1/,
     );
     assert.match(
       await runGatewayCommand({ ...args, gatewayArgs: ['jobs', 'cancel', 'job_1'] }),
@@ -307,6 +344,25 @@ test('gateway agent job service aborts Pi runtime when the job is cancelled', as
   }
 });
 
+test('gateway job monitor renews short leases before a slower cancellation poll', async () => {
+  const gateway = new InlineGatewayClient();
+  await gateway.enqueueJob({ kind: 'agent.run', maxAttempts: 2 }, 'short-lease');
+  const acquired = await gateway.acquireJob('default', 'worker', 40);
+  assert.ok(acquired);
+  const monitor = monitorJobCancellation(gateway, acquired.job.id, 1_000, {
+    fence: leaseFence(acquired.lease),
+    leaseMs: 40,
+  });
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 90));
+    assert.equal((await gateway.showJob(acquired.job.id))?.state, 'running');
+    assert.equal(monitor.leaseLost, false);
+  } finally {
+    monitor.stop();
+    await gateway.close();
+  }
+});
+
 test('gateway learn job service registers and heartbeats learn workers', async () => {
   const gateway = new InlineGatewayClient();
   await registerLearnJobWorker(gateway, 'learn-test-worker');
@@ -338,6 +394,44 @@ test('gateway learn job service registers and heartbeats learn workers', async (
   assert.equal(completedWorker?.status, `completed learn eval ${job.id}`);
   assert.equal((completedWorker?.metadata as any)?.datasetId, 'demo');
   assert.equal(typeof (completedWorker?.metadata as any)?.score, 'number');
+});
+
+test('gateway learn completion handles a concurrent cancellation as terminal', async () => {
+  const gateway = new InlineGatewayClient();
+  await registerLearnJobWorker(gateway, 'learn-cancel-worker');
+  const job = await gateway.enqueueJob({
+    kind: 'learn.eval',
+    queue: 'learn',
+    payload: {
+      job: { id: 'eval-cancel', kind: 'eval', dataset: 'demo' },
+      dataset: {
+        id: 'demo',
+        examples: [{ id: 'one', prompt: 'test', metadata: { output: 'ok' } }],
+      },
+    },
+  });
+  const acquired = await gateway.acquireJob('learn', 'learn-cancel-worker');
+  assert.ok(acquired);
+  const client = new Proxy(gateway, {
+    get(target, property) {
+      if (property === 'completeJob') {
+        return async (...args: Parameters<GatewayClient['completeJob']>) => {
+          await target.cancelJob(job.id);
+          return target.completeJob(...args);
+        };
+      }
+      const value = Reflect.get(target, property, target);
+      return typeof value === 'function' ? value.bind(target) : value;
+    },
+  }) as GatewayClient;
+
+  const result = await runLearnEvalJob(client, acquired.job, { workerId: 'learn-cancel-worker' });
+  assert.deepEqual(result.metrics, { completed: 0, failed: 0 });
+  assert.equal((await gateway.showJob(job.id))?.state, 'cancelled');
+  const worker = await gateway.showWorker('learn-cancel-worker');
+  assert.equal(worker?.state, 'idle');
+  assert.equal(worker?.status, `cancelled learn eval ${job.id}`);
+  await gateway.close();
 });
 
 test('configured Rust gateway services point at headless sd workers', async () => {
@@ -607,7 +701,10 @@ function responseFor(request: any): unknown {
     return { id: request.id, ok: true, result: wireJob('job_1', 'Pending') };
   }
   if (request.method === 'jobs.list') {
-    return { id: request.id, ok: true, result: [wireJob('job_1', 'Running')] };
+    return { id: request.id, ok: true, result: { items: [wireJob('job_1', 'Running')] } };
+  }
+  if (request.method === 'jobs.show') {
+    return { id: request.id, ok: true, result: wireJob(request.params.id, 'Running') };
   }
   if (request.method === 'jobs.acquire') {
     return {
@@ -622,6 +719,7 @@ function responseFor(request: any): unknown {
           id: 'lease_1',
           job_id: 'job_1',
           worker: request.params.worker,
+          attempt: 1,
           acquired_at_ms: 10,
           expires_at_ms: 60_010,
         },
@@ -642,6 +740,23 @@ function responseFor(request: any): unknown {
       result: wireJob(request.params.id, 'Failed', { last_error: request.params.error }),
     };
   }
+  if (request.method === 'jobs.renew') {
+    return {
+      id: request.id,
+      ok: true,
+      result: {
+        job: wireJob(request.params.id, 'Running'),
+        lease: {
+          id: request.params.lease_id,
+          job_id: request.params.id,
+          worker: 'worker-1',
+          attempt: request.params.attempt,
+          acquired_at_ms: 10,
+          expires_at_ms: 60_010,
+        },
+      },
+    };
+  }
   if (request.method === 'jobs.cancel') {
     return { id: request.id, ok: true, result: wireJob(request.params.id, 'Cancelled') };
   }
@@ -649,7 +764,7 @@ function responseFor(request: any): unknown {
     return { id: request.id, ok: true, result: wireJob(request.params.id, 'Pending') };
   }
   if (request.method === 'workers.list') {
-    return { id: request.id, ok: true, result: [wireWorker('agent-jobs-1')] };
+    return { id: request.id, ok: true, result: { items: [wireWorker('agent-jobs-1')] } };
   }
   if (request.method === 'workers.show') {
     return { id: request.id, ok: true, result: wireWorker(request.params.id) };
@@ -664,7 +779,7 @@ function responseFor(request: any): unknown {
     return { id: request.id, ok: true, result: wireAgentRuntime(request.params.id) };
   }
   if (request.method === 'events.list') {
-    return { id: request.id, ok: true, result: [] };
+    return { id: request.id, ok: true, result: { items: [] } };
   }
   if (request.method === 'logs.tail') {
     return {
@@ -682,7 +797,9 @@ function responseFor(request: any): unknown {
       ],
     };
   }
-  if (request.method === 'sandboxes.list') return { id: request.id, ok: true, result: [] };
+  if (request.method === 'sandboxes.list') {
+    return { id: request.id, ok: true, result: { items: [] } };
+  }
   return { id: request.id, ok: true, result: true };
 }
 
@@ -725,6 +842,7 @@ function wireStatus(): unknown {
         id: 'lease_1',
         job_id: 'job_1',
         worker: 'agent-jobs-1',
+        attempt: 1,
         acquired_at_ms: 10,
         expires_at_ms: 120_000,
       },
@@ -753,8 +871,8 @@ function wireJob(id: string, state: string, fields: Record<string, unknown> = {}
     created_at_ms: 10,
     updated_at_ms: 10,
     ...(state === 'Running'
-      ? { lease_id: 'lease_1', lease_expires_at_ms: 120_000 }
-      : { lease_id: null, lease_expires_at_ms: null }),
+      ? { lease_id: 'lease_1', lease_attempt: 1, lease_expires_at_ms: 120_000 }
+      : { lease_id: null, lease_attempt: null, lease_expires_at_ms: null }),
     ...fields,
   };
 }

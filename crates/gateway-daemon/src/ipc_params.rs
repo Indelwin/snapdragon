@@ -90,6 +90,12 @@ pub(crate) struct JobIdParams {
     pub(crate) id: String,
 }
 
+#[derive(Debug, Default, Deserialize)]
+pub(crate) struct ListPageParams {
+    pub(crate) cursor: Option<String>,
+    pub(crate) limit: Option<usize>,
+}
+
 #[derive(Debug, Deserialize)]
 pub(crate) struct JobAcquireParams {
     pub(crate) queue: Option<String>,
@@ -100,13 +106,25 @@ pub(crate) struct JobAcquireParams {
 #[derive(Debug, Deserialize)]
 pub(crate) struct JobCompleteParams {
     pub(crate) id: String,
+    pub(crate) lease_id: String,
+    pub(crate) attempt: u32,
     pub(crate) result: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct JobFailParams {
     pub(crate) id: String,
+    pub(crate) lease_id: String,
+    pub(crate) attempt: u32,
     pub(crate) error: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub(crate) struct JobRenewParams {
+    pub(crate) id: String,
+    pub(crate) lease_id: String,
+    pub(crate) attempt: u32,
+    pub(crate) lease_ms: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]

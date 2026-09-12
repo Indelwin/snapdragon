@@ -1,3 +1,4 @@
+import { paginateRest } from './rest-page.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient } from './types.js';
 import type { GatewaySandboxLease } from './types-sandboxes.js';
@@ -8,17 +9,23 @@ export async function dispatchSandboxes(
   request: RestRequest,
 ): Promise<RestRouteResult> {
   const [, id, action] = route.parts;
-  if (route.method === 'GET') return getSandboxRoute(client, id, action);
+  if (route.method === 'GET') return getSandboxRoute(client, route, id, action);
   if (route.method === 'POST') return postSandboxRoute(client, request, id, action);
   return { status: 404, body: { error: 'not found' } };
 }
 
 async function getSandboxRoute(
   client: GatewayClient,
+  route: RestRoute,
   id: string | undefined,
   action: string | undefined,
 ): Promise<RestRouteResult> {
-  if (!id && !action) return { status: 200, body: await client.listSandboxLeases() };
+  if (!id && !action) {
+    return {
+      status: 200,
+      body: paginateRest(await client.listSandboxLeases(), route.searchParams),
+    };
+  }
   if (id && !action) return sandboxResult(await client.showSandboxLease(id));
   return { status: 404, body: { error: 'not found' } };
 }

@@ -29,6 +29,8 @@ pub struct GatewayJobStatus {
     pub created_at_ms: u64,
     pub updated_at_ms: u64,
     pub lease_id: Option<String>,
+    #[serde(default)]
+    pub lease_attempt: Option<u32>,
     pub lease_expires_at_ms: Option<u64>,
     pub last_error: Option<String>,
     pub result: Option<Value>,
@@ -39,6 +41,7 @@ pub struct GatewayLease {
     pub id: String,
     pub job_id: String,
     pub worker: String,
+    pub attempt: u32,
     pub acquired_at_ms: u64,
     pub expires_at_ms: u64,
 }

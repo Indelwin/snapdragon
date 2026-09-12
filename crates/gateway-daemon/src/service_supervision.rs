@@ -1,8 +1,22 @@
-use snapdragon_gateway_core::{ServiceRestart, ServiceSpec, ServiceStatus};
+use snapdragon_gateway_core::{ServiceRestart, ServiceSpec, ServiceState, ServiceStatus};
 
 use crate::{GatewayDaemon, services_persistence::ServiceLog};
 
 impl GatewayDaemon {
+    pub(crate) async fn next_service_delay(
+        &self,
+        spec: &ServiceSpec,
+        status: &ServiceStatus,
+    ) -> Option<u64> {
+        if !status.enabled || !spec.enabled {
+            return None;
+        }
+        if status.state == ServiceState::Failed {
+            return self.service_failure_delay(spec, status).await;
+        }
+        spec.interval_ms.filter(|interval| *interval > 0)
+    }
+
     pub(crate) async fn service_failure_delay(
         &self,
         spec: &ServiceSpec,

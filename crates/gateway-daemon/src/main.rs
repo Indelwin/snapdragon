@@ -14,6 +14,11 @@ async fn main() {
         None => GatewayDaemon::new(),
     };
     if let Some(socket) = socket_arg(&args) {
+        let shutdown_daemon = daemon.clone();
+        tokio::spawn(async move {
+            wait_for_shutdown_signal().await;
+            shutdown_daemon.shutdown().await;
+        });
         if let Err(error) = serve_unix_socket(daemon, socket).await {
             eprintln!("gateway daemon failed: {error}");
             std::process::exit(1);
@@ -25,6 +30,28 @@ async fn main() {
         "{}",
         serde_json::to_string(&status).unwrap_or_else(|_| "{\"services\":[]}".into())
     );
+}
+
+#[cfg(unix)]
+async fn wait_for_shutdown_signal() {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut terminate = signal(SignalKind::terminate()).ok();
+    tokio::select! {
+        _ = tokio::signal::ctrl_c() => {},
+        _ = async {
+            if let Some(signal) = &mut terminate {
+                signal.recv().await;
+            } else {
+                std::future::pending::<()>().await;
+            }
+        } => {},
+    }
+}
+
+#[cfg(not(unix))]
+async fn wait_for_shutdown_signal() {
+    let _ = tokio::signal::ctrl_c().await;
 }
 
 fn socket_arg(args: &[String]) -> Option<&str> {

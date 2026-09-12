@@ -102,7 +102,14 @@ function matchesPathPrefix(pathname: string, pathPrefix: string): boolean {
 }
 
 function sendRestError(response: RestResponse, error: unknown): void {
-  const status = error instanceof RestHttpError ? error.status : 500;
   const message = error instanceof Error ? error.message : String(error);
+  const status =
+    error instanceof RestHttpError
+      ? error.status
+      : message.startsWith('mailbox message oversized')
+        ? 413
+        : message.startsWith('mailbox busy')
+          ? 503
+          : 500;
   sendJson(response, status, { error: message });
 }

@@ -1,4 +1,5 @@
 import type { RustGatewayCall } from './rust-call.js';
+import { readAllRustPages } from './rust-pages.js';
 import { fromWireSandboxLease, toWireSandboxLease } from './rust-wire-sandboxes.js';
 import type { GatewaySandboxLease } from './types-sandboxes.js';
 
@@ -14,9 +15,7 @@ export async function registerRustSandboxLease(
 }
 
 export async function listRustSandboxLeases(call: RustGatewayCall): Promise<GatewaySandboxLease[]> {
-  return ((await call('sandboxes.list')) as any[])
-    .map((lease) => fromWireSandboxLease(lease))
-    .filter((lease): lease is GatewaySandboxLease => lease !== undefined);
+  return readAllRustPages(call, 'sandboxes.list', (lease) => fromWireSandboxLease(lease as any));
 }
 
 export async function showRustSandboxLease(

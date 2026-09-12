@@ -129,6 +129,9 @@ worker exposes Pi progress under the durable job id. If the provided
 `AbortSignal` fires, the adapter sends Pi an `abort` RPC message before stopping
 the child process. That makes it safe for headless job workers while preserving
 non-blocking Pi extension status/widget updates for future management UIs.
+Returned Pi results retain a bounded 512-event, 2 MiB trace. An asynchronous
+`onEvent` callback still receives every event because the JSONL reader waits for
+the sink and applies upstream backpressure.
 
 ## Service Workers
 
@@ -173,12 +176,17 @@ const job = await gateway.enqueueJob({
   },
 });
 const lease = await gateway.acquireJob('default', 'worker-1');
-if (lease) await gateway.completeJob(lease.job.id, { ok: true });
+if (lease) {
+  const fence = { leaseId: lease.lease.id, attempt: lease.lease.attempt };
+  await gateway.renewJob(lease.job.id, fence, 300_000);
+  await gateway.completeJob(lease.job.id, { ok: true }, fence);
+}
 await gateway.retryJob('job_failed');
 ```
 
 The inline client implements the same lifecycle in memory for tests and small
-embedders.
+embedders. Call `await gateway.close()` when disposing an inline client so its
+owned lease timers and active service runners are cancelled and joined.
 
 Workers that acquire durable jobs are visible through the logical worker
 registry. A job lease updates the worker's current job, lease id, queue, and
@@ -189,6 +197,12 @@ claiming work so dashboards and executive agents can distinguish "available",
 Failed jobs with attempts remaining return to `pending`; terminal failed jobs
 can be manually retried by operators or executive agents without resurrecting
 cancelled jobs.
+
+Lease acquisition, renewal, completion, failure, cancellation, and retry are
+transactional in the durable SQLite store. Completion, failure, and renewal
+require the active lease id and attempt; stale workers cannot commit after a
+lease expires or a newer attempt starts. The daemon expires leases from its own
+background watchdog rather than as a side effect of status reads.
 
 ## REST and SSE Facade
 
@@ -215,7 +229,7 @@ Initial routes cover:
 - `GET /v1/workers`, `GET /v1/workers/:id`, `POST /v1/workers/register`,
   and `POST /v1/workers/:id/heartbeat`.
 - `GET /v1/jobs`, `POST /v1/jobs`, `POST /v1/jobs/acquire`,
-  `GET /v1/jobs/:id`, `POST /v1/jobs/:id/complete`,
+  `GET /v1/jobs/:id`, `POST /v1/jobs/:id/renew`, `POST /v1/jobs/:id/complete`,
   `POST /v1/jobs/:id/fail`, `POST /v1/jobs/:id/cancel`, and
   `POST /v1/jobs/:id/retry`.
 - `GET /v1/events`, `POST /v1/events`, `POST /v1/events/:id/cancel`,
@@ -226,6 +240,19 @@ Initial routes cover:
 
 The default listener binds to `127.0.0.1`. Authentication, policy enforcement,
 and remote exposure are later layers on the same route shape.
+
+IPC and HTTP frames are bounded at 1 MiB. List routes for jobs, events, workers,
+and sandboxes return pages of at most 100 items; `GatewayRestClient` and
+`RustGatewayClient` drain all pages for their typed `list*` methods. SSE polling
+is single-flight and waits for response drain, and early iterator exit cancels
+the response reader.
+
+Run the focused native, gateway, and SD caller regressions from the repository
+root with:
+
+```sh
+npm run test:reliability:gateway --workspace @snapdragon-ai/gateway
+```
 
 Apps that use the packaged `sd` CLI can start the same facade with
 `sd gateway rest serve --port 8787` after `sd gateway start`. The command keeps

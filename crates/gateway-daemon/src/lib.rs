@@ -7,34 +7,50 @@ use snapdragon_gateway_core::{
     ReceiveFilter, RegistrySnapshot, ServiceSpec, ServiceStatus, Supervisor, TableAccess,
     TableRegistry, TableSnapshot,
 };
-use tokio::{sync::RwLock, task::JoinHandle};
+use tokio::{
+    sync::{Mutex, RwLock},
+    task::JoinHandle,
+};
 
 mod agent_runtimes;
 pub mod ipc;
 mod ipc_core;
 mod ipc_durable;
+mod ipc_durable_helpers;
+mod ipc_frame;
+mod ipc_ownership;
+mod ipc_paging;
 mod ipc_params;
+mod lifecycle;
 mod process_tracking;
+mod recovery;
 mod sandboxes;
 mod service_supervision;
 mod service_tasks;
 mod service_worker;
+mod service_worker_output;
+mod service_worker_paths;
+mod service_worker_process;
 mod services;
 mod services_persistence;
 mod status;
 mod store;
 mod store_agent_runtimes;
 mod store_events;
+mod store_job_leases;
 mod store_job_types;
 mod store_jobs;
 mod store_leases;
 mod store_observability;
 mod store_sandboxes;
 mod store_schema;
+mod store_schema_sql;
 mod store_services;
 mod store_workers;
+mod watchdog;
 mod workers;
 
+pub(crate) use lifecycle::{ServiceRunControl, ShutdownSignal};
 pub use status::GatewayStatusSnapshot;
 pub use store::GatewayStore;
 
@@ -56,6 +72,10 @@ struct GatewayDaemonInner {
 pub struct GatewayDaemon {
     inner: Arc<RwLock<GatewayDaemonInner>>,
     service_tasks: Arc<RwLock<BTreeMap<String, JoinHandle<()>>>>,
+    service_controls: Arc<Mutex<BTreeMap<String, Arc<ServiceRunControl>>>>,
+    service_lifecycle_gates: Arc<Mutex<BTreeMap<String, Arc<Mutex<()>>>>>,
+    watchdog_task: Arc<Mutex<Option<JoinHandle<()>>>>,
+    shutdown_signal: Arc<ShutdownSignal>,
     store: Option<GatewayStore>,
     started_at_ms: u64,
 }
@@ -75,6 +95,7 @@ impl GatewayDaemon {
             ..Self::default()
         };
         daemon.recover_store().await?;
+        daemon.start_watchdog().await;
         Ok(daemon)
     }
 
@@ -98,14 +119,15 @@ impl GatewayDaemon {
         self.inner.read().await.registry.snapshot()
     }
 
-    pub async fn send(&self, envelope: GatewayEnvelope) {
+    pub async fn send(&self, envelope: GatewayEnvelope) -> Result<(), String> {
         self.inner
             .write()
             .await
             .mailboxes
             .entry(envelope.target.clone())
             .or_default()
-            .push(envelope);
+            .push(envelope)
+            .map_err(|error| error.to_string())
     }
 
     pub async fn receive(
@@ -200,35 +222,12 @@ impl GatewayDaemon {
         Ok(expired_jobs + expired_sandboxes)
     }
 
-    async fn recover_store(&self) -> Result<(), String> {
-        let Some(store) = &self.store else {
-            return Ok(());
-        };
-        {
-            let mut inner = self.inner.write().await;
-            for descriptor in store.agent_runtime_snapshots()? {
-                inner
-                    .agent_runtimes
-                    .insert(descriptor.id.clone(), descriptor);
-            }
+    pub async fn shutdown(&self) {
+        self.shutdown_signal.cancel();
+        self.stop_all_service_tasks().await;
+        if let Some(task) = self.watchdog_task.lock().await.take() {
+            let _ = task.await;
         }
-        for (spec, mut status) in store.service_snapshots()? {
-            status.state = if spec.enabled {
-                snapdragon_gateway_core::ServiceState::Running
-            } else {
-                snapdragon_gateway_core::ServiceState::Stopped
-            };
-            {
-                let mut inner = self.inner.write().await;
-                inner.service_specs.insert(spec.name.clone(), spec.clone());
-                inner.services.insert(spec.name.clone(), status);
-            }
-            self.replace_service_task(spec).await;
-        }
-        let now_ms = unix_time_ms();
-        store.expire_leases(now_ms)?;
-        store.expire_sandbox_leases(now_ms)?;
-        Ok(())
     }
 
     pub(crate) fn require_store(&self) -> Result<&GatewayStore, String> {

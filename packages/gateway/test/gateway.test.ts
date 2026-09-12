@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import test from 'node:test';
 import {
   createGatewayRestServer,
+  type GatewayJobLease,
   GatewayRestClient,
   InlineGatewayClient,
   probePiRpcRuntime,
@@ -75,11 +76,17 @@ test('inline gateway leases, completes, and logs jobs', async () => {
   assert.equal(leasedStatus.workers?.[0]?.state, 'running');
   assert.equal(leasedStatus.workers?.[0]?.currentJobId, job.id);
   assert.deepEqual(leasedStatus.queueDepths, [{ queue: 'default', pending: 0, running: 1 }]);
-  assert.equal((await gateway.completeJob(job.id, { ok: true }))?.state, 'completed');
+  assert.equal(
+    (await gateway.completeJob(job.id, { ok: true }, leaseFence(lease)))?.state,
+    'completed',
+  );
   assert.equal((await gateway.showWorker('worker-1'))?.state, 'idle');
   const failed = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'fail it' } });
-  await gateway.acquireJob('default', 'worker-1');
-  assert.equal((await gateway.failJob(failed.id, 'nope'))?.state, 'failed');
+  const failedLease = await gateway.acquireJob('default', 'worker-1');
+  assert.equal(
+    (await gateway.failJob(failed.id, 'nope', leaseFence(failedLease)))?.state,
+    'failed',
+  );
   assert.match(
     (await gateway.status()).recentFailures?.map((log) => log.message).join('\n') ?? '',
     /nope/,
@@ -89,20 +96,34 @@ test('inline gateway leases, completes, and logs jobs', async () => {
     payload: { prompt: 'retry it' },
     maxAttempts: 2,
   });
-  await gateway.acquireJob('default', 'worker-1');
-  assert.equal((await gateway.failJob(retried.id, 'try again'))?.state, 'pending');
+  const retryLease = await gateway.acquireJob('default', 'worker-1');
+  assert.equal(
+    (await gateway.failJob(retried.id, 'try again', leaseFence(retryLease)))?.state,
+    'pending',
+  );
   assert.equal((await gateway.showJob(retried.id))?.attempts, 1);
-  await gateway.acquireJob('default', 'worker-1');
-  assert.equal((await gateway.failJob(retried.id, 'out of tries'))?.state, 'failed');
+  const finalRetryLease = await gateway.acquireJob('default', 'worker-1');
+  assert.equal(
+    (await gateway.failJob(retried.id, 'out of tries', leaseFence(finalRetryLease)))?.state,
+    'failed',
+  );
   assert.equal((await gateway.retryJob(retried.id))?.state, 'pending');
-  assert.equal((await gateway.acquireJob('default', 'worker-1'))?.job.id, retried.id);
-  assert.equal((await gateway.completeJob(retried.id, { ok: true }))?.state, 'completed');
+  const completedRetryLease = await gateway.acquireJob('default', 'worker-1');
+  assert.equal(completedRetryLease?.job.id, retried.id);
+  assert.equal(
+    (await gateway.completeJob(retried.id, { ok: true }, leaseFence(completedRetryLease)))?.state,
+    'completed',
+  );
   const cancelled = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'stop it' } });
-  await gateway.acquireJob('default', 'worker-1');
+  const cancelledLease = await gateway.acquireJob('default', 'worker-1');
   assert.equal((await gateway.cancelJob(cancelled.id))?.state, 'cancelled');
   assert.equal((await gateway.status()).activeLeases?.length, 0);
-  assert.equal((await gateway.completeJob(cancelled.id, { late: true }))?.state, 'cancelled');
-  assert.equal((await gateway.failJob(cancelled.id, 'late'))?.state, 'cancelled');
+  const cancelledFence = leaseFence(cancelledLease);
+  await assert.rejects(
+    gateway.completeJob(cancelled.id, { late: true }, cancelledFence),
+    /stale lease/,
+  );
+  await assert.rejects(gateway.failJob(cancelled.id, 'late', cancelledFence), /stale lease/);
   assert.equal(
     (await gateway.appendLog({ target: cancelled.id, message: 'runtime breadcrumb' })).target,
     cancelled.id,
@@ -183,7 +204,7 @@ test('gateway REST server exposes local orchestration routes', async () => {
       status: 'waiting',
     });
     assert.equal(heartbeat.status, 'waiting');
-    assert.equal((await getJson(`${baseUrl}/workers`))[0]?.id, 'rest-worker');
+    assert.equal((await getJson(`${baseUrl}/workers`)).items[0]?.id, 'rest-worker');
     const probedRuntime = await postJson(`${baseUrl}/agents/probe/pi`, {
       options: { command: process.execPath, args: [piFixture], timeoutMs: 3_000 },
       save: true,
@@ -216,10 +237,10 @@ test('gateway REST server exposes local orchestration routes', async () => {
       payload: { source: 'rest' },
     });
     assert.equal(event.state, 'pending');
-    assert.equal((await getJson(`${baseUrl}/events`))[0]?.id, event.id);
+    assert.equal((await getJson(`${baseUrl}/events`)).items[0]?.id, event.id);
     assert.equal((await postJson(`${baseUrl}/events/${event.id}/cancel`, {})).state, 'cancelled');
     assert.equal(
-      (await getJson(`${baseUrl}/events?target=channel:demo&eventState=cancelled`))[0]?.id,
+      (await getJson(`${baseUrl}/events?target=channel:demo&eventState=cancelled`)).items[0]?.id,
       event.id,
     );
 
@@ -228,9 +249,15 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(job.state, 'pending');
     assert.equal((await getJson(`${baseUrl}/jobs/${job.id}`)).id, job.id);
-    assert.equal((await getJson(`${baseUrl}/jobs?state=pending&kind=agent.run`))[0]?.id, job.id);
-    await gateway.acquireJob('default', 'rest-worker');
-    assert.equal((await gateway.failJob(job.id, 'rest failure'))?.state, 'failed');
+    assert.equal(
+      (await getJson(`${baseUrl}/jobs?state=pending&kind=agent.run`)).items[0]?.id,
+      job.id,
+    );
+    const restFailureLease = await gateway.acquireJob('default', 'rest-worker');
+    assert.equal(
+      (await gateway.failJob(job.id, 'rest failure', leaseFence(restFailureLease)))?.state,
+      'failed',
+    );
     assert.equal((await postJson(`${baseUrl}/jobs/${job.id}/retry`, {})).state, 'pending');
 
     const workerJob = await postJson(`${baseUrl}/jobs`, {
@@ -245,6 +272,8 @@ test('gateway REST server exposes local orchestration routes', async () => {
     assert.equal(lease.lease.worker, 'rest-worker');
     const completed = await postJson(`${baseUrl}/jobs/${workerJob.id}/complete`, {
       result: { ok: true },
+      leaseId: lease.lease.id,
+      attempt: lease.lease.attempt,
     });
     assert.equal(completed.state, 'completed');
     assert.deepEqual(completed.result, { ok: true });
@@ -252,13 +281,15 @@ test('gateway REST server exposes local orchestration routes', async () => {
     const failingJob = await postJson(`${baseUrl}/jobs`, {
       spec: { kind: 'agent.run', queue: 'failures', payload: { prompt: 'fail me' } },
     });
-    assert.equal(
-      (await postJson(`${baseUrl}/jobs/acquire`, { queue: 'failures', worker: 'rest-worker' })).job
-        .id,
-      failingJob.id,
-    );
+    const failingLease = await postJson(`${baseUrl}/jobs/acquire`, {
+      queue: 'failures',
+      worker: 'rest-worker',
+    });
+    assert.equal(failingLease.job.id, failingJob.id);
     const failed = await postJson(`${baseUrl}/jobs/${failingJob.id}/fail`, {
       message: 'worker failed clearly',
+      leaseId: failingLease.lease.id,
+      attempt: failingLease.lease.attempt,
     });
     assert.equal(failed.state, 'failed');
     assert.equal(failed.lastError, 'worker failed clearly');
@@ -283,9 +314,9 @@ test('gateway REST server exposes local orchestration routes', async () => {
     });
     assert.equal(sandbox.id, 'lease_rest');
     assert.equal((await getJson(`${baseUrl}/sandboxes/lease_rest`)).sandboxId, 'sandbox_rest');
-    assert.equal((await getJson(`${baseUrl}/sandboxes`))[0]?.id, 'lease_rest');
+    assert.equal((await getJson(`${baseUrl}/sandboxes`)).items[0]?.id, 'lease_rest');
     assert.equal((await postJson(`${baseUrl}/sandboxes/lease_rest/release`, {})).id, 'lease_rest');
-    assert.equal((await getJson(`${baseUrl}/sandboxes`)).length, 0);
+    assert.equal((await getJson(`${baseUrl}/sandboxes`)).items.length, 0);
 
     const world = await getJson(`${baseUrl}/world`);
     assert.equal(world.agentRuntimes[0]?.id, 'codex');
@@ -362,15 +393,23 @@ test('gateway REST client wraps route contracts and streams world snapshots', as
       (await client.listJobs({ jobKind: 'agent.run', jobState: 'pending' }))[0]?.id,
       job.id,
     );
-    assert.equal((await client.acquireJob('default', worker.id))?.job.id, job.id);
-    assert.equal((await client.completeJob(job.id, { ok: true }))?.state, 'completed');
+    const clientLease = await client.acquireJob('default', worker.id);
+    assert.equal(clientLease?.job.id, job.id);
+    assert.equal(
+      (await client.completeJob(job.id, { ok: true }, leaseFence(clientLease)))?.state,
+      'completed',
+    );
 
     const failedJob = await client.enqueueJob({
       kind: 'agent.run',
       payload: { prompt: 'fail from client' },
     });
-    assert.equal((await client.acquireJob('default', worker.id))?.job.id, failedJob.id);
-    assert.equal((await client.failJob(failedJob.id, 'client failure'))?.state, 'failed');
+    const clientFailedLease = await client.acquireJob('default', worker.id);
+    assert.equal(clientFailedLease?.job.id, failedJob.id);
+    assert.equal(
+      (await client.failJob(failedJob.id, 'client failure', leaseFence(clientFailedLease)))?.state,
+      'failed',
+    );
     assert.equal((await client.retryJob(failedJob.id))?.state, 'pending');
     assert.equal((await client.cancelJob(failedJob.id))?.state, 'cancelled');
 
@@ -553,10 +592,16 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
     });
     const job = await gateway.enqueueJob({ kind: 'agent.run', payload: { prompt: 'test' } });
     assert.equal(job.id, 'job_1');
-    assert.equal((await gateway.acquireJob('default', 'worker'))?.lease.worker, 'worker');
-    assert.equal((await gateway.failJob('job_1', 'try again'))?.state, 'failed');
+    const rustLease = await gateway.acquireJob('default', 'worker');
+    assert.equal(rustLease?.lease.worker, 'worker');
+    const rustFence = leaseFence(rustLease);
+    assert.equal((await gateway.failJob('job_1', 'try again', rustFence))?.state, 'failed');
     assert.equal((await gateway.retryJob('job_1'))?.state, 'pending');
-    assert.equal((await gateway.completeJob('job_1', { ok: true }))?.state, 'completed');
+    const rustRetryLease = await gateway.acquireJob('default', 'worker');
+    assert.equal(
+      (await gateway.completeJob('job_1', { ok: true }, leaseFence(rustRetryLease)))?.state,
+      'completed',
+    );
     assert.equal((await gateway.appendEvent({ kind: 'channel.run' })).state, 'pending');
     assert.equal((await gateway.cancelEvent('event_1'))?.state, 'cancelled');
     assert.equal(
@@ -595,6 +640,7 @@ test('rust gateway client speaks the JSONL IPC protocol', async () => {
       'jobs.acquire',
       'jobs.fail',
       'jobs.retry',
+      'jobs.acquire',
       'jobs.complete',
       'events.append',
       'events.cancel',
@@ -738,7 +784,7 @@ function responseFor(request: any): unknown {
     };
   }
   if (request.method === 'workers.list') {
-    return { id: request.id, ok: true, result: [wireWorkerRecord()] };
+    return { id: request.id, ok: true, result: { items: [wireWorkerRecord()] } };
   }
   if (request.method === 'workers.show') {
     return { id: request.id, ok: true, result: wireWorkerRecord({ id: request.params.id }) };
@@ -781,6 +827,7 @@ function responseFor(request: any): unknown {
           id: 'lease_1',
           job_id: 'job_1',
           worker: request.params.worker,
+          attempt: 1,
           acquired_at_ms: 10,
           expires_at_ms: 20,
         },
@@ -847,7 +894,7 @@ function responseFor(request: any): unknown {
     return { id: request.id, ok: true, result: request.params.lease };
   }
   if (request.method === 'sandboxes.list') {
-    return { id: request.id, ok: true, result: [wireSandboxLease()] };
+    return { id: request.id, ok: true, result: { items: [wireSandboxLease()] } };
   }
   if (request.method === 'sandboxes.show') {
     return { id: request.id, ok: true, result: wireSandboxLease(request.params.id) };
@@ -862,6 +909,11 @@ async function getJson(url: string): Promise<any> {
   const response = await fetch(url);
   assert.equal(response.ok, true);
   return response.json();
+}
+
+function leaseFence(lease: GatewayJobLease | undefined) {
+  assert.ok(lease);
+  return { leaseId: lease.lease.id, attempt: lease.lease.attempt };
 }
 
 async function readSseSnapshot(url: string): Promise<any> {

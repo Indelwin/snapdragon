@@ -3,7 +3,7 @@ import {
   registerRustAgentRuntime,
   showRustAgentRuntime,
 } from './rust-agents.js';
-import type { RustGatewayCall } from './rust-call.js';
+import { RustGatewayConnection } from './rust-connection.js';
 import {
   appendRustEvent,
   appendRustLog,
@@ -11,7 +11,6 @@ import {
   listRustEvents,
   tailRustLogs,
 } from './rust-events.js';
-import { request } from './rust-ipc.js';
 import {
   acquireRustJob,
   cancelRustJob,
@@ -19,6 +18,7 @@ import {
   enqueueRustJob,
   failRustJob,
   listRustJobs,
+  renewRustJob,
   retryRustJob,
   showRustJob,
 } from './rust-jobs.js';
@@ -54,6 +54,7 @@ import type {
   GatewayJobLease,
   GatewayJobSpec,
   GatewayJobStatus,
+  GatewayLeaseFence,
   GatewayLogInput,
   GatewayLogRecord,
   GatewayReceiveFilter,
@@ -80,17 +81,15 @@ export type { RustGatewayClientOptions } from './rust-options.js';
 
 export class RustGatewayClient implements GatewayOrchestrationClient {
   readonly runtime = 'rust' as const;
-  #socketPath: string;
-  #timeoutMs: number;
   #serviceRunTimeoutMs: number;
-  #nextId = 1;
   #runners = new Map<string, GatewayServiceRunner>();
-  #gatewayCall: RustGatewayCall = (method, params, timeoutMs) =>
-    this.#call(method, params, timeoutMs);
+  #gatewayCall;
 
   constructor(options: RustGatewayClientOptions) {
-    this.#socketPath = options.socketPath;
-    this.#timeoutMs = options.timeoutMs ?? 2_000;
+    this.#gatewayCall = new RustGatewayConnection(
+      options.socketPath,
+      options.timeoutMs ?? 2_000,
+    ).call;
     this.#serviceRunTimeoutMs = options.serviceRunTimeoutMs ?? 300_000;
   }
   async send(envelope: GatewayEnvelope): Promise<void> {
@@ -104,14 +103,14 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
   }
 
   async status(): Promise<GatewayStatus> {
-    return fromWireStatus((await this.#call('status')) as any);
+    return fromWireStatus((await this.#gatewayCall('status')) as any);
   }
   async registerService(spec: GatewayServiceSpec, runner?: GatewayServiceRunner): Promise<void> {
     if (runner) this.#runners.set(spec.name, runner);
-    await this.#call('services.register', { spec: toWireServiceSpec(spec) });
+    await this.#gatewayCall('services.register', { spec: toWireServiceSpec(spec) });
   }
   async enableService(name: string, enabled: boolean): Promise<void> {
-    await this.#call('services.enable', { name, enabled });
+    await this.#gatewayCall('services.enable', { name, enabled });
   }
   async runService(name: string, signal?: AbortSignal): Promise<GatewayServiceStatus | undefined> {
     return runRustService(
@@ -197,11 +196,26 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
     return acquireRustJob(this.#gatewayCall, queue, worker, leaseMs);
   }
 
-  async completeJob(id: string, result?: unknown): Promise<GatewayJobStatus | undefined> {
-    return completeRustJob(this.#gatewayCall, id, result);
+  async renewJob(
+    id: string,
+    fence: GatewayLeaseFence,
+    leaseMs = 300_000,
+  ): Promise<GatewayJobLease | undefined> {
+    return renewRustJob(this.#gatewayCall, id, fence, leaseMs);
   }
-  async failJob(id: string, error: string): Promise<GatewayJobStatus | undefined> {
-    return failRustJob(this.#gatewayCall, id, error);
+  async completeJob(
+    id: string,
+    result: unknown,
+    fence: GatewayLeaseFence,
+  ): Promise<GatewayJobStatus | undefined> {
+    return completeRustJob(this.#gatewayCall, id, result, fence);
+  }
+  async failJob(
+    id: string,
+    error: string,
+    fence: GatewayLeaseFence,
+  ): Promise<GatewayJobStatus | undefined> {
+    return failRustJob(this.#gatewayCall, id, error, fence);
   }
   async appendEvent(input: {
     id?: string;
@@ -237,11 +251,5 @@ export class RustGatewayClient implements GatewayOrchestrationClient {
   }
   async worldSnapshot(options: GatewayWorldSnapshotOptions = {}): Promise<GatewayWorldSnapshot> {
     return buildGatewayWorldSnapshot(this, options);
-  }
-  async #call(method: string, params: unknown = {}, timeoutMs = this.#timeoutMs): Promise<unknown> {
-    const id = this.#nextId++;
-    const response = await request(this.#socketPath, { id, method, params }, timeoutMs);
-    if (!response.ok) throw new Error(response.error ?? `Gateway IPC ${method} failed`);
-    return response.result;
   }
 }
