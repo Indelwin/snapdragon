@@ -1,6 +1,10 @@
 #!/usr/bin/env sh
 set -eu
 
+# Checks create independent Git fixtures; do not export this repository into them.
+git_local_env_vars=$(git rev-parse --local-env-vars)
+unset $git_local_env_vars
+
 npm run check:push
 
 if [ "${SNAPDRAGON_MUTATION_ON_PUSH:-0}" = "1" ]; then
