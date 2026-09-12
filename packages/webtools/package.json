@@ -1,6 +1,6 @@
 {
   "name": "@snapdragon-ai/webtools",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Web crawling and extraction toolset for Snapdragon: Rust/WASM compute core (URL, robots, extract, BM25) + TypeScript I/O (fetch, Camofox, BFS).",
   "type": "module",
   "main": "./dist/index.js",
@@ -36,8 +36,8 @@
     "README.md"
   ],
   "dependencies": {
-    "@snapdragon-ai/core": "0.1.1",
-    "@snapdragon-ai/tools": "0.1.1"
+    "@snapdragon-ai/core": "0.2.0",
+    "@snapdragon-ai/tools": "0.2.0"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
