@@ -35,6 +35,7 @@ export interface Toolset {
   description: string;
   tools: Tool[];
   check?: () => Promise<ToolsetCheck> | ToolsetCheck;
+  dispose?: () => Promise<unknown> | unknown;
 }
 
 export interface ToolsetCheck {

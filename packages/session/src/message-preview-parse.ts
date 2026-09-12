@@ -7,6 +7,7 @@ import {
   type SessionMessagePreview,
 } from './message-preview-types.js';
 import { parseWholeMessage } from './message-preview-whole.js';
+import { hasRecordTypePrefix } from './record-envelope.js';
 import type { SessionMessageRecord } from './records.js';
 
 export function parseMessagePreview(
@@ -35,7 +36,7 @@ function parseBySize(
 }
 
 function isMessageLine(line: string): boolean {
-  return line.includes('"type":"message"') || line.includes('"type": "message"');
+  return hasRecordTypePrefix(line, 'message');
 }
 
 function shouldParseWholeLine(

@@ -8,7 +8,7 @@ import type {
   ToolDefinition,
 } from '@snapdragon-ai/host';
 import { type AgentEventListener, emitProviderEvent } from './events.js';
-import { sleep, transientProviderRetryDelayMs } from './provider-retry.js';
+import { isAbortError, sleep, transientProviderRetryDelayMs } from './provider-retry.js';
 import { assembleProviderRequestMessages } from './request-context.js';
 import { shouldRetryContextWindow } from './request-context-error.js';
 import type { RequestReplacement } from './request-context-messages.js';
@@ -32,17 +32,23 @@ export async function sendProviderRequest(
   replacement: RequestReplacement,
   tools: ToolDefinition[],
   runId: string,
+  signal?: AbortSignal,
 ): Promise<LlmChatResponse> {
   let pressure = 0;
   let transientAttempt = 0;
   while (true) {
+    signal?.throwIfAborted();
     try {
-      return await state.provider(await providerRequestBody(state, replacement, tools, pressure), {
+      const request = await providerRequestBody(state, replacement, tools, pressure);
+      signal?.throwIfAborted();
+      return await state.provider(request, {
         runId,
         profile: state.profile,
         emit: (event) => emitProviderEvent(state.listeners, event),
+        signal,
       });
     } catch (error) {
+      if (isAbortError(error, signal)) throw error;
       if (shouldRetryContextWindow(error, pressure)) {
         pressure += 1;
         continue;
@@ -50,7 +56,7 @@ export async function sendProviderRequest(
       const delay = transientProviderRetryDelayMs(error, transientAttempt);
       if (delay === undefined) throw error;
       transientAttempt += 1;
-      await sleep(delay);
+      await sleep(delay, signal);
     }
   }
 }

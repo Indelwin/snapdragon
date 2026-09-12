@@ -1,12 +1,13 @@
 import { existsSync } from 'node:fs';
 import type { Message } from '@snapdragon-ai/host';
+import { applyContextChunk } from './context-frontier.js';
 import type { ContextWindowOptions } from './context-options.js';
 import { resolveContextWindowOptions } from './context-options.js';
-import { readCompactedContextState } from './context-records.js';
+import { readCompactedContextState, readContextFrontier } from './context-records.js';
 import type { ContextChunkInput } from './context-summary.js';
 import { assembleContextWindow, recordToMessage } from './context-window.js';
-import { type SessionMetadata, sessionMetadata } from './metadata.js';
-import { readMetadataRecords } from './metadata-records.js';
+import type { SessionMetadata } from './metadata.js';
+import { readSessionMetadata } from './metadata-records.js';
 import { readRecentMessageRecords } from './recent-records.js';
 import {
   appendRecord,
@@ -20,6 +21,7 @@ import {
 } from './records.js';
 import { type ContextCompactionResult, compactSessionContext } from './session-compaction.js';
 import { contextChunks, messageRecords, nextChunkId, nextStoreId } from './session-record-views.js';
+import { readSessionSummaryStats, type SessionSummaryStats } from './session-stats.js';
 
 export interface AppendMessageOptions {
   createdAt?: number;
@@ -76,11 +78,17 @@ export class JsonlSession {
       source_token_count: input.source_token_count,
       summary_token_count: input.summary_token_count,
       level: input.level,
+      kind: input.kind ?? 'leaf',
+      depth: input.depth ?? 0,
       created_at: Date.now() / 1000,
       created_by_model: input.created_by_model,
     };
-    this.#nextChunkId += 1;
     if (input.meta) record.meta = input.meta;
+    if (input.child_chunks) record.child_chunks = input.child_chunks;
+    if (!applyContextChunk(readContextFrontier(this.jsonlPath), record)) {
+      throw new Error('Context chunk does not extend the active append-only frontier.');
+    }
+    this.#nextChunkId += 1;
     this.#appendRecord(record);
     return record;
   }
@@ -98,7 +106,7 @@ export class JsonlSession {
   }
 
   metadata(): SessionMetadata {
-    return sessionMetadata(readMetadataRecords(this.jsonlPath));
+    return readSessionMetadata(this.jsonlPath);
   }
 
   messageRecords(): SessionMessageRecord[] {
@@ -111,17 +119,22 @@ export class JsonlSession {
     return this.messageRecords().map(recordToMessage);
   }
 
-  recentMessages(limit: number): { messages: Message[]; omitted: number } {
+  recentMessages(limit: number): { messages: Message[]; omitted: number; oversizedLines: number } {
     const bounded = Math.max(0, Math.floor(limit));
     const recent = readRecentMessageRecords(this.jsonlPath, bounded);
     return {
       messages: recent.records.map(recordToMessage),
       omitted: Math.max(0, recent.totalMessages - recent.records.length),
+      oversizedLines: recent.oversizedLines,
     };
   }
 
   messageCount(): number {
     return this.#messageCount;
+  }
+
+  summaryStats(): SessionSummaryStats {
+    return readSessionSummaryStats(this.jsonlPath);
   }
 
   contextChunks(): SessionContextChunkRecord[] {

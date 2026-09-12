@@ -1,13 +1,34 @@
-import { existsSync, readFileSync } from 'node:fs';
+import type { SessionMetadata } from './metadata.js';
+import { hasRecordTypePrefix } from './record-envelope.js';
+import { forEachRecordLine } from './record-line-reader.js';
 import type { SessionMetaRecord, SessionOpenRecord } from './records.js';
+
+export function readSessionMetadata(path: string): SessionMetadata {
+  const metadata: SessionMetadata = {};
+  forEachRecordLine(
+    path,
+    (line) => {
+      if (!isMetadataLine(line)) return;
+      const record = parseMetadataRecord(line);
+      if (record?.type === 'session_open' && record.meta) Object.assign(metadata, record.meta);
+      if (record?.type === 'session_meta') Object.assign(metadata, record.meta);
+    },
+    { maxLineChars: 1_048_576 },
+  );
+  return metadata;
+}
 
 export function readMetadataRecords(path: string): Array<SessionOpenRecord | SessionMetaRecord> {
   const out: Array<SessionOpenRecord | SessionMetaRecord> = [];
-  forEachLine(path, (line) => {
-    if (!isMetadataLine(line)) return;
-    const record = parseMetadataRecord(line);
-    if (record) out.push(record);
-  });
+  forEachRecordLine(
+    path,
+    (line) => {
+      if (!isMetadataLine(line)) return;
+      const record = parseMetadataRecord(line);
+      if (record) out.push(record);
+    },
+    { maxLineChars: 1_048_576 },
+  );
   return out;
 }
 
@@ -26,23 +47,10 @@ function isMetadataRecord(
   return record.type === 'session_open' || record.type === 'session_meta';
 }
 
-function forEachLine(path: string, visit: (line: string) => void): void {
-  if (!existsSync(path)) return;
-  const text = readFileSync(path, 'utf8');
-  let start = 0;
-  while (start < text.length) {
-    const newline = text.indexOf('\n', start);
-    const end = newline === -1 ? text.length : newline;
-    const line = text.slice(start, end).trim();
-    if (line) visit(line);
-    start = end + 1;
-  }
-}
-
 function isMetadataLine(line: string): boolean {
   return isTypeLine(line, 'session_open') || isTypeLine(line, 'session_meta');
 }
 
 function isTypeLine(line: string, type: string): boolean {
-  return line.includes(`"type":"${type}"`) || line.includes(`"type": "${type}"`);
+  return hasRecordTypePrefix(line, type);
 }

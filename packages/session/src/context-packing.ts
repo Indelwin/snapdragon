@@ -125,7 +125,7 @@ function isToolResult(record: SessionMessageRecord): boolean {
 }
 
 function tailStartStoreId(messages: SessionMessageRecord[], freshTailCount: number): number {
-  if (messages.length <= freshTailCount) return Number.POSITIVE_INFINITY;
+  if (messages.length <= freshTailCount) return messages[0]?.store_id ?? Number.POSITIVE_INFINITY;
   return messages[messages.length - freshTailCount].store_id;
 }
 

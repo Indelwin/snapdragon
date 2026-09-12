@@ -18,6 +18,9 @@ export class ToolRegistry {
   readonly session: Map<string, unknown>;
   #tools = new Map<string, RegisteredTool>();
   #toolsets = new Map<string, ToolsetState>();
+  #registeredToolsets: Toolset[] = [];
+  #disposePromise?: Promise<void>;
+  #disposed = false;
 
   constructor(options: ToolRegistryOptions) {
     this.cwd = options.cwd;
@@ -25,6 +28,8 @@ export class ToolRegistry {
   }
 
   async register(toolset: Toolset): Promise<void> {
+    if (this.#disposed) throw new Error('Tool registry is disposed.');
+    if (!this.#registeredToolsets.includes(toolset)) this.#registeredToolsets.push(toolset);
     const check = toolset.check ? await toolset.check() : { available: true };
     this.#toolsets.set(toolset.name, {
       available: check.available,
@@ -75,6 +80,7 @@ export class ToolRegistry {
   }
 
   async invoke(name: string, args: unknown, context?: Partial<ToolContext>): Promise<ToolResult> {
+    if (this.#disposed) return { content: 'Tool registry is disposed.', isError: true };
     const tool = this.#tools.get(name);
     if (!tool) {
       return { content: `Tool not found: ${name}`, isError: true };
@@ -99,6 +105,21 @@ export class ToolRegistry {
         isError: true,
       };
     }
+  }
+
+  dispose(): Promise<void> {
+    this.#disposePromise ??= this.#dispose();
+    return this.#disposePromise;
+  }
+
+  async #dispose(): Promise<void> {
+    this.#disposed = true;
+    const toolsets = this.#registeredToolsets.splice(0).reverse();
+    await Promise.allSettled(
+      toolsets.map((toolset) => Promise.resolve().then(() => toolset.dispose?.())),
+    );
+    this.#tools.clear();
+    this.#toolsets.clear();
   }
 }
 

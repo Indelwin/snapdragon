@@ -14,6 +14,7 @@ import type {
 export class SdSessionIndex {
   readonly path: string;
   #db: DatabaseSync;
+  #closed = false;
 
   private constructor(path: string, db: DatabaseSync) {
     this.path = path;
@@ -35,6 +36,8 @@ export class SdSessionIndex {
   }
 
   close(): void {
+    if (this.#closed) return;
+    this.#closed = true;
     this.#db.close();
   }
 

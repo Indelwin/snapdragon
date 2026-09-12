@@ -11,13 +11,16 @@
  */
 
 import type { Message } from '@snapdragon-ai/host';
+import { activeContextChunks } from './context-frontier.js';
+import { planLeafContextCompaction } from './context-leaf-plan.js';
 import type { ContextWindowOptions } from './context-options.js';
 import { resolveContextWindowOptions } from './context-options.js';
-import { compactionCandidates, selectChunkMessages, sumRecordTokens } from './context-packing.js';
+import { compactionCandidates } from './context-packing.js';
+import { selectRollupChunks } from './context-rollup-packing.js';
 import {
   type ContextChunkInput,
   renderContextChunk,
-  summarizeMessagesDeterministically,
+  summarizeChunksDeterministically,
 } from './context-summary.js';
 import type { SessionContextChunkRecord, SessionMessageRecord } from './records.js';
 import { estimateMessagesTokens, HeuristicTokenCounter, type TokenCounter } from './tokens.js';
@@ -52,7 +55,7 @@ export function assembleContextWindow(
   const messages = sortedMessages(state.messages);
   if (!resolved.enabled) return rawAssembly(messages, counter);
 
-  const chunks = sortedChunks(state.chunks);
+  const chunks = activeContextChunks(state.chunks);
   const watermark = latestChunkEnd(chunks);
   const visible = messages.filter((record) => record.store_id > watermark);
   const assembled = [...chunks.map(renderContextChunk), ...visible.map(recordToMessage)];
@@ -77,39 +80,75 @@ export function planContextCompaction(
   if (!resolved.enabled) return { reason: 'disabled' };
 
   const messages = sortedMessages(state.messages);
-  const candidates = compactionCandidates(messages, state.chunks, resolved);
-  if (candidates.length === 0) return { reason: 'no_messages' };
+  const chunks = activeContextChunks(state.chunks);
+  const candidates = compactionCandidates(messages, chunks, resolved);
 
-  const viewTokens = assembleContextWindow(state, resolved, counter).stats.totalTokens;
-  const candidateTokens = sumRecordTokens(candidates, counter);
-  const shouldCompact =
-    candidateTokens >= resolved.chunkTargetTokens || viewTokens > resolved.maxRequestTokens;
-  if (!shouldCompact || candidates.length < resolved.minChunkMessages) {
+  const viewTokens = assembleContextWindow({ messages, chunks }, resolved, counter).stats
+    .totalTokens;
+  if (candidates.length === 0) {
+    return planContextRollup(chunks, resolved, viewTokens, counter);
+  }
+  const leaf = planLeafContextCompaction(candidates, resolved, viewTokens, counter);
+  if (leaf.chunk) return leaf;
+  return fallbackRollupUnderPressure(
+    chunks,
+    resolved,
+    viewTokens,
+    counter,
+    leaf.reason ?? 'below_target',
+  );
+}
+
+function fallbackRollupUnderPressure(
+  chunks: SessionContextChunkRecord[],
+  options: ReturnType<typeof resolveContextWindowOptions>,
+  viewTokens: number,
+  counter: TokenCounter,
+  reason: NonNullable<ContextPlanResult['reason']>,
+): ContextPlanResult {
+  if (viewTokens <= options.maxRequestTokens) return { reason };
+  const rollup = planContextRollup(chunks, options, viewTokens, counter);
+  return rollup.chunk ? rollup : { reason };
+}
+
+function planContextRollup(
+  chunks: SessionContextChunkRecord[],
+  options: ReturnType<typeof resolveContextWindowOptions>,
+  viewTokens: number,
+  counter: TokenCounter,
+): ContextPlanResult {
+  const selected = selectRollupChunks(chunks, options.chunkTargetTokens, counter);
+  if (selected.length === 0) return { reason: 'no_messages' };
+  const sourceTokens = estimateMessagesTokens(selected.map(renderContextChunk), counter);
+  if (sourceTokens < options.chunkTargetTokens && viewTokens <= options.maxRequestTokens) {
     return { reason: 'below_target' };
   }
-
-  const selected = selectChunkMessages(candidates, resolved.chunkTargetTokens, counter);
-  if (selected.length < resolved.minChunkMessages) return { reason: 'below_target' };
-
-  const sourceTokens = sumRecordTokens(selected, counter);
-  const summary = summarizeMessagesDeterministically(
-    selected,
-    resolved.summaryTargetTokens,
-    counter,
-  );
-  if (summary.tokens >= sourceTokens) return { reason: 'no_smaller' };
-
-  return {
-    chunk: {
-      range_start: selected[0].store_id,
-      range_end: selected[selected.length - 1].store_id,
-      summary_text: summary.text,
-      source_token_count: sourceTokens,
-      summary_token_count: summary.tokens,
-      level: 'deterministic',
-      created_by_model: null,
-    },
+  const summary = summarizeChunksDeterministically(selected, options.summaryTargetTokens, counter);
+  const chunk: ContextChunkInput = {
+    range_start: selected[0].range_start,
+    range_end: selected[selected.length - 1].range_end,
+    summary_text: summary.text,
+    source_token_count: sourceTokens,
+    summary_token_count: summary.tokens,
+    level: 'deterministic',
+    kind: 'rollup',
+    depth: Math.max(...selected.map((chunk) => chunk.depth ?? 0)) + 1,
+    child_chunks: selected.map((chunk) => ({
+      chunk_id: chunk.chunk_id,
+      range_start: chunk.range_start,
+      range_end: chunk.range_end,
+    })),
+    created_by_model: null,
   };
+  return replacementShrinks(chunk, sourceTokens, counter) ? { chunk } : { reason: 'no_smaller' };
+}
+
+function replacementShrinks(
+  chunk: ContextChunkInput,
+  sourceTokens: number,
+  counter: TokenCounter,
+): boolean {
+  return estimateMessagesTokens([renderContextChunk(chunk)], counter) < sourceTokens;
 }
 
 export function recordToMessage(record: SessionMessageRecord): Message {
@@ -141,10 +180,6 @@ function rawAssembly(
 
 function sortedMessages(messages: SessionMessageRecord[]): SessionMessageRecord[] {
   return [...messages].sort((a, b) => a.store_id - b.store_id);
-}
-
-function sortedChunks(chunks: SessionContextChunkRecord[]): SessionContextChunkRecord[] {
-  return [...chunks].sort((a, b) => a.range_start - b.range_start || a.chunk_id - b.chunk_id);
 }
 
 function latestChunkEnd(chunks: SessionContextChunkRecord[]): number {

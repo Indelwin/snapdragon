@@ -5,9 +5,14 @@ import type {
   ReasoningRequest,
   StreamingChatHandler,
 } from '@snapdragon-ai/host';
-import { codingToolsets, replToolset, ToolRegistry } from '@snapdragon-ai/tools';
+import { codingToolsets, replToolset, type ToolRegistry } from '@snapdragon-ai/tools';
 import { runAgentPrompt } from './agent-prompt.js';
 import type { AgentPromptState } from './agent-prompt-types.js';
+import {
+  createOwnedToolRegistry,
+  disposeAgentRegistry,
+  prepareAgentRegistry,
+} from './agent-registry.js';
 import { appendAgentMessage, appendAgentMeta, emitAgentEvent } from './agent-state.js';
 import type { AgentEventListener } from './events.js';
 import { defaultCodingSystemPrompt, defaultSystemPrompt } from './prompts.js';
@@ -26,12 +31,16 @@ type ReasoningOptions = Partial<Record<'reasoning', ReasoningRequest>>;
 type RuntimeOptions = ReasoningOptions & Partial<Pick<AgentOptions, 'context' | 'maxTokens'>>;
 type AgentOptionsPlus = AgentOptions & ReasoningOptions;
 type CodingOptions = CodingAgentOptions & ReasoningOptions;
-type AgentArgsPlus = SnapdragonAgentArgs & ReasoningOptions;
+type AgentArgsPlus = SnapdragonAgentArgs & ReasoningOptions & { ownsRegistry: boolean };
 
 const DEFAULT_MAX_TOOL_RESULT_BYTES = 64_000;
 const DEFAULT_MAX_TOOL_CALL_ARGS_BYTES = 64_000;
 
 export { defaultCodingSystemPrompt, defaultSystemPrompt } from './prompts.js';
+export {
+  ContextBudgetExceededError,
+  isContextBudgetExceededError,
+} from './request-context-error.js';
 export type * from './types.js';
 
 export class SnapdragonAgent {
@@ -51,6 +60,11 @@ export class SnapdragonAgent {
   #reasoning: ReasoningRequest | undefined;
   #session?: AgentSession;
   #listeners = new Set<AgentEventListener>();
+  #activePrompts = new Set<Promise<unknown>>();
+  #abortControllers = new Set<AbortController>();
+  #disposePromise?: Promise<void>;
+  #disposed = false;
+  #ownsRegistry: boolean;
 
   get listeners(): Set<AgentEventListener> {
     return this.#listeners;
@@ -71,13 +85,19 @@ export class SnapdragonAgent {
     this.#maxTokens = args.maxTokens;
     this.#reasoning = args.reasoning;
     this.#session = args.session;
+    this.#ownsRegistry = args.ownsRegistry;
   }
 
-  static async create(options: AgentOptionsPlus): Promise<SnapdragonAgent> {
+  static async create(
+    options: AgentOptionsPlus,
+    ownsInjectedRegistry = false,
+  ): Promise<SnapdragonAgent> {
     const cwd = options.cwd ?? process.cwd();
-    const registry =
-      options.tools instanceof ToolRegistry ? options.tools : new ToolRegistry({ cwd });
-    if (Array.isArray(options.tools)) await registry.registerMany(options.tools);
+    const { registry, owned: ownsRegistry } = await prepareAgentRegistry(
+      cwd,
+      options.tools,
+      ownsInjectedRegistry,
+    );
 
     return new SnapdragonAgent({
       provider: options.provider,
@@ -93,10 +113,12 @@ export class SnapdragonAgent {
       maxTokens: options.maxTokens,
       reasoning: options.reasoning,
       session: options.session,
+      ownsRegistry,
     });
   }
 
   subscribe(listener: AgentEventListener): () => void {
+    if (this.#disposed) return () => undefined;
     this.#listeners.add(listener);
     return () => this.#listeners.delete(listener);
   }
@@ -112,7 +134,33 @@ export class SnapdragonAgent {
   }
 
   prompt(input: AgentPromptInput, options: PromptOptions = {}): Promise<LlmChatResponse> {
-    return runAgentPrompt(this.#promptState(), input, options);
+    if (this.#disposed) return Promise.reject(new Error('Agent is disposed.'));
+    const controller = new AbortController();
+    const removeAbortForwarder = forwardAbort(options.signal, controller);
+    this.#abortControllers.add(controller);
+    const task = runAgentPrompt(this.#promptState(), input, {
+      ...options,
+      signal: controller.signal,
+    });
+    this.#activePrompts.add(task);
+    return task.finally(() => {
+      removeAbortForwarder();
+      this.#abortControllers.delete(controller);
+      this.#activePrompts.delete(task);
+    });
+  }
+
+  dispose(): Promise<void> {
+    this.#disposePromise ??= this.#dispose();
+    return this.#disposePromise;
+  }
+
+  async #dispose(): Promise<void> {
+    this.#disposed = true;
+    for (const controller of this.#abortControllers) controller.abort();
+    await Promise.allSettled([...this.#activePrompts]);
+    this.#listeners.clear();
+    await disposeAgentRegistry(this.registry, this.#ownsRegistry);
   }
 
   #promptState(): AgentPromptState {
@@ -147,7 +195,8 @@ export class SnapdragonAgent {
     replacement,
     tools,
     runId,
-  ) => sendProviderRequest(this.#providerRequestState(), replacement, tools, runId);
+    signal,
+  ) => sendProviderRequest(this.#providerRequestState(), replacement, tools, runId, signal);
 
   readonly #appendMessage: AgentPromptState['appendMessage'] = (message) =>
     appendAgentMessage({
@@ -161,18 +210,32 @@ export class SnapdragonAgent {
     emitAgentEvent({ listeners: this.#listeners, event });
 }
 
-export const createAgent = SnapdragonAgent.create;
+function forwardAbort(signal: AbortSignal | undefined, controller: AbortController): () => void {
+  if (!signal) return () => undefined;
+  if (signal.aborted) controller.abort();
+  const abort = () => controller.abort();
+  signal.addEventListener('abort', abort, { once: true });
+  return () => signal.removeEventListener('abort', abort);
+}
+
+export const createAgent = (options: AgentOptionsPlus): Promise<SnapdragonAgent> =>
+  SnapdragonAgent.create(options);
 
 export async function createCodingReplAgent(options: CodingOptions): Promise<SnapdragonAgent> {
   const cwd = options.cwd ?? process.cwd();
-  const registry = new ToolRegistry({ cwd, session: codingSession(options) });
-  await registry.registerMany([...codingToolsets({ cwd }), replToolset()]);
-  return SnapdragonAgent.create({
-    ...options,
-    cwd,
-    tools: registry,
-    systemPrompt: options.systemPrompt ?? defaultCodingSystemPrompt(),
-  });
+  const registry = await createOwnedToolRegistry({ cwd, session: codingSession(options) }, [
+    ...codingToolsets({ cwd }),
+    replToolset(),
+  ]);
+  return SnapdragonAgent.create(
+    {
+      ...options,
+      cwd,
+      tools: registry,
+      systemPrompt: options.systemPrompt ?? defaultCodingSystemPrompt(),
+    },
+    true,
+  );
 }
 
 function codingSession(options: CodingAgentOptions): Map<string, unknown> | undefined {
