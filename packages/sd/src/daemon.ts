@@ -80,5 +80,5 @@ export async function writeDaemonResult(message: Promise<string>): Promise<void>
 
 async function stopRuntime(runtime: SdRuntime): Promise<void> {
   const { stopSdRuntime } = await import('./runtime.js');
-  stopSdRuntime(runtime);
+  await stopSdRuntime(runtime);
 }

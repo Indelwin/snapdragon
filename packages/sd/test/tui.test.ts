@@ -797,7 +797,7 @@ test('prompt typing inserts at cursor, not just at end', () => {
   assert.equal(args.cursorRef.current, 3);
 });
 
-test('global keymap swallows xterm SGR mouse sequences before they reach the prompt', () => {
+test('global keymap leaves mouse-like text untouched after raw adapter filtering', () => {
   const consumed = handleGlobalInput(
     '[<64;10;5M',
     {},
@@ -813,7 +813,7 @@ test('global keymap swallows xterm SGR mouse sequences before they reach the pro
       historyIndexRef: { current: -1 },
     },
   );
-  assert.equal(consumed, true);
+  assert.equal(consumed, false);
 });
 
 test('prompt backspace removes char before cursor (not always last char)', () => {
@@ -934,6 +934,39 @@ test('escape aborts an in-flight run without exiting', async () => {
 
     // A second Esc with no live AbortController is a no-op.
     assert.equal(handleGlobalInput('', { escape: true }, commonArgs), true);
+    assert.equal(exitCalled, false);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test('raw TUI Ctrl-C aborts an active run without requesting process exit', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-ctrl-c-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    const controller = new SdUiController(runtime);
+    const abort = new AbortController();
+    let exitCalled = false;
+    controller.acceptAgentEvent({ type: 'run_start', runId: 'run_ctrl_c' });
+    controller.setActiveAbortController(abort);
+
+    const consumed = handleGlobalInput(
+      '\x03',
+      { ctrl: true },
+      {
+        controller,
+        exit: () => {
+          exitCalled = true;
+        },
+        setDraft: () => undefined,
+        setPalette: () => undefined,
+        paletteRef: { current: { open: false, query: '', selectedIndex: 0 } },
+        historyIndexRef: { current: -1 },
+      },
+    );
+
+    assert.equal(consumed, true);
+    assert.equal(abort.signal.aborted, true);
     assert.equal(exitCalled, false);
   } finally {
     await rm(workspace, { force: true, recursive: true });

@@ -35,6 +35,24 @@ export interface ReloadOptions {
    * doesn't look frozen. No-op by default.
    */
   progress?: (label: string) => void;
+  /** Unsubmitted interactive input to restore after an executable restart. */
+  draft?: string;
+}
+
+export interface SdRestartState {
+  sessionId?: string;
+  noSession: boolean;
+  provider: string;
+  model: string;
+  profileName?: string;
+  noProfile: boolean;
+  draft?: string;
+}
+
+export interface SdRestartRequest {
+  kind: 'restart';
+  reason: 'executable_reload';
+  state: SdRestartState;
 }
 
 export interface ReloadStepReport {
@@ -53,4 +71,5 @@ export interface ReloadReport {
   services: number;
   provider: string;
   durationMs: number;
+  restart?: SdRestartRequest;
 }

@@ -45,6 +45,11 @@ export function parseArgs(argv: string[], cwd = process.cwd()): SdCliArgs {
       continue;
     }
 
+    if (parsed.flag === '--json' && out.mode === 'doctor') {
+      out.json = true;
+      continue;
+    }
+
     if (applyBooleanFlag(out, parsed.flag)) continue;
     if (applyDaemonToken(raw, out, promptParts)) {
       continue;

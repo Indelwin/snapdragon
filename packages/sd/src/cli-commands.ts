@@ -3,21 +3,8 @@ import { dirname, resolve } from 'node:path';
 import { stdout } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import type { SdCliArgs, SdCliMode } from './args-types.js';
-import {
-  DEFAULT_SD_ENV_PATH,
-  DEFAULT_SD_EXTENSION_ROOT,
-  loadSdConfig,
-  writeDefaultConfig,
-  writeEnvTemplate,
-} from './config.js';
-import {
-  ensureFirstPartyExtensions,
-  ensureFirstPartyProfiles,
-  ensureFirstPartySkills,
-} from './first-party.js';
 import { helpText } from './help.js';
-import { type SdProfileInfo, SdProfileStore } from './profile.js';
-import { DEFAULT_SD_SKILL_ROOT } from './skills.js';
+import type { SdProfileInfo } from './profile.js';
 
 type CommandHandler = (args: SdCliArgs) => Promise<void> | void;
 
@@ -28,13 +15,22 @@ const commandHandlers: Partial<Record<SdCliMode, CommandHandler>> = {
   version: async () => {
     stdout.write(`${await readPackageVersion()}\n`);
   },
+  doctor: runDoctorCommand,
   setup: (args) => setup(args.configPath, args.profileRoot),
   'list-sessions': (args) => listSessions(args.configPath),
   'delete-session': (args) => deleteSession(args.configPath, args.deleteSessionId),
-  'list-profiles': (args) => listProfiles(new SdProfileStore({ root: args.profileRoot })),
+  'list-profiles': (args) => listProfiles(args.profileRoot),
   daemon: runDaemonCommand,
   gateway: runGatewayCommand,
 };
+
+async function runDoctorCommand(args: SdCliArgs): Promise<void> {
+  const [{ collectSdDoctorReport }, { formatSdDoctorReport }] = await Promise.all([
+    import('./doctor.js'),
+    import('./doctor-format.js'),
+  ]);
+  stdout.write(formatSdDoctorReport(await collectSdDoctorReport(), args.json === true));
+}
 
 export async function runPreRuntimeCommand(args: SdCliArgs): Promise<boolean> {
   const handler = commandHandlers[args.mode];
@@ -77,14 +73,19 @@ async function listSessions(configPath: string): Promise<void> {
 
 async function deleteSession(configPath: string, sessionId: string | undefined): Promise<void> {
   if (!sessionId) throw new Error('--delete-session requires an id');
+  const { loadSdConfig } = await import('./config.js');
   const config = await loadSdConfig(configPath);
   const { runtimeSessionStore } = await import('./runtime-session.js');
   const deleted = runtimeSessionStore(config).delete(sessionId);
   stdout.write(deleted ? `Deleted session ${sessionId}\n` : `Session not found: ${sessionId}\n`);
 }
 
-function listProfiles(store: SdProfileStore): void {
-  const profiles = store.list();
+async function listProfiles(profileRoot: string | undefined): Promise<void> {
+  const { SdProfileStore } = await import('./profile.js');
+  printProfiles(new SdProfileStore({ root: profileRoot }).list());
+}
+
+function printProfiles(profiles: SdProfileInfo[]): void {
   if (profiles.length === 0) {
     stdout.write('No profiles found.\n');
     return;
@@ -100,6 +101,23 @@ function profileLine(profile: SdProfileInfo): string {
 }
 
 async function setup(configPath: string, profileRoot?: string): Promise<void> {
+  const [configModule, firstPartyModule, profileModule, skillsModule] = await Promise.all([
+    import('./config.js'),
+    import('./first-party.js'),
+    import('./profile.js'),
+    import('./skills.js'),
+  ]);
+  const {
+    DEFAULT_SD_ENV_PATH,
+    DEFAULT_SD_EXTENSION_ROOT,
+    loadSdConfig,
+    writeDefaultConfig,
+    writeEnvTemplate,
+  } = configModule;
+  const { ensureFirstPartyExtensions, ensureFirstPartyProfiles, ensureFirstPartySkills } =
+    firstPartyModule;
+  const { SdProfileStore } = profileModule;
+  const { DEFAULT_SD_SKILL_ROOT } = skillsModule;
   const wroteConfig = await writeDefaultConfig(configPath);
   const wroteEnv = await writeEnvTemplate();
   const config = await loadSdConfig(configPath);

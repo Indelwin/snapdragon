@@ -1,5 +1,9 @@
 import type { Message } from '@snapdragon-ai/host';
-import type { SessionContextChunkRecord, SessionMessageRecord } from './records.js';
+import type {
+  SessionContextChunkRecord,
+  SessionContextChunkReference,
+  SessionMessageRecord,
+} from './records.js';
 import { contentToText, HeuristicTokenCounter, type TokenCounter } from './tokens.js';
 
 export interface ContextChunkInput {
@@ -9,11 +13,16 @@ export interface ContextChunkInput {
   source_token_count: number;
   summary_token_count: number;
   level: 'deterministic' | 'summary';
+  kind?: 'leaf' | 'rollup';
+  depth?: number;
+  child_chunks?: SessionContextChunkReference[];
   created_by_model?: string | null;
   meta?: Record<string, unknown>;
 }
 
-export function renderContextChunk(record: SessionContextChunkRecord): Message {
+export function renderContextChunk(
+  record: Pick<SessionContextChunkRecord, 'range_start' | 'range_end' | 'summary_text'>,
+): Message {
   return {
     role: 'user',
     content: [
@@ -32,6 +41,26 @@ export function summarizeMessagesDeterministically(
 ): { text: string; tokens: number } {
   const header = `Deterministic compacted summary of ${records.length} canonical message(s).`;
   const body = records.map((record) => summarizeRecord(record)).join('\n');
+  const targetChars = Math.max(160, Math.floor(targetTokens * 3.5));
+  const text = truncateToChars(`${header}\n${body}`, targetChars);
+  return { text, tokens: counter.countString(text) };
+}
+
+export function summarizeChunksDeterministically(
+  chunks: SessionContextChunkRecord[],
+  targetTokens: number,
+  counter: TokenCounter = new HeuristicTokenCounter(),
+): { text: string; tokens: number } {
+  const header = `Deterministic rollup of ${chunks.length} context summary chunk(s).`;
+  const body = chunks
+    .map(
+      (chunk) =>
+        `#chunk-${chunk.chunk_id} messages ${chunk.range_start}-${chunk.range_end}: ${preview(
+          chunk.summary_text,
+          1_200,
+        )}`,
+    )
+    .join('\n');
   const targetChars = Math.max(160, Math.floor(targetTokens * 3.5));
   const text = truncateToChars(`${header}\n${body}`, targetChars);
   return { text, tokens: counter.countString(text) };

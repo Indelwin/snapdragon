@@ -4,6 +4,7 @@ export type SdCliMode =
   | 'print'
   | 'help'
   | 'version'
+  | 'doctor'
   | 'setup'
   | 'list-sessions'
   | 'delete-session'
@@ -28,6 +29,8 @@ export interface SdCliArgs {
   backgroundMode?: 'daemon' | 'inline' | 'off';
   noBackground?: boolean;
   noMemoryWorker?: boolean;
+  diagnostics?: boolean;
+  json?: boolean;
   daemonAction?: 'run' | 'start' | 'stop' | 'status' | 'run-once';
   gatewayArgs?: string[];
   prompt?: string;

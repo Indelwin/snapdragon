@@ -1,5 +1,6 @@
 import type { MutableRefObject } from 'react';
 import type { PendingAttachment } from '../attachments.js';
+import type { SdRestartRequest } from '../reload.js';
 import type { SdRuntime } from '../runtime.js';
 import type { PromptCompletionState } from './input-completion.js';
 import type { PaletteState } from './input-keymap.js';
@@ -14,4 +15,6 @@ export interface RunSlashLineArgs {
   setAttachments: (attachments: PendingAttachment[]) => void;
   setPalette: (patch: Partial<PaletteState>) => void;
   openSelection?: (draft: string, options?: { completion?: PromptCompletionState }) => void;
+  restart?: (request: SdRestartRequest) => void;
+  restartDraft?: string;
 }

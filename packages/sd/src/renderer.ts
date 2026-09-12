@@ -1,6 +1,6 @@
 import type { AgentEvent } from '@snapdragon-ai/agent';
 import type { LlmChatResponse } from '@snapdragon-ai/host';
-import type { SdIo } from './repl.js';
+import type { SdIo } from './repl-io.js';
 
 export class RunRenderer {
   #sawText = false;

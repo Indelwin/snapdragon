@@ -54,7 +54,9 @@ async function runWorkspaceTests(workspace) {
 async function workspaceTestFiles(dir) {
   const testDir = join(dir, 'test');
   const files = await readdir(testDir).catch(() => []);
-  return files.filter((file) => file.endsWith('.test.ts')).map((file) => resolve(testDir, file));
+  return files
+    .filter((file) => /\.test\.(?:ts|mjs)$/.test(file))
+    .map((file) => resolve(testDir, file));
 }
 
 function spawnNode(args, cwd) {

@@ -1,6 +1,6 @@
 import type { GatewayAgentRunSpec } from '@snapdragon-ai/gateway';
 import type { SdCliArgs } from './args-types.js';
-import { runOneShot } from './repl.js';
+import { runOneShot } from './repl-run-once.js';
 import { createSdRuntime, stopSdRuntime } from './runtime.js';
 
 export interface HeadlessGatewayAgentResult {
@@ -34,7 +34,7 @@ export async function runHeadlessGatewayAgent(
       },
     };
   } finally {
-    stopSdRuntime(runtime);
+    await stopSdRuntime(runtime);
   }
 }
 

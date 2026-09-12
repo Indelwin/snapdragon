@@ -18,7 +18,7 @@ export async function readAnthropicStream(
   let active: ActiveBlock | undefined;
   let finishReason: string | undefined;
 
-  for await (const payload of sseLines(body)) {
+  for await (const payload of sseLines(body, context.signal)) {
     const event = safeJson<Record<string, unknown>>(payload);
     if (!event) continue;
     if (event.type === 'error') {

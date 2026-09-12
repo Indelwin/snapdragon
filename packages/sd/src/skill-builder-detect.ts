@@ -5,99 +5,23 @@
  */
 
 import type { SdSkillBuilderConfig } from './config.js';
-import { buildExample } from './skill-builder-example.js';
-import type {
-  CandidateExample,
-  SdSkillPattern,
-  SkillBuilderMessageRecord,
-  SkillBuilderTraceEntry,
-} from './skill-builder-types.js';
+import type { NgramStats } from './skill-builder-ngram-types.js';
+import type { SdSkillPattern } from './skill-builder-types.js';
 
+export {
+  ingestSessionDeltaIntoStats,
+  ingestSessionIntoStats,
+} from './skill-builder-ngram-ingest.js';
+export type { NgramEntry, NgramStats } from './skill-builder-ngram-types.js';
 export type {
   CandidateExample,
   SdSkillPattern,
   SkillBuilderMessageRecord,
 } from './skill-builder-types.js';
 
-interface NgramEntry {
-  ngram: string[];
-  count: number;
-  sessions: Set<string>;
-  examples: CandidateExample[];
-}
-
-/** Map keyed by ngram id ('a→b'); accumulates across sessions. */
-export type NgramStats = Map<string, NgramEntry>;
-
 /** Construct an empty stats map. */
 export function createNgramStats(): NgramStats {
   return new Map();
-}
-
-/**
- * Walk one session's records, extract the tool-call sequence, and add
- * n-grams of length 2 and 3 to the running stats.
- */
-export function ingestSessionIntoStats(
-  records: SkillBuilderMessageRecord[],
-  sessionId: string,
-  stats: NgramStats,
-): void {
-  const trace = collectToolCallTrace(records);
-  const sequence = trace.map((entry) => entry.call.name);
-  for (const length of [2, 3] as const)
-    ingestNgramsOfLength(records, sessionId, stats, trace, sequence, length);
-}
-
-function ingestNgramsOfLength(
-  records: SkillBuilderMessageRecord[],
-  sessionId: string,
-  stats: NgramStats,
-  trace: SkillBuilderTraceEntry[],
-  sequence: string[],
-  length: 2 | 3,
-): void {
-  if (sequence.length < length) return;
-  for (let index = 0; index <= sequence.length - length; index += 1) {
-    ingestNgramAt(records, sessionId, stats, trace, sequence, index, length);
-  }
-}
-
-function ingestNgramAt(
-  records: SkillBuilderMessageRecord[],
-  sessionId: string,
-  stats: NgramStats,
-  trace: SkillBuilderTraceEntry[],
-  sequence: string[],
-  index: number,
-  length: 2 | 3,
-): void {
-  const ngram = sequence.slice(index, index + length);
-  if (!isInterestingNgram(ngram)) return;
-  const entry = statsEntry(stats, ngram);
-  entry.count += 1;
-  entry.sessions.add(sessionId);
-  appendCandidateExample(entry, sessionId, records, trace, index, length);
-}
-
-function statsEntry(stats: NgramStats, ngram: string[]): NgramEntry {
-  const id = ngram.join('→');
-  const entry = stats.get(id) ?? { ngram, count: 0, sessions: new Set<string>(), examples: [] };
-  stats.set(id, entry);
-  return entry;
-}
-
-function appendCandidateExample(
-  entry: NgramEntry,
-  sessionId: string,
-  records: SkillBuilderMessageRecord[],
-  trace: SkillBuilderTraceEntry[],
-  index: number,
-  length: 2 | 3,
-): void {
-  if (entry.examples.length >= 3 || entry.examples.some((e) => e.sessionId === sessionId)) return;
-  const example = buildExample(sessionId, records, trace, index, length);
-  if (example) entry.examples.push(example);
 }
 
 /**
@@ -179,21 +103,4 @@ function containsSlice(haystack: string[], needle: string[]): boolean {
     return true;
   }
   return false;
-}
-
-function collectToolCallTrace(records: SkillBuilderMessageRecord[]): SkillBuilderTraceEntry[] {
-  const out: SkillBuilderTraceEntry[] = [];
-  records.forEach((record, recordIndex) => {
-    if (record.role !== 'assistant') return;
-    for (const call of record.tool_calls ?? []) {
-      if (call?.name) out.push({ call, recordIndex });
-    }
-  });
-  return out;
-}
-
-/** Reject repeated same-tool n-grams; they do not capture a workflow transition. */
-function isInterestingNgram(ngram: string[]): boolean {
-  const [first, second, third] = ngram;
-  return ngram.length === 2 ? first !== second : first !== second || first !== third;
 }
