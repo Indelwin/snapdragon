@@ -3,20 +3,29 @@ use scraper::{ElementRef, Node, Selector};
 use crate::extractor_boilerplate::is_boilerplate_element;
 use crate::extractor_text::{element_text, normalize_ws, truncate_str};
 
-pub(crate) fn container_to_markdown(container: &ElementRef, max_chars: usize) -> String {
-    let mut parts = Vec::new();
+pub(crate) fn container_to_markdown(container: &ElementRef, max_chars: usize) -> (String, bool) {
+    let mut output = String::new();
+    let mut output_chars = 0;
     for child in container.children() {
-        match child.value() {
+        let markdown = match child.value() {
             Node::Element(_) => {
                 if let Some(el_ref) = ElementRef::wrap(child) {
-                    push_element_markdown(&el_ref, &mut parts);
+                    element_markdown(&el_ref)
+                } else {
+                    None
                 }
             }
-            Node::Text(text) => push_text_markdown(&text.text, &mut parts),
-            _ => {}
+            Node::Text(text) => text_markdown(&text.text),
+            _ => None,
+        };
+        if let Some(markdown) = markdown {
+            let truncated = append_markdown(&mut output, &mut output_chars, &markdown, max_chars);
+            if truncated {
+                return (output, true);
+            }
         }
     }
-    truncate_str(&parts.join("\n\n"), max_chars)
+    (output, false)
 }
 
 pub(crate) fn tag_markdown(tag: &str, text: &str) -> String {
@@ -34,19 +43,17 @@ pub(crate) fn tag_markdown(tag: &str, text: &str) -> String {
     }
 }
 
-fn push_element_markdown(el_ref: &ElementRef, parts: &mut Vec<String>) {
+fn element_markdown(el_ref: &ElementRef) -> Option<String> {
     if is_boilerplate_element(&el_ref) {
-        return;
+        return None;
     }
     let tag = el_ref.value().name();
     let text = normalize_ws(&element_text(&el_ref));
     if text.is_empty() {
-        return;
+        return None;
     }
     let markdown = nested_markdown(tag, &text, &el_ref);
-    if !markdown.is_empty() {
-        parts.push(markdown);
-    }
+    (!markdown.is_empty()).then_some(markdown)
 }
 
 fn nested_markdown(tag: &str, text: &str, el: &ElementRef) -> String {
@@ -57,11 +64,30 @@ fn nested_markdown(tag: &str, text: &str, el: &ElementRef) -> String {
     }
 }
 
-fn push_text_markdown(text: &str, parts: &mut Vec<String>) {
+fn text_markdown(text: &str) -> Option<String> {
     let text = normalize_ws(text);
-    if !text.is_empty() {
-        parts.push(text);
+    (!text.is_empty()).then_some(text)
+}
+
+pub(crate) fn append_markdown(
+    output: &mut String,
+    output_chars: &mut usize,
+    markdown: &str,
+    max_chars: usize,
+) -> bool {
+    let separator = if output.is_empty() { "" } else { "\n\n" };
+    let added_chars = separator.chars().count() + markdown.chars().count();
+    if *output_chars + added_chars <= max_chars {
+        output.push_str(separator);
+        output.push_str(markdown);
+        *output_chars += added_chars;
+        return false;
     }
+    let candidate = format!("{output}{separator}{markdown}");
+    let (bounded, _) = truncate_str(&candidate, max_chars);
+    *output = bounded;
+    *output_chars = max_chars;
+    true
 }
 
 fn extract_list(el: &ElementRef) -> String {

@@ -27,14 +27,41 @@ fi
 
 cargo build -p snapdragon-webtools --target wasm32-unknown-unknown --release
 
-ARTIFACT="$ROOT/target/wasm32-unknown-unknown/release/snapdragon_webtools.wasm"
+TARGET_DIR="${CARGO_TARGET_DIR:-$ROOT/target}"
+if [[ "$TARGET_DIR" != /* ]]; then
+  TARGET_DIR="$ROOT/$TARGET_DIR"
+fi
+ARTIFACT="$TARGET_DIR/wasm32-unknown-unknown/release/snapdragon_webtools.wasm"
 if [[ ! -f "$ARTIFACT" ]]; then
   echo "error: expected wasm artifact not found: $ARTIFACT" >&2
   exit 1
 fi
 
 mkdir -p "$ROOT/packages/webtools/dist"
-cp "$ARTIFACT" "$ROOT/packages/webtools/dist/snapdragon_webtools.wasm"
+PACKAGED_ARTIFACT="$ROOT/packages/webtools/dist/snapdragon_webtools.wasm"
+PACKAGED_MANIFEST="$ROOT/packages/webtools/dist/snapdragon_webtools.manifest.json"
+cp "$ARTIFACT" "$PACKAGED_ARTIFACT.tmp"
+mv "$PACKAGED_ARTIFACT.tmp" "$PACKAGED_ARTIFACT"
+
+if ! cmp -s "$ARTIFACT" "$PACKAGED_ARTIFACT"; then
+  echo "error: packaged wasm artifact differs from cargo output" >&2
+  exit 1
+fi
+
+node "$ROOT/scripts/write-build-manifest.mjs" \
+  --root "$ROOT" \
+  --artifact "$PACKAGED_ARTIFACT" \
+  --output "$PACKAGED_MANIFEST" \
+  --target wasm32-unknown-unknown \
+  --source "$ROOT/Cargo.toml" \
+  --source "$ROOT/Cargo.lock" \
+  --source "$ROOT/rust-toolchain.toml" \
+  --source "$ROOT/scripts/build-webtools-wasm.sh" \
+  --source "$ROOT/scripts/write-build-manifest.mjs" \
+  --source "$ROOT/crates/webtools/Cargo.toml" \
+  --source "$ROOT/crates/webtools/src"
 
 echo "built $ARTIFACT"
-echo "copied packages/webtools/dist/snapdragon_webtools.wasm"
+echo "packaged packages/webtools/dist/snapdragon_webtools.wasm"
+echo "wrote packages/webtools/dist/snapdragon_webtools.manifest.json"
+shasum -a 256 "$PACKAGED_ARTIFACT" "$PACKAGED_MANIFEST"

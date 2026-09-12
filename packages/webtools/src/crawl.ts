@@ -1,12 +1,24 @@
 import { crawlInto } from './crawl-runner.js';
-import { createCrawlStatus, getCrawlStatus, rememberCrawlStatus } from './crawl-state.js';
-import type { CrawlStatus, WebCrawlOptions } from './crawl-types.js';
+import { CrawlStore } from './crawl-state.js';
+import type { CrawlLookupResult, CrawlStatus, WebCrawlOptions } from './crawl-types.js';
 
-export type { CrawlPage, CrawlStatus, WebCrawlOptions } from './crawl-types.js';
+export type { CrawlStoreDiagnostics, CrawlStoreOptions } from './crawl-state.js';
+export { CrawlStore } from './crawl-state.js';
+export type {
+  CrawlLookupResult,
+  CrawlNotRetainedStatus,
+  CrawlPage,
+  CrawlStatus,
+  WebCrawlOptions,
+} from './crawl-types.js';
 
-export async function webCrawl(seed: string, options: WebCrawlOptions = {}): Promise<CrawlStatus> {
-  const status = createCrawlStatus(options.crawlId);
-  rememberCrawlStatus(status);
+export async function webCrawl(
+  seed: string,
+  options: WebCrawlOptions = {},
+  store?: CrawlStore,
+): Promise<CrawlStatus> {
+  const crawlStore = store ?? new CrawlStore();
+  const status = crawlStore.begin(options.crawlId);
   try {
     await crawlInto(status, seed, options);
     status.status = 'done';
@@ -16,10 +28,20 @@ export async function webCrawl(seed: string, options: WebCrawlOptions = {}): Pro
   } finally {
     status.finishedAt = new Date().toISOString();
     status.queued = 0;
+    crawlStore.complete(status);
+    if (!store) {
+      status.retention = 'not-retained';
+      status.retentionReason = 'no-store-owner';
+      crawlStore.dispose();
+    }
   }
   return status;
 }
 
-export function crawlStatus(id: string): CrawlStatus | undefined {
-  return getCrawlStatus(id);
+export function crawlStatus(id: string, store: CrawlStore): CrawlLookupResult | undefined {
+  return store.get(id);
+}
+
+export function deleteCrawl(id: string, store: CrawlStore): boolean {
+  return store.delete(id);
 }

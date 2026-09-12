@@ -36,12 +36,17 @@
 
 pub mod abi;
 pub mod content_filter;
+mod content_filter_dispatch;
+mod content_filter_rank;
 pub mod extractor;
 mod extractor_boilerplate;
 mod extractor_clean;
 mod extractor_dispatch;
 mod extractor_markdown;
 mod extractor_metadata;
+mod extractor_metadata_budget;
+mod extractor_metadata_links;
+mod extractor_metadata_media;
 mod extractor_render;
 mod extractor_spa;
 mod extractor_text;

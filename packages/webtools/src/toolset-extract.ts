@@ -2,7 +2,14 @@
 
 import type { Tool, ToolResult } from '@snapdragon-ai/tools';
 import { extractor as loadExtractor } from './extractor.js';
-import { jsonData, objectArg, optionalNumberArg, schema, stringArg } from './toolset-helpers.js';
+import {
+  jsonData,
+  objectArg,
+  optionalNumberArg,
+  schema,
+  stringArg,
+  withDisposable,
+} from './toolset-helpers.js';
 
 export function extractHtmlTool(): Tool {
   return {
@@ -16,15 +23,16 @@ export function extractHtmlTool(): Tool {
     ),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
-      const ex = await loadExtractor();
-      const result = ex.extract(
-        stringArg(input, 'html'),
-        optionalNumberArg(input, 'maxChars') ?? 50_000,
-      );
-      return {
-        content: `# ${result.title || '(untitled)'}\n\n${result.markdown}`,
-        data: jsonData(result),
-      };
+      return withDisposable(loadExtractor, (extractor) => {
+        const result = extractor.extract(
+          stringArg(input, 'html'),
+          optionalNumberArg(input, 'maxChars') ?? 50_000,
+        );
+        return {
+          content: `# ${result.title || '(untitled)'}\n\n${result.markdown}`,
+          data: jsonData(result),
+        };
+      });
     },
   };
 }
@@ -41,12 +49,16 @@ export function extractHtmlSelectorTool(): Tool {
     ]),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
-      const ex = await loadExtractor();
-      const result = ex.extractBySelector(stringArg(input, 'html'), stringArg(input, 'selector'));
-      return {
-        content: `matched ${result.matched_nodes}\n\n${result.texts.join('\n---\n')}`,
-        data: jsonData(result),
-      };
+      return withDisposable(loadExtractor, (extractor) => {
+        const result = extractor.extractBySelector(
+          stringArg(input, 'html'),
+          stringArg(input, 'selector'),
+        );
+        return {
+          content: `matched ${result.matched_nodes}\n\n${result.texts.join('\n---\n')}`,
+          data: jsonData(result),
+        };
+      });
     },
   };
 }
@@ -60,9 +72,10 @@ export function extractDetectJsOnlyTool(): Tool {
     parameters: schema({ html: { type: 'string' } }, ['html']),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
-      const ex = await loadExtractor();
-      const v = ex.detectJsOnly(stringArg(input, 'html'));
-      return { content: String(v), data: jsonData({ value: v }) };
+      return withDisposable(loadExtractor, (extractor) => {
+        const value = extractor.detectJsOnly(stringArg(input, 'html'));
+        return { content: String(value), data: jsonData({ value }) };
+      });
     },
   };
 }

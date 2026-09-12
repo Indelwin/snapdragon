@@ -12,13 +12,17 @@ pub(crate) fn normalize_ws(text: &str) -> String {
         .to_string()
 }
 
-pub(crate) fn truncate_str(text: &str, max: usize) -> String {
-    if text.len() <= max {
-        text.to_string()
-    } else {
-        format!(
-            "{}\n...(truncated)",
-            text.chars().take(max).collect::<String>()
-        )
+pub(crate) fn truncate_str(text: &str, max_chars: usize) -> (String, bool) {
+    if text.chars().count() <= max_chars {
+        return (text.to_string(), false);
     }
+
+    const MARKER: &str = "\n...(truncated)";
+    let marker_chars = MARKER.chars().count();
+    if max_chars <= marker_chars {
+        return (MARKER.chars().take(max_chars).collect(), true);
+    }
+    let mut output: String = text.chars().take(max_chars - marker_chars).collect();
+    output.push_str(MARKER);
+    (output, true)
 }

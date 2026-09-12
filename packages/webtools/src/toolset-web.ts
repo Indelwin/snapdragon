@@ -1,7 +1,7 @@
 // Tools that perform HTTP I/O: web_search, web_extract, web_crawl, web_crawl_status.
 
 import type { Tool, ToolResult } from '@snapdragon-ai/tools';
-import { crawlStatus, webCrawl } from './crawl.js';
+import { type CrawlStore, crawlStatus, deleteCrawl, webCrawl } from './crawl.js';
 import { webExtract } from './extract-page.js';
 import { webSearch } from './search.js';
 import { optionalStringArrayArg, optionalUseJina } from './toolset-args.js';
@@ -97,7 +97,7 @@ export function webExtractTool(defaults: HttpDefaults): Tool {
   };
 }
 
-export function webCrawlTool(defaults: HttpDefaults): Tool {
+export function webCrawlTool(defaults: HttpDefaults, store: CrawlStore): Tool {
   return {
     name: 'web_crawl',
     toolset: 'webtools',
@@ -108,6 +108,8 @@ export function webCrawlTool(defaults: HttpDefaults): Tool {
         seed: { type: 'string' },
         maxPages: { type: 'number' },
         maxDepth: { type: 'number' },
+        maxQueuedUrls: { type: 'number' },
+        maxResultBytes: { type: 'number' },
         sameDomain: { type: 'boolean' },
         includePatterns: { type: 'array', items: { type: 'string' } },
         excludePatterns: { type: 'array', items: { type: 'string' } },
@@ -125,26 +127,33 @@ export function webCrawlTool(defaults: HttpDefaults): Tool {
     ),
     async run(args, ctx): Promise<ToolResult> {
       const input = objectArg(args);
-      const status = await webCrawl(stringArg(input, 'seed'), {
-        maxPages: optionalNumberArg(input, 'maxPages'),
-        maxDepth: optionalNumberArg(input, 'maxDepth'),
-        sameDomain: optionalBooleanArg(input, 'sameDomain'),
-        includePatterns: optionalStringArrayArg(input, 'includePatterns'),
-        excludePatterns: optionalStringArrayArg(input, 'excludePatterns'),
-        crawlId: optionalStringArg(input, 'crawlId'),
-        query: optionalStringArg(input, 'query'),
-        maxChars: optionalNumberArg(input, 'maxChars'),
-        maxChunks: optionalNumberArg(input, 'maxChunks'),
-        preferCamofox: optionalBooleanArg(input, 'preferCamofox'),
-        useJina: optionalUseJina(input.useJina),
-        userAgent: optionalStringArg(input, 'userAgent') ?? defaults.userAgent,
-        timeoutMs: optionalNumberArg(input, 'timeoutMs') ?? defaults.timeoutMs,
-        maxBytes: optionalNumberArg(input, 'maxBytes'),
-        signal: ctx.signal,
-      });
+      const status = await webCrawl(
+        stringArg(input, 'seed'),
+        {
+          maxPages: optionalNumberArg(input, 'maxPages'),
+          maxDepth: optionalNumberArg(input, 'maxDepth'),
+          maxQueuedUrls: optionalNumberArg(input, 'maxQueuedUrls'),
+          maxResultBytes: optionalNumberArg(input, 'maxResultBytes'),
+          sameDomain: optionalBooleanArg(input, 'sameDomain'),
+          includePatterns: optionalStringArrayArg(input, 'includePatterns'),
+          excludePatterns: optionalStringArrayArg(input, 'excludePatterns'),
+          crawlId: optionalStringArg(input, 'crawlId'),
+          query: optionalStringArg(input, 'query'),
+          maxChars: optionalNumberArg(input, 'maxChars'),
+          maxChunks: optionalNumberArg(input, 'maxChunks'),
+          preferCamofox: optionalBooleanArg(input, 'preferCamofox'),
+          useJina: optionalUseJina(input.useJina),
+          userAgent: optionalStringArg(input, 'userAgent') ?? defaults.userAgent,
+          timeoutMs: optionalNumberArg(input, 'timeoutMs') ?? defaults.timeoutMs,
+          maxBytes: optionalNumberArg(input, 'maxBytes'),
+          signal: ctx.signal,
+        },
+        store,
+      );
       const summary = [
         `crawl ${status.id}: ${status.status}`,
         `pages: ${status.pagesVisited}  errors: ${status.errors.length}`,
+        `retention: ${status.retention}${status.retentionReason ? ` (${status.retentionReason})` : ''}`,
         ...status.pages.map((p) => `- [${p.depth}] ${p.finalUrl} (${p.status})`),
       ].join('\n');
       return { content: summary, data: jsonData(status) };
@@ -152,7 +161,7 @@ export function webCrawlTool(defaults: HttpDefaults): Tool {
   };
 }
 
-export function webCrawlStatusTool(): Tool {
+export function webCrawlStatusTool(store: CrawlStore): Tool {
   return {
     name: 'web_crawl_status',
     toolset: 'webtools',
@@ -160,11 +169,36 @@ export function webCrawlStatusTool(): Tool {
     parameters: schema({ id: { type: 'string' } }, ['id']),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
-      const status = crawlStatus(stringArg(input, 'id'));
+      const status = crawlStatus(stringArg(input, 'id'), store);
       if (!status) return { content: `no crawl with id ${input.id}`, isError: true };
+      if (status.status === 'not-retained') {
+        return {
+          content: `crawl ${status.id}: not retained (${status.reason})`,
+          data: jsonData(status),
+        };
+      }
       return {
         content: `crawl ${status.id}: ${status.status}  pages: ${status.pagesVisited}  errors: ${status.errors.length}`,
         data: jsonData(status),
+      };
+    },
+  };
+}
+
+export function webCrawlDeleteTool(store: CrawlStore): Tool {
+  return {
+    name: 'web_crawl_delete',
+    toolset: 'webtools',
+    description: 'Delete a retained crawl result by id.',
+    parameters: schema({ id: { type: 'string' } }, ['id']),
+    async run(args): Promise<ToolResult> {
+      const input = objectArg(args);
+      const id = stringArg(input, 'id');
+      const deleted = deleteCrawl(id, store);
+      return {
+        content: deleted ? `deleted crawl ${id}` : `no crawl with id ${id}`,
+        data: jsonData({ id, deleted }),
+        isError: !deleted,
       };
     },
   };

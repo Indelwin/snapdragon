@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { contentFilter } from '../src/index.js';
+import { WebtoolsResourceLimitError } from '../src/resource-limits.js';
 
 test('content filter chunks and ranks by query', async () => {
   const f = await contentFilter();
@@ -12,4 +13,18 @@ test('content filter chunks and ranks by query', async () => {
 
   const best = f.bestChunk(markdown, 'cats');
   assert.equal(best?.text, 'Cats are independent animals with whiskers.');
+});
+
+test('content filter rejects oversized inputs and result counts before WASM allocation', async () => {
+  const filter = await contentFilter();
+  assert.throws(
+    () => filter.chunkAndFilter('x'.repeat(1_000_001)),
+    (error) =>
+      error instanceof WebtoolsResourceLimitError &&
+      error.resource === 'content filter input bytes',
+  );
+  assert.throws(
+    () => filter.chunkAndFilter('bounded input', { maxChunks: 65 }),
+    (error) => error instanceof WebtoolsResourceLimitError && error.resource === 'filtered chunks',
+  );
 });

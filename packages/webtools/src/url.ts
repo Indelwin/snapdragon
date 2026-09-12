@@ -20,6 +20,10 @@ export interface UrlUtilRequest {
 export class UrlUtils {
   constructor(private readonly core: WebtoolsCore) {}
 
+  dispose(): void {
+    this.core.dispose();
+  }
+
   /** Parse, repair (add `https://` when missing), canonicalize, drop tracking. */
   normalize(raw: string): string | null {
     return this.callOptString('normalize', { raw });

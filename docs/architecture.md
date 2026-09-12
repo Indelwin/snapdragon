@@ -66,8 +66,9 @@ top:
 - `crates/gateway-daemon` runs the Tokio daemon, local IPC server, SQLite WAL
   store, service scheduler, worker process launcher, runtime registry, and
   status surface.
-- `crates/gateway-wasm` is the Wasmtime budget boundary for future sandboxed
-  kernels and extension work.
+- `crates/gateway-wasm` is currently a host-independent synthetic fuel-meter
+  scaffold for future sandboxed kernels and extension work. It does not yet
+  execute workloads in Wasmtime.
 - `packages/gateway` is the JavaScript facade used by `sd`, extensions, tests,
   and future embedders.
 
