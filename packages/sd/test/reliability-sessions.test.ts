@@ -47,7 +47,7 @@ test('successful rebuild keeps the candidate active when old cleanup throws', as
       throw new Error('old stop failed');
     };
 
-    await rebuildSdRuntime(runtime);
+    await assert.rejects(rebuildSdRuntime(runtime), AggregateError);
 
     assert.notStrictEqual(runtime.agent, oldAgent);
     assert.equal((await runtime.agent.prompt('candidate remains active')).content, 'mock response');
@@ -181,16 +181,19 @@ test('runtime disposal attempts every owner after throwing cleanup', async () =>
     calls.push(name);
     throw new Error(`${name} failed`);
   };
-  await disposeRuntimeResources({
-    agent: { dispose: async () => throwing('agent') },
-    background: {
-      stop: () => throwing('background stop'),
-      flush: async () => throwing('background flush'),
-    },
-    sessionIndex: { close: () => throwing('session index') },
-    searchIndex: { close: () => throwing('search index') },
-    extensionRuntime: { dispose: async () => throwing('extensions') },
-  } as never);
+  await assert.rejects(
+    disposeRuntimeResources({
+      agent: { dispose: () => throwing('agent') },
+      background: {
+        stop: () => throwing('background stop'),
+        flush: () => throwing('background flush'),
+      },
+      sessionIndex: { close: () => throwing('session index') },
+      searchIndex: { close: () => throwing('search index') },
+      extensionRuntime: { dispose: () => throwing('extensions') },
+    } as never),
+    (error) => error instanceof AggregateError && error.errors.length === 6,
+  );
 
   assert.equal(calls[0], 'background stop');
   assert.deepEqual(
@@ -204,6 +207,41 @@ test('runtime disposal attempts every owner after throwing cleanup', async () =>
       'extensions',
     ]),
   );
+});
+
+test('runtime stop propagates owned registry cleanup failure and preserves the rejected promise', async () => {
+  const fixture = await runtimeFixture('registry-cleanup-failure');
+  const runtime = await createSdRuntime(fixture.args);
+  let disposals = 0;
+  try {
+    await runtime.agent.registry.register({
+      name: 'failing-cleanup',
+      title: 'Failing cleanup',
+      description: 'cleanup regression',
+      tools: [],
+      dispose() {
+        disposals++;
+        throw new Error('owned toolset cleanup failed');
+      },
+    });
+    const disposal = stopSdRuntime(runtime);
+    assert.strictEqual(stopSdRuntime(runtime), disposal);
+    let failure: unknown;
+    await assert.rejects(disposal, (error) => {
+      assert(error instanceof AggregateError);
+      assert(error.errors[0] instanceof AggregateError);
+      assert.match(error.errors[0].errors[0].message, /owned toolset cleanup failed/);
+      failure = error;
+      return true;
+    });
+    await assert.rejects(stopSdRuntime(runtime), (error) => error === failure);
+    assert.equal(disposals, 1);
+    assert.deepEqual(runtime.agent.registry.list(), []);
+    assert.throws(() => runtime.sessionIndex?.countSessions(), /closed|not open/i);
+    assert.throws(() => runtime.searchIndex?.count('memory'), /closed|not open/i);
+  } finally {
+    await fixture.cleanup();
+  }
 });
 
 interface RuntimeFixture {

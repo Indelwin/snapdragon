@@ -65,28 +65,33 @@ if (isDirectEntrypoint(import.meta.url)) {
 }
 
 async function runDirectEntrypoint(): Promise<number> {
-  const {
-    SD_RESTART_EXIT_CODE,
-    SD_SUPERVISED_ENV,
-    restartStateFromEnvironment,
-    superviseSdCli,
-    writeRestartRequest,
-  } = await import('./cli-supervisor.js');
-  if (process.env[SD_SUPERVISED_ENV] === '1') {
-    const { attachSupervisedChildShutdown } = await import('./cli-child-shutdown.js');
-    const shutdown = attachSupervisedChildShutdown();
-    try {
-      const request = await main(
-        process.argv.slice(2),
-        restartStateFromEnvironment(),
-        shutdown.signal,
-      );
-      if (!request) return shutdown.exitCode() ?? 0;
-      writeRestartRequest(request);
-      return SD_RESTART_EXIT_CODE;
-    } finally {
-      shutdown.dispose();
-    }
-  }
+  const { SD_SUPERVISED_ENV, superviseSdCli } = await import('./cli-supervisor.js');
+  if (process.env[SD_SUPERVISED_ENV] === '1') return runSupervisedEntrypoint();
   return superviseSdCli(process.argv.slice(2), { entrypoint: process.argv[1] });
+}
+
+async function runSupervisedEntrypoint(): Promise<number> {
+  const { SD_RESTART_EXIT_CODE, restartStateFromEnvironment, writeRestartRequest } = await import(
+    './cli-supervisor.js'
+  );
+  const { attachSupervisedChildShutdown, ownedShutdownExitCode } = await import(
+    './cli-child-shutdown.js'
+  );
+  const shutdown = attachSupervisedChildShutdown();
+  try {
+    const request = await main(
+      process.argv.slice(2),
+      restartStateFromEnvironment(),
+      shutdown.signal,
+    );
+    if (!request) return shutdown.exitCode() ?? 0;
+    writeRestartRequest(request);
+    return SD_RESTART_EXIT_CODE;
+  } catch (error) {
+    const code = ownedShutdownExitCode(error, shutdown);
+    if (code !== undefined) return code;
+    throw error;
+  } finally {
+    shutdown.dispose();
+  }
 }

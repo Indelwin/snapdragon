@@ -7,6 +7,18 @@ export interface SupervisedChildShutdown {
   dispose(): void;
 }
 
+export function ownedShutdownExitCode(
+  error: unknown,
+  shutdown: SupervisedChildShutdown,
+): number | undefined {
+  if (!shutdown.signal.aborted) return undefined;
+  const aborted =
+    error === shutdown.signal.reason ||
+    (error instanceof Error &&
+      (error.name === 'AbortError' || error.message === 'Agent run aborted'));
+  return aborted ? shutdown.exitCode() : undefined;
+}
+
 export function attachSupervisedChildShutdown(
   source: SupervisorSignalSource = process,
 ): SupervisedChildShutdown {

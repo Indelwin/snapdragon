@@ -1,9 +1,12 @@
 import { gitMaybe } from './git.mjs';
 
-export async function changedLineRanges(baseRef, file) {
+export async function changedLineRanges(baseRef, file, options) {
   if (!baseRef) return [];
-  const diff = await gitMaybe(['diff', '--unified=0', `${baseRef}...HEAD`, '--', file]);
-  if (!diff) return [];
+  const diff = await gitMaybe(['diff', '--unified=0', baseRef, '--', file], options);
+  if (!diff) {
+    const tracked = await gitMaybe(['ls-files', '--error-unmatch', '--', file], options);
+    return tracked === undefined ? [{ start: 1, end: Number.MAX_SAFE_INTEGER }] : [];
+  }
   return parseChangedLineRanges(diff);
 }
 

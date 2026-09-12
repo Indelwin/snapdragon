@@ -19,6 +19,7 @@ export class ToolRegistry {
   #tools = new Map<string, RegisteredTool>();
   #toolsets = new Map<string, ToolsetState>();
   #registeredToolsets: Toolset[] = [];
+  #registrations = new Set<Promise<void>>();
   #disposePromise?: Promise<void>;
   #disposed = false;
 
@@ -27,10 +28,21 @@ export class ToolRegistry {
     this.session = options.session ?? new Map<string, unknown>();
   }
 
-  async register(toolset: Toolset): Promise<void> {
-    if (this.#disposed) throw new Error('Tool registry is disposed.');
+  register(toolset: Toolset): Promise<void> {
+    if (this.#disposed) return Promise.reject(new Error('Tool registry is disposed.'));
     if (!this.#registeredToolsets.includes(toolset)) this.#registeredToolsets.push(toolset);
+    const pending = Promise.resolve().then(() => this.#register(toolset));
+    this.#registrations.add(pending);
+    void pending.then(
+      () => this.#registrations.delete(pending),
+      () => this.#registrations.delete(pending),
+    );
+    return pending;
+  }
+
+  async #register(toolset: Toolset): Promise<void> {
     const check = toolset.check ? await toolset.check() : { available: true };
+    if (this.#disposed) throw new Error('Tool registry is disposed.');
     this.#toolsets.set(toolset.name, {
       available: check.available,
       enabled: check.available,
@@ -114,12 +126,17 @@ export class ToolRegistry {
 
   async #dispose(): Promise<void> {
     this.#disposed = true;
+    await Promise.allSettled([...this.#registrations]);
     const toolsets = this.#registeredToolsets.splice(0).reverse();
-    await Promise.allSettled(
+    const results = await Promise.allSettled(
       toolsets.map((toolset) => Promise.resolve().then(() => toolset.dispose?.())),
     );
     this.#tools.clear();
     this.#toolsets.clear();
+    const errors = results
+      .filter((result) => result.status === 'rejected')
+      .map((result) => result.reason);
+    if (errors.length > 0) throw new AggregateError(errors, 'Tool registry disposal failed.');
   }
 }
 
