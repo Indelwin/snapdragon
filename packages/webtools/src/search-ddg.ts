@@ -1,19 +1,14 @@
 import type { Extractor } from './extractor.js';
+import { fetchPage } from './http.js';
 import type { SearchOptions, SearchResult } from './search-types.js';
 import { cleanText, dedupeResults, firstCapture, firstMatch, htmlDecode } from './search-util.js';
 import type { UrlUtils } from './url.js';
 
 export async function ddgHtml(query: string, options: SearchOptions): Promise<string> {
   const params = new URLSearchParams({ q: query });
-  const res = await fetch(`https://duckduckgo.com/html/?${params}`, {
-    signal: options.signal,
-    headers: {
-      'user-agent': options.userAgent ?? 'SnapdragonCrawler/0.1',
-      accept: 'text/html,application/xhtml+xml',
-    },
-  });
-  if (!res.ok) throw new Error(`DuckDuckGo HTML search failed: ${res.status}`);
-  return await res.text();
+  const response = await fetchPage(`https://duckduckgo.com/html/?${params}`, options);
+  if (!response.ok) throw new Error(`DuckDuckGo HTML search failed: ${response.status}`);
+  return response.html;
 }
 
 export function parseDdg(html: string, utils: UrlUtils, extractor: Extractor): SearchResult[] {

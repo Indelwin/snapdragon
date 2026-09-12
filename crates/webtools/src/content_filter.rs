@@ -13,8 +13,8 @@ const DEFAULT_MAX_CHUNKS: usize = 8;
 const DEFAULT_MIN_CHARS: usize = 30;
 const MAX_INPUT_BYTES: usize = 1_000_000;
 const MAX_QUERY_BYTES: usize = 8_192;
-const MAX_CHUNKS: usize = 64;
-const MAX_MIN_CHARS: usize = 100_000;
+pub(crate) const MAX_CHUNKS: usize = 64;
+pub(crate) const MAX_MIN_CHARS: usize = 100_000;
 const MAX_CANDIDATE_CHUNKS: usize = 4_096;
 const MAX_TOTAL_TOKENS: usize = 200_000;
 

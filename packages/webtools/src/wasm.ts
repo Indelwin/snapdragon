@@ -1,10 +1,14 @@
-import { readFile } from 'node:fs/promises';
-import { fileURLToPath } from 'node:url';
-import { webtoolsArtifactUrl } from './wasm-artifact.js';
+import { compileVerifiedWebtoolsArtifact } from './wasm-artifact.js';
 import { instantiateWebtoolsModule } from './wasm-instantiate.js';
 import type { WebtoolsCore } from './wasm-types.js';
 
-export { webtoolsArtifactUrl, webtoolsManifestUrl } from './wasm-artifact.js';
+export type { WebtoolsArtifactFailureKind } from './wasm-artifact.js';
+export {
+  compileVerifiedWebtoolsArtifact,
+  WebtoolsArtifactError,
+  webtoolsArtifactUrl,
+  webtoolsManifestUrl,
+} from './wasm-artifact.js';
 export { MAX_ABI_REQUEST_BYTES, MAX_ABI_RESPONSE_BYTES } from './wasm-call.js';
 export type { WebtoolsWasmMemoryStats } from './wasm-diagnostics.js';
 export { getWebtoolsWasmMemoryStats } from './wasm-diagnostics.js';
@@ -31,7 +35,5 @@ export async function loadWebtools(): Promise<WebtoolsCore> {
 }
 
 async function loadBundledModule(): Promise<WebAssembly.Module> {
-  const path = fileURLToPath(webtoolsArtifactUrl);
-  const bytes = await readFile(path);
-  return WebAssembly.compile(bytes);
+  return compileVerifiedWebtoolsArtifact();
 }

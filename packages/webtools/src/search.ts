@@ -12,8 +12,8 @@ export async function webSearch(
   options: SearchOptions = {},
 ): Promise<SearchResult[]> {
   const core = await loadWebtools();
-  const utils = new UrlUtils(core);
-  const extractor = new Extractor(core);
+  const utils = new UrlUtils(core, 'borrowed');
+  const extractor = new Extractor(core, 'borrowed');
   try {
     try {
       const html = await ddgHtml(query, options);

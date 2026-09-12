@@ -55,13 +55,16 @@ test('crawl store surfaces eviction, oversize, expiry, and deletion as not retai
 
   now += 101;
   assert.equal(store.get('second')?.status, 'not-retained');
+  assert.equal(store.delete('second'), false);
+  assert.equal(store.get('second')?.status, 'not-retained');
   const deletion = completed(store.begin('delete-me'), 'delete');
   store.complete(deletion);
   assert.equal(store.delete('delete-me'), true);
+  assert.equal(store.delete('delete-me'), false);
   assert.equal(store.get('delete-me')?.status, 'not-retained');
 });
 
-test('crawl store rejects excess running entries and disposal releases all storage', () => {
+test('crawl store rejects excess running entries and disposal releases all storage', async () => {
   const store = new CrawlStore({ maxConcurrentCrawls: 1 });
   store.begin('running');
   assert.throws(
@@ -69,7 +72,7 @@ test('crawl store rejects excess running entries and disposal releases all stora
     (error) =>
       error instanceof WebtoolsResourceLimitError && error.resource === 'concurrent crawls',
   );
-  store.dispose();
+  await store.dispose();
   assert.deepEqual(store.diagnostics(), {
     runningCount: 0,
     completedCount: 0,

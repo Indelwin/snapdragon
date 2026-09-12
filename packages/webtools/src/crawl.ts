@@ -20,22 +20,28 @@ export async function webCrawl(
   const crawlStore = store ?? new CrawlStore();
   const status = crawlStore.begin(options.crawlId);
   try {
-    await crawlInto(status, seed, options);
-    status.status = 'done';
-  } catch (error) {
-    status.status = 'failed';
-    status.errors.push(error instanceof Error ? error.message : String(error));
+    return await crawlStore.run(status, async (ownedSignal) => {
+      const signal = options.signal ? AbortSignal.any([options.signal, ownedSignal]) : ownedSignal;
+      try {
+        await crawlInto(status, seed, { ...options, signal });
+        status.status = 'done';
+      } catch (error) {
+        status.status = 'failed';
+        status.errors.push(error instanceof Error ? error.message : String(error));
+      } finally {
+        status.finishedAt = new Date().toISOString();
+        status.queued = 0;
+        crawlStore.complete(status);
+        if (!store) {
+          status.retention = 'not-retained';
+          status.retentionReason = 'no-store-owner';
+        }
+      }
+      return status;
+    });
   } finally {
-    status.finishedAt = new Date().toISOString();
-    status.queued = 0;
-    crawlStore.complete(status);
-    if (!store) {
-      status.retention = 'not-retained';
-      status.retentionReason = 'no-store-owner';
-      crawlStore.dispose();
-    }
+    if (!store) await crawlStore.dispose();
   }
-  return status;
 }
 
 export function crawlStatus(id: string, store: CrawlStore): CrawlLookupResult | undefined {

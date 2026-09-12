@@ -53,7 +53,7 @@ export interface WebtoolsToolsetOptions {
 
 export interface DisposableWebtoolsToolset extends Toolset {
   readonly crawlStore: CrawlStore;
-  dispose(): void;
+  dispose(): Promise<void>;
 }
 
 export function webtoolsToolset(options: WebtoolsToolsetOptions = {}): DisposableWebtoolsToolset {
@@ -89,8 +89,8 @@ export function webtoolsToolset(options: WebtoolsToolsetOptions = {}): Disposabl
       contentFilterBestTool(),
     ],
     crawlStore,
-    dispose() {
-      crawlStore.dispose();
+    async dispose() {
+      await crawlStore.dispose();
     },
   };
 }

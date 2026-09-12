@@ -30,10 +30,12 @@ and content filtering.
 
 - Every `webtoolsToolset()` owns a disposable crawl store. Completed results
   retain at most 32 entries and 16 MiB for 15 minutes by default. Running
-  crawls are separately concurrency-limited. Direct `webCrawl()` calls without
-  a store return the full result but report that it was not retained.
+  crawls are separately concurrency-limited. Awaiting store or toolset disposal
+  aborts and joins in-flight crawls. Direct `webCrawl()` calls without a store
+  return the full result but report that it was not retained.
 - HTTP/render responses, HTML and filter inputs, metadata collections, crawl
   queues/results, and WASM ABI requests/responses have validated limits.
+  Robots responses and direct robots parser inputs are capped at 512 KiB.
   Intentional HTML/markdown truncation is reported in result metadata; hard
   intermediate limits return explicit resource-budget errors. These limits do
   not alter model context or LLM token budgets.
@@ -41,11 +43,13 @@ and content filtering.
   already-instantiated cores. It never loads WASM; its weak registry is capped
   at 256 entries and exposes dropped registrations instead of retaining cores.
   Low-level `UrlUtils`, `Extractor`, `ContentFilter`, `Robots`, and
-  `WebtoolsCore` instances expose `dispose()`; composite operations and tool
-  adapters dispose their owned cores automatically.
+  `WebtoolsCore` instances expose `dispose()`. Wrapper constructors require an
+  explicit `owned` or `borrowed` core contract; factories own their cores, while
+  composite operations borrow and dispose their shared core once.
 - `build:wasm` atomically packages the Cargo output, verifies byte-for-byte
   parity, and writes `dist/snapdragon_webtools.manifest.json` with source,
-  Rust toolchain, and artifact SHA-256 fingerprints.
+  Rust toolchain, and artifact SHA-256 fingerprints. The runtime verifies the
+  packaged artifact byte count and SHA-256 before compilation.
 
 `crates/gateway-wasm` is a separate host-independent synthetic fuel-meter
 scaffold. It does not currently run this package through Wasmtime, and this

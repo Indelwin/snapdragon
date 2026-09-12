@@ -10,7 +10,7 @@ export interface HttpDefaults {
 }
 
 interface DisposableResource {
-  dispose(): void;
+  dispose(): void | Promise<void>;
 }
 
 export async function withDisposable<Resource extends DisposableResource, Result>(
@@ -21,7 +21,7 @@ export async function withDisposable<Resource extends DisposableResource, Result
   try {
     return await use(resource);
   } finally {
-    resource.dispose();
+    await resource.dispose();
   }
 }
 

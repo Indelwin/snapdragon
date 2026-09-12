@@ -29,12 +29,20 @@ export type { DisposableWebtoolsToolset, WebtoolsToolsetOptions } from './toolse
 export { webtoolsToolset } from './toolset.js';
 export type { UrlUtilRequest } from './url.js';
 export { UrlUtils, urlUtils } from './url.js';
-export type { WebtoolsCore, WebtoolsOp, WebtoolsWasmMemoryStats } from './wasm.js';
+export type {
+  WebtoolsArtifactFailureKind,
+  WebtoolsCore,
+  WebtoolsOp,
+  WebtoolsWasmMemoryStats,
+} from './wasm.js';
 export {
+  compileVerifiedWebtoolsArtifact,
   getWebtoolsWasmMemoryStats,
   instantiateWebtools,
   instantiateWebtoolsModule,
   loadWebtools,
+  WebtoolsArtifactError,
   webtoolsArtifactUrl,
   webtoolsManifestUrl,
 } from './wasm.js';
+export type { WebtoolsCoreOwnership } from './wasm-ownership.js';

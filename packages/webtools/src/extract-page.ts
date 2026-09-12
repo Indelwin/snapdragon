@@ -20,9 +20,9 @@ export async function webExtract(
   options: WebExtractOptions = {},
 ): Promise<WebExtractResult> {
   const core = await loadWebtools();
-  const utils = new UrlUtils(core);
-  const extractor = new Extractor(core);
-  const filter = new ContentFilter(core);
+  const utils = new UrlUtils(core, 'borrowed');
+  const extractor = new Extractor(core, 'borrowed');
+  const filter = new ContentFilter(core, 'borrowed');
   try {
     const normalized = utils.normalize(url);
     if (!normalized) throw new Error(`invalid URL: ${url}`);

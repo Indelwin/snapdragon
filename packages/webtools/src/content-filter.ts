@@ -7,6 +7,7 @@ import {
   MAX_FILTER_QUERY_BYTES,
 } from './resource-limits.js';
 import { loadWebtools, type WebtoolsCore } from './wasm.js';
+import { disposeOwnedCore, type WebtoolsCoreOwnership } from './wasm-ownership.js';
 
 export interface Chunk {
   index: number;
@@ -22,10 +23,13 @@ export interface ChunkOptions {
 }
 
 export class ContentFilter {
-  constructor(private readonly core: WebtoolsCore) {}
+  constructor(
+    private readonly core: WebtoolsCore,
+    private readonly ownership: WebtoolsCoreOwnership,
+  ) {}
 
   dispose(): void {
-    this.core.dispose();
+    disposeOwnedCore(this.core, this.ownership);
   }
 
   chunkAndFilter(markdown: string, options: ChunkOptions = {}): Chunk[] {
@@ -47,7 +51,7 @@ export class ContentFilter {
 }
 
 export async function contentFilter(): Promise<ContentFilter> {
-  return new ContentFilter(await loadWebtools());
+  return new ContentFilter(await loadWebtools(), 'owned');
 }
 
 function validateFilterInput(markdown: string, query?: string): void {

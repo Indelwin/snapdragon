@@ -2,6 +2,7 @@ const ENCODER = new TextEncoder();
 
 export const DEFAULT_HTTP_MAX_BYTES = 2_000_000;
 export const MAX_HTTP_MAX_BYTES = 2_000_000;
+export const MAX_ROBOTS_BYTES = 512 * 1024;
 export const MAX_HTML_INPUT_BYTES = 2_000_000;
 export const MAX_URL_BYTES = 8_192;
 export const MAX_FILTER_INPUT_BYTES = 1_000_000;

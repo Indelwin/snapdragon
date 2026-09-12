@@ -1,5 +1,7 @@
 import { callWasm } from './common.js';
+import { assertByteLength, MAX_ROBOTS_BYTES } from './resource-limits.js';
 import { loadWebtools, type WebtoolsCore } from './wasm.js';
+import { disposeOwnedCore, type WebtoolsCoreOwnership } from './wasm-ownership.js';
 
 export interface RobotsCheck {
   allowed: boolean;
@@ -9,13 +11,17 @@ export interface RobotsCheck {
 }
 
 export class Robots {
-  constructor(private readonly core: WebtoolsCore) {}
+  constructor(
+    private readonly core: WebtoolsCore,
+    private readonly ownership: WebtoolsCoreOwnership,
+  ) {}
 
   dispose(): void {
-    this.core.dispose();
+    disposeOwnedCore(this.core, this.ownership);
   }
 
   check(body: string, url: string, userAgent = 'SnapdragonCrawler/0.1'): RobotsCheck {
+    validateRobotsBody(body);
     return callWasm<RobotsCheck>(this.core, 'robots', 'check', {
       body,
       url,
@@ -24,10 +30,15 @@ export class Robots {
   }
 
   sitemaps(body: string): string[] {
+    validateRobotsBody(body);
     return callWasm<string[]>(this.core, 'robots', 'sitemaps', { body });
   }
 }
 
 export async function robots(): Promise<Robots> {
-  return new Robots(await loadWebtools());
+  return new Robots(await loadWebtools(), 'owned');
+}
+
+function validateRobotsBody(body: string): void {
+  assertByteLength(body, 'robots.txt input bytes', MAX_ROBOTS_BYTES);
 }
