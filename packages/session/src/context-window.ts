@@ -28,6 +28,8 @@ import { estimateMessagesTokens, HeuristicTokenCounter, type TokenCounter } from
 export interface ContextState {
   messages: SessionMessageRecord[];
   chunks: SessionContextChunkRecord[];
+  /** Chunks already validated while streaming the append-only archive. */
+  activeChunks?: boolean;
 }
 
 export interface ContextAssemblyResult {
@@ -55,7 +57,7 @@ export function assembleContextWindow(
   const messages = sortedMessages(state.messages);
   if (!resolved.enabled) return rawAssembly(messages, counter);
 
-  const chunks = activeContextChunks(state.chunks);
+  const chunks = state.activeChunks ? state.chunks : activeContextChunks(state.chunks);
   const watermark = latestChunkEnd(chunks);
   const visible = messages.filter((record) => record.store_id > watermark);
   const assembled = [...chunks.map(renderContextChunk), ...visible.map(recordToMessage)];
@@ -80,11 +82,14 @@ export function planContextCompaction(
   if (!resolved.enabled) return { reason: 'disabled' };
 
   const messages = sortedMessages(state.messages);
-  const chunks = activeContextChunks(state.chunks);
+  const chunks = state.activeChunks ? state.chunks : activeContextChunks(state.chunks);
   const candidates = compactionCandidates(messages, chunks, resolved);
 
-  const viewTokens = assembleContextWindow({ messages, chunks }, resolved, counter).stats
-    .totalTokens;
+  const viewTokens = assembleContextWindow(
+    { messages, chunks, activeChunks: true },
+    resolved,
+    counter,
+  ).stats.totalTokens;
   if (candidates.length === 0) {
     return planContextRollup(chunks, resolved, viewTokens, counter);
   }

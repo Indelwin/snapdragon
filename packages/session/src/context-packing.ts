@@ -1,10 +1,6 @@
 /**
  * Compaction-candidate selection helpers used by `context-window.ts`.
- *
- * Split out from the main module so the public assembly/planning surface stays
- * narrow and so the per-file complexity stays well under the project's CRAP
- * limit. Nothing in here is exported beyond the package — these are
- * implementation details of the compactor.
+ * Internal candidate packing and tool-call boundary preservation.
  */
 
 import type { ResolvedContextWindowOptions } from './context-options.js';
@@ -25,8 +21,9 @@ export function selectChunkMessages(
   candidates: SessionMessageRecord[],
   targetTokens: number,
   counter: TokenCounter,
+  minimumMessages = 1,
 ): SessionMessageRecord[] {
-  const selected = packUntilTarget(candidates, targetTokens, counter);
+  const selected = packUntilTarget(candidates, targetTokens, counter, minimumMessages);
   return extendThroughTrailingToolResults(selected, candidates);
 }
 
@@ -38,12 +35,13 @@ function packUntilTarget(
   candidates: SessionMessageRecord[],
   targetTokens: number,
   counter: TokenCounter,
+  minimumMessages: number,
 ): SessionMessageRecord[] {
   const selected: SessionMessageRecord[] = [];
   let used = 0;
   for (const candidate of candidates) {
     const cost = estimateRecordTokens(candidate, counter);
-    if (selected.length > 0 && used + cost > targetTokens) break;
+    if (selected.length >= minimumMessages && used + cost > targetTokens) break;
     selected.push(candidate);
     used += cost;
   }

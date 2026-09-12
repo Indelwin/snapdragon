@@ -1,11 +1,14 @@
 import { existsSync } from 'node:fs';
 import type { Message } from '@snapdragon-ai/host';
-import { applyContextChunk } from './context-frontier.js';
+import { compactArchiveContext } from './context-archive-compaction.js';
+import { applyContextChunk, type ContextFrontierState } from './context-frontier.js';
+import { readContextMessages } from './context-message-reader.js';
 import type { ContextWindowOptions } from './context-options.js';
 import { resolveContextWindowOptions } from './context-options.js';
+import { appendContextRecord } from './context-record-append.js';
 import { readCompactedContextState, readContextFrontier } from './context-records.js';
 import type { ContextChunkInput } from './context-summary.js';
-import { assembleContextWindow, recordToMessage } from './context-window.js';
+import { assembleContextWindow, type ContextState, recordToMessage } from './context-window.js';
 import type { SessionMetadata } from './metadata.js';
 import { readSessionMetadata } from './metadata-records.js';
 import { readRecentMessageRecords } from './recent-records.js';
@@ -19,8 +22,8 @@ import {
   type SessionOpenRecord,
   type SessionRecord,
 } from './records.js';
-import { type ContextCompactionResult, compactSessionContext } from './session-compaction.js';
-import { contextChunks, messageRecords, nextChunkId, nextStoreId } from './session-record-views.js';
+import type { ContextCompactionResult } from './session-compaction.js';
+import { messageRecords, nextChunkId, nextStoreId } from './session-record-views.js';
 import { readSessionSummaryStats, type SessionSummaryStats } from './session-stats.js';
 
 export interface AppendMessageOptions {
@@ -69,6 +72,13 @@ export class JsonlSession {
   }
 
   appendContextChunk(input: ContextChunkInput): SessionContextChunkRecord {
+    return this.#appendContextChunk(input, readContextFrontier(this.jsonlPath));
+  }
+
+  #appendContextChunk(
+    input: ContextChunkInput,
+    frontier: ContextFrontierState,
+  ): SessionContextChunkRecord {
     const record: SessionContextChunkRecord = {
       type: 'context_chunk',
       chunk_id: this.#nextChunkId,
@@ -85,11 +95,11 @@ export class JsonlSession {
     };
     if (input.meta) record.meta = input.meta;
     if (input.child_chunks) record.child_chunks = input.child_chunks;
-    if (!applyContextChunk(readContextFrontier(this.jsonlPath), record)) {
+    if (!applyContextChunk(frontier, record)) {
       throw new Error('Context chunk does not extend the active append-only frontier.');
     }
     this.#nextChunkId += 1;
-    this.#appendRecord(record);
+    appendContextRecord(this.jsonlPath, record);
     return record;
   }
 
@@ -148,10 +158,12 @@ export class JsonlSession {
   }
 
   compactContext(options: ContextWindowOptions = {}): ContextCompactionResult {
-    return compactSessionContext({
-      ...this.#readContextState(options),
+    const frontier = readContextFrontier(this.jsonlPath);
+    return compactArchiveContext({
+      path: this.jsonlPath,
+      frontier,
       options,
-      append: (chunk) => this.appendContextChunk(chunk),
+      append: (chunk) => this.#appendContextChunk(chunk, frontier),
     });
   }
 
@@ -176,14 +188,10 @@ export class JsonlSession {
     return records;
   }
 
-  #readContextState(options: ContextWindowOptions): {
-    messages: SessionMessageRecord[];
-    chunks: SessionContextChunkRecord[];
-  } {
+  #readContextState(options: ContextWindowOptions): ContextState {
     if (resolveContextWindowOptions(options).enabled)
       return readCompactedContextState(this.jsonlPath);
-    const records = this.#readRecords();
-    return { messages: messageRecords(records), chunks: contextChunks(records) };
+    return { messages: readContextMessages(this.jsonlPath, 0), chunks: [] };
   }
 }
 
