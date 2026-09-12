@@ -1,5 +1,8 @@
 # Reliability Cleanup
 
+Foreground reliability work merged in PR #104. The remaining session/runtime, webtools/WASM,
+and gateway reliability work is in the consolidated reliability PR.
+
 ## Scope and Evidence
 
 This pass separates foreground JavaScript retention, session hydration, WebAssembly allocation,

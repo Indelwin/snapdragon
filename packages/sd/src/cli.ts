@@ -27,7 +27,10 @@ export async function main(
   ]);
   const runtime = await createSdRuntime(args);
   try {
-    return await runSelectedMode(args.mode, runtime, args.prompt, restartState?.draft, signal);
+    return await runSelectedMode(args.mode, runtime, args.prompt, {
+      draft: restartState?.draft,
+      signal,
+    });
   } finally {
     await stopSdRuntime(runtime);
   }

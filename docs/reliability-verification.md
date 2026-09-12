@@ -3,8 +3,9 @@
 ## Evidence, Not a Universal Crash Claim
 
 This cleanup was developed in four isolated branches from `3548cbd`, then integrated and
-checked together. The original gateway-UI working files were preserved. The PRs form an
-ordered stack: foreground, sessions/runtime, webtools/WASM, gateway.
+checked together. The original gateway-UI working files were preserved. Foreground reliability
+work merged in PR #104; the remaining session/runtime, webtools/WASM, and gateway work is in
+the consolidated reliability PR.
 
 Reproduced defects include unbounded Ink text caches, development React timing retention,
 oversized session hydration, WASM ABI cleanup gaps, and gateway ownership/backpressure
