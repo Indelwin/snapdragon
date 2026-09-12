@@ -4,77 +4,62 @@ import {
   createContextFrontier,
   sortedActiveChunks,
 } from './context-frontier.js';
-import type { ContextState } from './context-window.js';
-import { hasRecordTypePrefix, recordIdFromPrefix } from './record-envelope.js';
-import { forEachRecordLine } from './record-line-reader.js';
+import { readContextMessages } from './context-message-reader.js';
 import {
-  isMessageLine,
-  parseRecord,
-  type SessionContextChunkRecord,
-  type SessionMessageRecord,
-} from './records.js';
+  CONTEXT_RECORD_BYTES,
+  CONTEXT_STATE_BYTES,
+  CONTEXT_STATE_RECORDS,
+  ContextReadBudgetExceededError,
+} from './context-read-budget.js';
+import type { ContextState } from './context-window.js';
+import { hasRecordTypePrefix } from './record-envelope.js';
+import { forEachRecordLine } from './record-line-reader.js';
+import { parseRecord, type SessionContextChunkRecord } from './records.js';
 
 export function readCompactedContextState(path: string): ContextState {
-  const { chunks, frontier } = readContextChunkState(path);
+  const frontier = readContextFrontier(path);
   const active = sortedActiveChunks(frontier);
   return {
-    chunks,
-    messages: readMessagesAfter(path, latestChunkEnd(active)),
+    chunks: active,
+    activeChunks: true,
+    messages: readContextMessages(path, latestChunkEnd(active)),
   };
 }
 
 export function readActiveContextChunks(path: string): SessionContextChunkRecord[] {
-  return sortedActiveChunks(readContextChunkState(path).frontier);
+  return sortedActiveChunks(readContextFrontier(path));
 }
 
 export function readContextFrontier(path: string): ContextFrontierState {
-  return readContextChunkState(path).frontier;
-}
-
-function readContextChunkState(path: string): {
-  chunks: SessionContextChunkRecord[];
-  frontier: ContextFrontierState;
-} {
   const frontier = createContextFrontier();
-  const chunks: SessionContextChunkRecord[] = [];
+  const sizes = new Map<number, number>();
+  let bytes = 0;
   forEachRecordLine(
     path,
-    (line) => {
+    (line, truncated) => {
       if (!isContextChunkLine(line)) return;
+      if (truncated) throw new ContextReadBudgetExceededError('frontier', CONTEXT_RECORD_BYTES);
       const record = parseRecord(line);
       if (record?.type === 'context_chunk' && applyContextChunk(frontier, record)) {
-        chunks.push(record);
+        for (const child of record.child_chunks ?? []) {
+          bytes -= sizes.get(child.chunk_id) ?? 0;
+          sizes.delete(child.chunk_id);
+        }
+        const size = Buffer.byteLength(line);
+        sizes.set(record.chunk_id, size);
+        bytes += size;
+        if (bytes > CONTEXT_STATE_BYTES || sizes.size > CONTEXT_STATE_RECORDS) {
+          throw new ContextReadBudgetExceededError('frontier', CONTEXT_STATE_BYTES);
+        }
       }
     },
     { maxLineChars: 1_048_576 },
   );
-  return { chunks, frontier };
-}
-
-function readMessagesAfter(path: string, watermark: number): SessionMessageRecord[] {
-  const messages: SessionMessageRecord[] = [];
-  forEachRecordLine(
-    path,
-    (line) => {
-      if (!isMessageLine(line) || messageStoreId(line) <= watermark) return;
-      const record = parseRecord(line);
-      if (record?.type === 'message') messages.push(record);
-    },
-    {
-      maxLineChars: 4_096,
-      retainFullLine: (prefix) =>
-        isMessageLine(prefix) ? messageStoreId(prefix) > watermark : false,
-    },
-  );
-  return messages;
+  return frontier;
 }
 
 function isContextChunkLine(line: string): boolean {
   return hasRecordTypePrefix(line, 'context_chunk');
-}
-
-function messageStoreId(line: string): number {
-  return recordIdFromPrefix(line, 'message', 'store_id') ?? 0;
 }
 
 function latestChunkEnd(chunks: readonly SessionContextChunkRecord[]): number {

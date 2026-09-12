@@ -4,6 +4,7 @@ export {
   type ResolvedContextWindowOptions,
   resolveContextWindowOptions,
 } from './context-options.js';
+export { ContextReadBudgetExceededError } from './context-read-budget.js';
 export { type ContextChunkInput, renderContextChunk } from './context-summary.js';
 export {
   assembleContextWindow,

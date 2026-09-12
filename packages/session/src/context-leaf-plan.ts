@@ -17,7 +17,12 @@ export function planLeafContextCompaction(
   counter: TokenCounter,
 ): LeafContextPlan {
   const candidateTokens = sumRecordTokens(candidates, counter);
-  const selected = selectChunkMessages(candidates, options.chunkTargetTokens, counter);
+  const selected = selectChunkMessages(
+    candidates,
+    options.chunkTargetTokens,
+    counter,
+    options.minChunkMessages,
+  );
   if (!shouldCompactLeaf(candidateTokens, selected.length, options, viewTokens)) {
     return { reason: 'below_target' };
   }
