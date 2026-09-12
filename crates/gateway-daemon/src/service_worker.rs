@@ -127,24 +127,26 @@ async fn collect_output(
         false,
     );
     let (status, reason) = wait_for_child(&mut child, timeout_ms, &control).await?;
-    guard.terminate(false);
     let mut drains = Box::pin(async { tokio::join!(&mut stdout, &mut stderr) });
-    let joined = match tokio::time::timeout(drain_grace(), &mut drains).await {
+    let (joined, shutdown) = tokio::join!(
+        tokio::time::timeout(drain_grace(), &mut drains),
+        guard.shutdown()
+    );
+    if let Err(error) = shutdown {
+        drop(drains);
+        stdout.abort();
+        stderr.abort();
+        return Err(error);
+    }
+    let joined = match joined {
         Ok(joined) => joined,
         Err(_) => {
-            guard.terminate(true);
-            match tokio::time::timeout(drain_grace(), &mut drains).await {
-                Ok(joined) => joined,
-                Err(_) => {
-                    drop(drains);
-                    stdout.abort();
-                    stderr.abort();
-                    return Err("worker output pipes did not close after process-group kill".into());
-                }
-            }
+            drop(drains);
+            stdout.abort();
+            stderr.abort();
+            return Err("worker output pipes did not close after process-group kill".into());
         }
     };
-    guard.disarm();
     let (stdout, stderr) = joined;
     Ok(CollectedOutput {
         status,
