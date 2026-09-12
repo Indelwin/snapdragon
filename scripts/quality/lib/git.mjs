@@ -7,6 +7,7 @@ export async function git(args, options = {}) {
   const { stdout } = await exec('git', args, {
     maxBuffer: options.maxBuffer ?? 10 * 1024 * 1024,
     cwd: options.cwd,
+    env: options.env,
   });
   return stdout.trimEnd();
 }

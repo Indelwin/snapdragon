@@ -6,10 +6,12 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { changedLineRanges } from '../lib/diff.mjs';
 import { changedFiles } from '../lib/git.mjs';
+import { fixtureGitEnvironment } from './fixtures/git-environment.mjs';
 
 test('changed sources include working edits and new files but exclude deletions', async () => {
   const cwd = mkdtempSync(join(tmpdir(), 'quality-git-changes-'));
-  const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
+  const env = fixtureGitEnvironment();
+  const git = (...args) => execFileSync('git', args, { cwd, env, encoding: 'utf8' }).trim();
   const write = (path, text) => writeFileSync(join(cwd, path), text);
   try {
     git('init', '-q');
@@ -34,13 +36,15 @@ test('changed sources include working edits and new files but exclude deletions'
     git('add', '-A');
     write('new file.ts', 'export function added() { return true; }\n');
     write('edited.ts', 'export const value = 3;\n');
-    assert.deepEqual((await changedFiles(base, { cwd })).sort(), [
+    assert.deepEqual((await changedFiles(base, { cwd, env })).sort(), [
       'edited.ts',
       'new file.ts',
       'renamed destination.ts',
     ]);
-    assert.deepEqual(await changedLineRanges(base, 'edited.ts', { cwd }), [{ start: 1, end: 1 }]);
-    assert.deepEqual(await changedLineRanges(base, 'new file.ts', { cwd }), [
+    assert.deepEqual(await changedLineRanges(base, 'edited.ts', { cwd, env }), [
+      { start: 1, end: 1 },
+    ]);
+    assert.deepEqual(await changedLineRanges(base, 'new file.ts', { cwd, env }), [
       { start: 1, end: Number.MAX_SAFE_INTEGER },
     ]);
   } finally {
