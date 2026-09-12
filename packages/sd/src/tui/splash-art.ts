@@ -13,11 +13,8 @@ import type { SdProfileInfo } from '../profile.js';
  * banner. We intentionally only return the *first* hit — the splash
  * is a single piece of art, not a stack.
  *
- * Rendering is delegated to `ink-picture`'s `<Image>` component (see
- * `splash.tsx`). This module just resolves the file path; the actual
- * image processing happens inside Ink so that protocol detection,
- * scaling, and ASCII fallback can use a properly-tested upstream
- * pipeline rather than the home-grown jimp renderer we used before.
+ * Rendering is delegated to `ColoredBrailleImage` in `splash.tsx`.
+ * This module resolves paths only; the renderer uses sharp for sampling.
  */
 export interface ResolveSplashImageOptions {
   profile?: SdProfileInfo;

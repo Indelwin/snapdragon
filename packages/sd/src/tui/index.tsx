@@ -6,7 +6,8 @@ import type { SdRuntime } from '../runtime.js';
 import { createDefaultInkRendererRegistry } from './components.js';
 import { useSdTuiInput } from './input-controller.js';
 import { fixedChromeRows } from './layout.js';
-import { SdMouseProvider, SdMouseScrollListener } from './mouse-scroll.js';
+import { createMouseInputAdapter, type SdMouseInputAdapter } from './mouse-input-adapter.js';
+import { SdMouseScrollListener } from './mouse-scroll.js';
 import type { InkRendererRegistry } from './renderer-registry.js';
 import { hasRenderableSlot, Slot } from './tui-slot.js';
 import { SdUiController } from './ui.js';
@@ -23,25 +24,56 @@ export async function runTui(runtime: SdRuntime, options: SdTuiOptions = {}): Pr
   const registry = options.registry ?? createDefaultInkRendererRegistry();
   const io = options.io ?? defaultIo;
   if (options.clearScreen !== false) io.output.write('\x1b[2J\x1b[3J\x1b[H');
-  const instance = render(
-    <SdTuiApp runtime={runtime} controller={controller} registry={registry} />,
-    {
-      stdin: io.input as NodeJS.ReadStream,
-      stdout: io.output as NodeJS.WriteStream,
-      stderr: io.error as NodeJS.WriteStream,
-    },
-  );
-  await instance.waitUntilExit();
+  const mouseSettings = resolveMouseSettings(runtime);
+  const mouseInput = createMouseInputAdapter({
+    enabled: mouseSettings.enabled,
+    input: io.input,
+    output: io.output,
+  });
+  let rejectInputError: (error: Error) => void = () => undefined;
+  const inputError = new Promise<never>((_resolve, reject) => {
+    rejectInputError = reject;
+  });
+  const unsubscribeError = mouseInput?.subscribeError(rejectInputError);
+  let instance: ReturnType<typeof render> | undefined;
+  let exited: Promise<unknown> | undefined;
+  try {
+    instance = render(
+      <SdTuiApp
+        runtime={runtime}
+        controller={controller}
+        registry={registry}
+        mouseInput={mouseInput}
+      />,
+      {
+        stdin: (mouseInput ?? io.input) as NodeJS.ReadStream,
+        stdout: io.output as NodeJS.WriteStream,
+        stderr: io.error as NodeJS.WriteStream,
+      },
+    );
+    exited = instance.waitUntilExit();
+    await Promise.race([exited, inputError]);
+  } catch (error) {
+    instance?.unmount();
+    await exited?.catch(() => undefined);
+    throw error;
+  } finally {
+    unsubscribeError?.();
+    mouseInput?.dispose();
+    controller.dispose();
+  }
 }
 
 export function SdTuiApp({
   runtime,
   controller,
   registry,
+  mouseInput,
 }: {
   runtime: SdRuntime;
   controller: SdUiController;
   registry?: InkRendererRegistry;
+  mouseInput?: SdMouseInputAdapter;
 }) {
   const { exit } = useApp();
   const rendererRegistry = useMemo(
@@ -66,12 +98,11 @@ export function SdTuiApp({
   const mouseSettings = resolveMouseSettings(runtime);
 
   return (
-    <SdMouseProvider enabled={mouseSettings.enabled}>
+    <>
       <SdMouseScrollListener
-        key="mouse-scroll"
         controller={controller}
         rowsPerTick={mouseSettings.rowsPerTick}
-        enabled={mouseSettings.enabled}
+        mouseInput={mouseInput}
       />
       <SdTuiLayout
         key="tui-layout"
@@ -82,7 +113,7 @@ export function SdTuiApp({
         mainColumns={mainColumns}
         showPanel={showPanel}
       />
-    </SdMouseProvider>
+    </>
   );
 }
 

@@ -4,6 +4,7 @@ import { stderr } from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from './args.js';
 import { runPreRuntimeCommand } from './cli-commands.js';
+import { prepareCliEnvironment } from './cli-environment.js';
 import { isRunMode } from './modes.js';
 import { suppressKnownNodeWarnings } from './node-warnings.js';
 
@@ -32,6 +33,7 @@ export function isDirectEntrypoint(metaUrl: string, entrypoint = process.argv[1]
 }
 
 if (isDirectEntrypoint(import.meta.url)) {
+  prepareCliEnvironment();
   main().catch((error) => {
     stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
     process.exitCode = 1;
