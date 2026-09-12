@@ -57,6 +57,8 @@ function defaultMemory(): SdMemoryConfig {
       enabled: false,
       interval_ms: 5 * 60 * 1000,
       lookback_sessions: 10,
+      max_records_per_pass: 500,
+      max_bytes_per_pass: 4 * 1024 * 1024,
       include_assistant: false,
     },
   };

@@ -11,14 +11,16 @@ export function attachSdSearchIndex(
   profile: SdProfileInfo | undefined,
   memory: SdMemoryProvider,
   skills: SdSkillStore,
-): void {
-  if (!(memory instanceof SdMemoryStore)) return;
+): SdSearchIndex | undefined {
+  if (!(memory instanceof SdMemoryStore)) return undefined;
   try {
     const memoryPath = resolveSdMemoryPath(config, profile);
     const index = SdSearchIndex.open(memoryPath.replace(/\.md$/i, '.index.sqlite'));
     attachMemorySearchIndex(memory, index);
     attachSkillSearchIndex(skills, index);
+    return index;
   } catch {
     // Search indexing is best-effort; stores retain their substring fallback.
+    return undefined;
   }
 }

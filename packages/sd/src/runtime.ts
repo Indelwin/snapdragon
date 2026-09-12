@@ -19,6 +19,7 @@ import { sessionRoot } from './runtime-session.js';
 import { ensureRuntimeSessionMeta } from './runtime-session-meta-record.js';
 import { createIndexedRuntimeStores } from './runtime-stores.js';
 import { registerRuntimeToolsets } from './runtime-toolsets.js';
+import type { SdSearchIndex } from './search-index.js';
 import { openSdSessionIndex } from './session-index.js';
 import type { SdSkillStore } from './skills.js';
 import type { SdTodoStore } from './todo.js';
@@ -37,6 +38,7 @@ export interface SdRuntime {
   memory: SdMemoryProvider;
   todo: SdTodoStore;
   sessionIndex?: SdSessionIndex;
+  searchIndex?: SdSearchIndex;
   background: SdBackgroundServicesHandle;
   extensions: SdExtensionStore;
   extensionRuntime: SdExtensionRuntime;
@@ -46,9 +48,14 @@ export interface SdRuntime {
   warnings: string[];
 }
 
-export function stopSdRuntime(runtime: SdRuntime): void {
-  runtime.background.stop();
-  runtime.sessionIndex?.close();
+const runtimeDisposals = new WeakMap<SdRuntime, Promise<void>>();
+
+export function stopSdRuntime(runtime: SdRuntime): Promise<void> {
+  const existing = runtimeDisposals.get(runtime);
+  if (existing) return existing;
+  const disposal = disposeRuntimeResources(runtime);
+  runtimeDisposals.set(runtime, disposal);
+  return disposal;
 }
 
 export async function createSdRuntime(
@@ -64,57 +71,79 @@ export async function createSdRuntime(
   const plan = resolveInitialRuntimePlan(baseConfig, profile, options);
   const { config, systemPrompt } = plan;
   ensureFirstPartyExtensionsForConfig(config);
-  const extensions = createSdExtensionStore(config, profile);
-  const extensionRuntime = await activateSdExtensions({
-    store: extensions,
-    config,
-    profile,
-    runtimeOptions: options,
-    env,
-  });
-  const provider = makeSdProvider(config, {}, env, extensionRuntime.providers);
-  const session = initialRuntimeSession(plan.sessionSelection, options, config, provider, profile);
-  ensureRuntimeSessionMeta(session, options, provider, profile);
-  const { skills, memory, todo, channels } = createIndexedRuntimeStores(
-    config,
-    profile,
-    extensionRuntime,
-  );
-  const sessionIndex = openSdSessionIndex(config);
-  return finishRuntime({
-    baseConfig,
-    config,
-    env,
-    extensions,
-    extensionRuntime,
-    memory,
-    provider,
-    profile,
-    profileStore,
-    session,
-    skills,
-    channels,
-    todo,
-    sessionIndex,
-    systemPrompt,
-    options,
-    warnings: plan.warnings,
-  });
+  let extensionRuntime: SdExtensionRuntime | undefined;
+  let sessionIndex: SdSessionIndex | undefined;
+  let searchIndex: SdSearchIndex | undefined;
+  try {
+    const extensions = createSdExtensionStore(config, profile);
+    extensionRuntime = await activateSdExtensions({
+      store: extensions,
+      config,
+      profile,
+      runtimeOptions: options,
+      env,
+    });
+    const provider = makeSdProvider(config, {}, env, extensionRuntime.providers);
+    const session = initialRuntimeSession(
+      plan.sessionSelection,
+      options,
+      config,
+      provider,
+      profile,
+    );
+    ensureRuntimeSessionMeta(session, options, provider, profile);
+    const stores = createIndexedRuntimeStores(config, profile, extensionRuntime);
+    searchIndex = stores.searchIndex;
+    sessionIndex = openSdSessionIndex(config);
+    return await finishRuntime({
+      baseConfig,
+      config,
+      env,
+      extensions,
+      extensionRuntime,
+      memory: stores.memory,
+      provider,
+      profile,
+      profileStore,
+      session,
+      skills: stores.skills,
+      channels: stores.channels,
+      todo: stores.todo,
+      sessionIndex,
+      searchIndex,
+      systemPrompt,
+      options,
+      warnings: plan.warnings,
+    });
+  } catch (error) {
+    await Promise.allSettled([
+      Promise.resolve().then(() => sessionIndex?.close()),
+      Promise.resolve().then(() => searchIndex?.close()),
+      extensionRuntime?.dispose(),
+    ]);
+    throw error;
+  }
+}
+
+export async function disposeRuntimeResources(
+  runtime: Pick<
+    SdRuntime,
+    'agent' | 'background' | 'sessionIndex' | 'searchIndex' | 'extensionRuntime'
+  >,
+): Promise<void> {
+  await Promise.allSettled([Promise.resolve().then(() => runtime.background.stop())]);
+  await Promise.allSettled([
+    runtime.agent.dispose(),
+    runtime.background.flush(),
+    Promise.resolve().then(() => runtime.sessionIndex?.close()),
+    Promise.resolve().then(() => runtime.searchIndex?.close()),
+    runtime.extensionRuntime.dispose(),
+  ]);
 }
 
 async function finishRuntime(
   parts: Omit<SdRuntime, 'agent' | 'background' | 'sessionRoot'>,
 ): Promise<SdRuntime> {
-  const background = startRuntimeBackgroundServices(
-    parts.options,
-    parts.config,
-    parts.provider,
-    parts.profile,
-    parts.skills,
-    parts.memory,
-    parts.channels,
-    parts.sessionIndex,
-  );
   const agent = await createSdAgent(
     parts.options,
     parts.config,
@@ -127,6 +156,22 @@ async function finishRuntime(
     parts.systemPrompt,
     parts.sessionIndex,
   );
+  let background: SdBackgroundServicesHandle;
+  try {
+    background = startRuntimeBackgroundServices(
+      parts.options,
+      parts.config,
+      parts.provider,
+      parts.profile,
+      parts.skills,
+      parts.memory,
+      parts.channels,
+      parts.sessionIndex,
+    );
+  } catch (error) {
+    await agent.dispose();
+    throw error;
+  }
   return {
     ...parts,
     agent,
@@ -167,8 +212,13 @@ export async function createSdAgent(
     reasoning: config.agent?.reasoning ?? provider.reasoning,
   });
   const runtimeToolsets = { agent, config, skills, memory, todo, sessionIndex, extensionRuntime };
-  await registerRuntimeToolsets(runtimeToolsets);
-  return agent;
+  try {
+    await registerRuntimeToolsets(runtimeToolsets);
+    return agent;
+  } catch (error) {
+    await agent.dispose();
+    throw error;
+  }
 }
 
 function resolveRuntimeProfile(

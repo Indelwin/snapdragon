@@ -266,6 +266,91 @@ test('skill-builder is idempotent — re-emit-blocked across runs', async () => 
   }
 });
 
+test('skill-builder advances byte watermarks across record-budgeted passes', async () => {
+  const fx = await makeFixture({
+    max_records_per_pass: 2,
+    max_bytes_per_pass: 64 * 1024,
+    min_pattern_count: 1,
+    min_distinct_sessions: 1,
+  });
+  try {
+    await writeSession(fx.sessionsRoot, 'sess-budget', [
+      { role: 'user', text: 'run the budgeted workflow', created_at: 700 },
+      { role: 'assistant', toolCalls: ['inspect_file', 'apply_edit'], created_at: 700 },
+    ]);
+
+    const first = await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory });
+    const statePath = join(fx.skillsRoot, '.drafts', '.worker-state.json');
+    const firstState = JSON.parse(await readFile(statePath, 'utf8')) as {
+      sessions: Record<string, { byte_offset?: number }>;
+    };
+    const second = await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory });
+    const secondState = JSON.parse(await readFile(statePath, 'utf8')) as {
+      sessions: Record<string, { byte_offset?: number }>;
+    };
+
+    assert.equal(first.candidates_emitted, 0);
+    assert.equal(second.candidates_emitted, 1);
+    assert.ok(
+      (secondState.sessions['sess-budget']?.byte_offset ?? 0) >
+        (firstState.sessions['sess-budget']?.byte_offset ?? 0),
+    );
+    assert.match(await readFile(fx.memoryPath, 'utf8'), /inspect_file/);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('skill-builder retains workflow tails across record-budgeted passes', async () => {
+  const fx = await makeFixture({
+    max_records_per_pass: 1,
+    max_bytes_per_pass: 64 * 1024,
+    min_pattern_count: 1,
+    min_distinct_sessions: 1,
+  });
+  try {
+    await writeSession(fx.sessionsRoot, 'sess-split-workflow', [
+      { role: 'user', text: 'run the split workflow', created_at: 800 },
+      { role: 'assistant', toolCalls: ['inspect_file'], created_at: 801 },
+      { role: 'assistant', toolCalls: ['apply_edit'], created_at: 802 },
+    ]);
+
+    const passes = [];
+    for (let index = 0; index < 4; index += 1) {
+      passes.push(await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory }));
+    }
+
+    assert.deepEqual(
+      passes.map((pass) => pass.candidates_emitted),
+      [0, 0, 0, 1],
+    );
+    assert.match(await readFile(fx.memoryPath, 'utf8'), /inspect_file→apply_edit/);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('skill-builder accumulates evidence when the global budget splits sessions', async () => {
+  const fx = await makeFixture({ max_records_per_pass: 2, max_bytes_per_pass: 64 * 1024 });
+  try {
+    await writeSession(fx.sessionsRoot, 'sess-split-a', [
+      { role: 'assistant', toolCalls: ['inspect_file', 'apply_edit'], created_at: 900 },
+    ]);
+    await writeSession(fx.sessionsRoot, 'sess-split-b', [
+      { role: 'assistant', toolCalls: ['inspect_file', 'apply_edit'], created_at: 901 },
+    ]);
+
+    const first = await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory });
+    const second = await runSdSkillBuilderOnce({ config: fx.config, memory: fx.memory });
+
+    assert.equal(first.candidates_emitted, 0);
+    assert.equal(second.candidates_emitted, 1);
+    assert.match(await readFile(fx.memoryPath, 'utf8'), /inspect_file→apply_edit/);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
 test('skill-builder respects skills.builder.enabled = false', async () => {
   const fx = await makeFixture({ enabled: false });
   try {

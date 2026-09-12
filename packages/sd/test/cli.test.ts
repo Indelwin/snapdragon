@@ -1,11 +1,20 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, symlink } from 'node:fs/promises';
+import { EventEmitter } from 'node:events';
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { parseArgs } from '../src/args.ts';
-import { helpText, isDirectEntrypoint } from '../src/cli.ts';
+import { applyRestartState, helpText, isDirectEntrypoint } from '../src/cli.ts';
+import { spawnSupervisedChild } from '../src/cli-child-process.ts';
+import { attachSupervisedChildShutdown } from '../src/cli-child-shutdown.ts';
+import {
+  SD_RESTART_EXIT_CODE,
+  SD_RESTART_REQUEST_PATH_ENV,
+  SD_RESTART_STATE_ENV,
+  superviseSdCli,
+} from '../src/cli-supervisor.ts';
 import { DEFAULT_SD_CONFIG_PATH } from '../src/config.ts';
 
 test('sd binary runs through an npm-style symlink', async () => {
@@ -107,4 +116,183 @@ test('help text documents the minimal REPL surface', () => {
   assert.match(helpText, /daemon/);
   assert.match(helpText, /gateway/);
   assert.match(helpText, /--background/);
+});
+
+test('restart state explicitly restores session, provider, profile, and no-session choices', () => {
+  const resumed = parseArgs(['--no-session', '--no-profile']);
+  applyRestartState(resumed, {
+    sessionId: 'session-a',
+    noSession: false,
+    provider: 'mock-two',
+    model: 'model-two',
+    profileName: 'daily',
+    noProfile: false,
+  });
+  assert.equal(resumed.sessionId, 'session-a');
+  assert.equal(resumed.resume, true);
+  assert.equal(resumed.noSession, false);
+  assert.equal(resumed.provider, 'mock-two');
+  assert.equal(resumed.model, 'model-two');
+  assert.equal(resumed.profileName, 'daily');
+  assert.equal(resumed.noProfile, false);
+
+  applyRestartState(resumed, {
+    noSession: true,
+    provider: 'mock-two',
+    model: 'model-two',
+    noProfile: true,
+  });
+  assert.equal(resumed.sessionId, undefined);
+  assert.equal(resumed.resume, false);
+  assert.equal(resumed.noSession, true);
+  assert.equal(resumed.profileName, undefined);
+  assert.equal(resumed.noProfile, true);
+});
+
+test('CLI supervisor restarts only after a child emits structured state', async () => {
+  const childStates: Array<string | undefined> = [];
+  const code = await superviseSdCli(['--repl'], {
+    entrypoint: '/unused/sd.js',
+    env: {},
+    runChild: async (_argv, env) => {
+      childStates.push(env[SD_RESTART_STATE_ENV]);
+      if (childStates.length > 1) return 0;
+      const path = env[SD_RESTART_REQUEST_PATH_ENV];
+      assert.ok(path);
+      await writeFile(
+        path,
+        JSON.stringify({
+          kind: 'restart',
+          reason: 'executable_reload',
+          state: {
+            sessionId: 'session-a',
+            noSession: false,
+            provider: 'mock',
+            model: 'model-a',
+            profileName: 'daily',
+            noProfile: false,
+            draft: 'unfinished input',
+          },
+        }),
+        'utf8',
+      );
+      return SD_RESTART_EXIT_CODE;
+    },
+  });
+
+  assert.equal(code, 0);
+  assert.equal(childStates[0], undefined);
+  assert.deepEqual(JSON.parse(childStates[1] ?? ''), {
+    sessionId: 'session-a',
+    noSession: false,
+    provider: 'mock',
+    model: 'model-a',
+    profileName: 'daily',
+    noProfile: false,
+    draft: 'unfinished input',
+  });
+});
+
+test('supervised children inherit execArgv without double-forwarding group signals', async () => {
+  const source = new EventEmitter();
+  const child = new EventEmitter() as EventEmitter & { kill(signal: NodeJS.Signals): boolean };
+  const killed: NodeJS.Signals[] = [];
+  child.kill = (signal) => {
+    killed.push(signal);
+    return true;
+  };
+  let spawned: { command: string; args: string[] } | undefined;
+  const runChild = spawnSupervisedChild('/app/sd.js', {
+    execArgv: ['--trace-warnings'],
+    execPath: '/runtime/node',
+    signalSource: source,
+    signalGraceMs: 10,
+    signalKillMs: 20,
+    spawnProcess: (command, args) => {
+      spawned = { command, args };
+      return child;
+    },
+  });
+
+  const completed = runChild(['--repl'], {});
+  source.emit('SIGINT');
+  queueMicrotask(() => child.emit('close', null, 'SIGINT'));
+
+  assert.equal(await completed, 130);
+  assert.deepEqual(spawned, {
+    command: '/runtime/node',
+    args: ['--trace-warnings', '/app/sd.js', '--repl'],
+  });
+  assert.deepEqual(killed, []);
+  assert.equal(source.listenerCount('SIGINT'), 0);
+  assert.equal(source.listenerCount('SIGTERM'), 0);
+  assert.equal(source.listenerCount('SIGHUP'), 0);
+});
+
+test('supervised child signals abort graceful work and restore process listeners', () => {
+  const source = new EventEmitter();
+  const shutdown = attachSupervisedChildShutdown(source);
+
+  source.emit('SIGTERM');
+  source.emit('SIGINT');
+
+  assert.equal(shutdown.signal.aborted, true);
+  assert.equal((shutdown.signal.reason as Error).name, 'AbortError');
+  assert.match((shutdown.signal.reason as Error).message, /SIGTERM/);
+  assert.equal(shutdown.exitCode(), 143);
+
+  shutdown.dispose();
+  assert.equal(source.listenerCount('SIGINT'), 0);
+  assert.equal(source.listenerCount('SIGTERM'), 0);
+  assert.equal(source.listenerCount('SIGHUP'), 0);
+});
+
+test('supervised children escalate targeted parent signals and bound ignored termination', async () => {
+  const source = new EventEmitter();
+  const child = new EventEmitter() as EventEmitter & { kill(signal: NodeJS.Signals): boolean };
+  const killed: NodeJS.Signals[] = [];
+  child.kill = (signal) => {
+    killed.push(signal);
+    if (signal === 'SIGKILL') queueMicrotask(() => child.emit('close', null, signal));
+    else throw new Error('signal raced or was ignored');
+    return true;
+  };
+  const runChild = spawnSupervisedChild('/app/sd.js', {
+    signalSource: source,
+    signalGraceMs: 1,
+    signalKillMs: 10,
+    spawnProcess: () => child,
+  });
+
+  const completed = runChild([], {});
+  source.emit('SIGINT');
+
+  assert.equal(await completed, 137);
+  assert.deepEqual(killed, ['SIGTERM', 'SIGKILL']);
+  assert.equal(source.listenerCount('SIGINT'), 0);
+  assert.equal(source.listenerCount('SIGTERM'), 0);
+  assert.equal(source.listenerCount('SIGHUP'), 0);
+});
+
+test('supervised children surface failed force-kill instead of waiting forever', async () => {
+  const source = new EventEmitter();
+  const child = new EventEmitter() as EventEmitter & { kill(signal: NodeJS.Signals): boolean };
+  child.kill = (signal) => {
+    if (signal === 'SIGKILL') throw new Error('permission denied');
+    return false;
+  };
+  const runChild = spawnSupervisedChild('/app/sd.js', {
+    signalSource: source,
+    signalGraceMs: 1,
+    signalKillMs: 5,
+    spawnProcess: () => child,
+  });
+
+  const completed = runChild([], {});
+  source.emit('SIGTERM');
+
+  await assert.rejects(completed, /Failed to signal child with SIGKILL/);
+  assert.equal(source.listenerCount('SIGINT'), 0);
+  assert.equal(source.listenerCount('SIGTERM'), 0);
+  assert.equal(source.listenerCount('SIGHUP'), 0);
 });

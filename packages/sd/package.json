@@ -26,7 +26,8 @@
     "build": "tsc -p tsconfig.build.json && rm -rf dist/first-party && cp -R src/first-party dist/first-party && chmod +x dist/cli.js",
     "clean": "rm -rf dist",
     "typecheck": "tsc -b tsconfig.build.json --pretty false",
-    "test": "node --test --import tsx test/*.test.ts"
+    "test": "node --test --import tsx test/*.test.ts",
+    "test:reliability:sessions": "npm --prefix ../.. test --workspace @snapdragon-ai/session && npm --prefix ../.. test --workspace @snapdragon-ai/agent && node --test --import tsx test/cli.test.ts test/memory-worker.test.ts test/reliability-sessions.test.ts test/reload.test.ts test/runtime.test.ts test/skill-builder.test.ts"
   },
   "dependencies": {
     "@snapdragon-ai/agent": "0.1.1",

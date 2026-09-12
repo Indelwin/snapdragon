@@ -22,7 +22,13 @@ export function handleGlobalInput(input: string, key: KeyLike, args: GlobalInput
 }
 
 function handleExitOrCancel(input: string, key: KeyLike, args: GlobalInputArgs): boolean {
-  if (isCtrl(input, key, 'c')) return runSync(args.exit);
+  if (isCtrl(input, key, 'c')) {
+    if (args.controller.isRunning) {
+      args.controller.abortActiveRun();
+      return true;
+    }
+    return runSync(args.exit);
+  }
   if (isEscapeWithoutPalette(key, args.paletteRef)) {
     return runSync(() => args.controller.abortActiveRun());
   }
@@ -51,7 +57,9 @@ const CTRL_ACTIONS: Record<string, (args: GlobalInputArgs) => void> = {
 };
 
 function isCtrl(input: string, key: KeyLike, letter: string): boolean {
-  return Boolean(key.ctrl) && input === letter;
+  const controlByte = String.fromCharCode(letter.charCodeAt(0) - 96);
+  const validInputs = key.ctrl ? [letter, controlByte] : [controlByte];
+  return validInputs.includes(input);
 }
 
 function isEscapeWithoutPalette(key: KeyLike, paletteRef: MutableRefObject<PaletteState>): boolean {

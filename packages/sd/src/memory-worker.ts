@@ -26,6 +26,8 @@ function emptyMemoryWorkerResult(): SdMemoryWorkerScanResult {
   return {
     scanned_sessions: 0,
     considered_messages: 0,
+    scanned_records: 0,
+    scanned_bytes: 0,
     captured: 0,
     skipped_duplicates: 0,
     errors: [],
@@ -117,6 +119,8 @@ export function memoryWorkerService(): SdBackgroundService {
         metrics: {
           scanned_sessions: result.scanned_sessions,
           considered_messages: result.considered_messages,
+          scanned_records: result.scanned_records,
+          scanned_bytes: result.scanned_bytes,
           captured: result.captured,
           skipped_duplicates: result.skipped_duplicates,
           errors: result.errors.length,

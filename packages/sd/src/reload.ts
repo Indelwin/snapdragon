@@ -1,33 +1,33 @@
-import { spawn } from 'node:child_process';
+import { loadSdConfig } from './config.js';
+import { defaultReloadShellRunner } from './reload-shell-runner.js';
 import type {
   ReloadOptions,
   ReloadReport,
   ReloadShellResult,
   ReloadStepReport,
+  SdRestartRequest,
 } from './reload-types.js';
 import type { SdRuntime } from './runtime.js';
 import { rebuildSdRuntime } from './runtime-transitions.js';
 
 export { formatReloadReport } from './reload-format.js';
+export { defaultReloadShellRunner } from './reload-shell-runner.js';
 export type {
   ReloadOptions,
   ReloadReport,
   ReloadShellResult,
   ReloadShellRunner,
   ReloadStepReport,
+  SdRestartRequest,
+  SdRestartState,
 } from './reload-types.js';
 
 const DEFAULT_BUILD_COMMAND = ['npm', 'run', 'build'] as const;
 
 /**
- * Phase-0 hot reload: optionally pull the working copy, optionally rebuild
- * the workspace, then call `rebuildSdRuntime()` so anything discovered from
- * disk (extensions, skills, profiles, memory provider) refreshes.
- *
- * Deliberately does NOT reload core packages (host/agent/tools) or the
- * TUI tree — those are statically `import`-ed once at process start and
- * Node's ESM cache cannot be invalidated for them in-place. The CLI
- * formatter (`formatReloadReport`) is honest about this.
+ * Data-only reloads rebuild transactionally in-process. Pull/build requests
+ * return restart state so the embedding can start a fresh executable after
+ * the current command/run has drained.
  */
 export async function reloadSdRuntime(
   runtime: SdRuntime,
@@ -50,14 +50,19 @@ export async function reloadSdRuntime(
     built = await runStep(runner, ...splitBuildCommand(options.buildCommand), cwd, 8);
   }
 
-  // Rebuild the runtime regardless of pull/build outcomes — a partial
-  // failure shouldn't block extension/skill refresh, and the report makes
-  // any failures visible.
-  progress('reload: rebuilding runtime...');
-  await rebuildSdRuntime(runtime, {
-    provider: runtime.provider.id,
-    model: runtime.provider.model,
-  });
+  const executableReload = options.pull || options.build;
+  let restart: SdRestartRequest | undefined;
+  if (executableReload) {
+    if (successfulSteps(pulled, built)) restart = restartRequest(runtime, options.draft);
+  } else {
+    progress('reload: rebuilding runtime...');
+    const baseConfig = await loadSdConfig(runtime.options.configPath);
+    await rebuildSdRuntime(runtime, {
+      baseConfig,
+      provider: runtime.provider.id,
+      model: runtime.provider.model,
+    });
+  }
 
   return {
     pulled,
@@ -69,6 +74,30 @@ export async function reloadSdRuntime(
     services: runtime.background.list().length,
     provider: `${runtime.provider.id}/${runtime.provider.model}`,
     durationMs: Date.now() - start,
+    restart,
+  };
+}
+
+function successfulSteps(
+  pulled: ReloadStepReport | undefined,
+  built: ReloadStepReport | undefined,
+): boolean {
+  return pulled?.ok !== false && built?.ok !== false;
+}
+
+function restartRequest(runtime: SdRuntime, draft: string | undefined): SdRestartRequest {
+  return {
+    kind: 'restart',
+    reason: 'executable_reload',
+    state: {
+      sessionId: runtime.session?.sessionId,
+      noSession: runtime.session === undefined,
+      provider: runtime.provider.id,
+      model: runtime.provider.model,
+      profileName: runtime.profile?.name,
+      noProfile: runtime.profile === undefined,
+      ...(draft !== undefined ? { draft } : {}),
+    },
   };
 }
 
@@ -125,30 +154,3 @@ function tailOf(result: ReloadShellResult, n: number): string {
   if (!text) return '';
   return text.split('\n').slice(-n).join('\n');
 }
-
-/**
- * Default runner: spawn the command in its own process group so a hung
- * build can be killed cleanly (mirrors the run_shell process-group fix).
- */
-export const defaultReloadShellRunner = (
-  command: string,
-  args: string[],
-  cwd: string,
-): Promise<ReloadShellResult> =>
-  new Promise<ReloadShellResult>((resolve) => {
-    const child = spawn(command, args, {
-      cwd,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      detached: true,
-    });
-    let stdout = '';
-    let stderr = '';
-    child.stdout?.on('data', (chunk) => {
-      stdout += chunk.toString('utf8');
-    });
-    child.stderr?.on('data', (chunk) => {
-      stderr += chunk.toString('utf8');
-    });
-    child.on('close', (code) => resolve({ stdout, stderr, code: code ?? 1 }));
-    child.on('error', (error) => resolve({ stdout, stderr: `${stderr}${error.message}`, code: 1 }));
-  });
