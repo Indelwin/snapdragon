@@ -88,6 +88,22 @@ impl ProcessGroupGuard {
     pub(crate) fn terminate(&self, force: bool) {
         terminate_process_group(self.pid, force);
     }
+
+    pub(crate) async fn shutdown(&mut self) -> Result<(), String> {
+        self.terminate(false);
+        if wait_for_process_group_exit(self.pid, TERMINATION_GRACE).await {
+            self.disarm();
+            return Ok(());
+        }
+
+        self.terminate(true);
+        if wait_for_process_group_exit(self.pid, TERMINATION_GRACE).await {
+            self.disarm();
+            return Ok(());
+        }
+
+        Err("worker process group remained live after SIGKILL".into())
+    }
 }
 
 impl Drop for ProcessGroupGuard {
@@ -107,6 +123,38 @@ fn terminate_process_group(pid: Option<u32>, force: bool) {
     }
 }
 
+#[cfg(unix)]
+fn process_group_is_alive(pid: Option<u32>) -> bool {
+    let Some(pid) = pid.and_then(|pid| i32::try_from(pid).ok()) else {
+        return false;
+    };
+    if unsafe { libc::kill(-pid, 0) } == 0 {
+        return true;
+    }
+    std::io::Error::last_os_error().raw_os_error() != Some(libc::ESRCH)
+}
+
+#[cfg(not(unix))]
+fn process_group_is_alive(_pid: Option<u32>) -> bool {
+    false
+}
+
+async fn wait_for_process_group_exit(pid: Option<u32>, grace: Duration) -> bool {
+    if !process_group_is_alive(pid) {
+        return true;
+    }
+    tokio::time::timeout(grace, async {
+        loop {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            if !process_group_is_alive(pid) {
+                return;
+            }
+        }
+    })
+    .await
+    .is_ok()
+}
+
 #[cfg(not(unix))]
 fn terminate_process_group(_pid: Option<u32>, _force: bool) {}
 
@@ -122,5 +170,5 @@ pub(crate) fn exit_signal(_status: &std::process::ExitStatus) -> Option<String> 
 }
 
 pub(crate) fn drain_grace() -> Duration {
-    TERMINATION_GRACE
+    TERMINATION_GRACE.saturating_mul(2) + Duration::from_millis(250)
 }
