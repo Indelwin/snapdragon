@@ -131,14 +131,20 @@ export async function disposeRuntimeResources(
     'agent' | 'background' | 'sessionIndex' | 'searchIndex' | 'extensionRuntime'
   >,
 ): Promise<void> {
-  await Promise.allSettled([Promise.resolve().then(() => runtime.background.stop())]);
-  await Promise.allSettled([
-    runtime.agent.dispose(),
-    runtime.background.flush(),
+  const stopped = await Promise.allSettled([
+    Promise.resolve().then(() => runtime.background.stop()),
+  ]);
+  const settled = await Promise.allSettled([
+    Promise.resolve().then(() => runtime.agent.dispose()),
+    Promise.resolve().then(() => runtime.background.flush()),
     Promise.resolve().then(() => runtime.sessionIndex?.close()),
     Promise.resolve().then(() => runtime.searchIndex?.close()),
-    runtime.extensionRuntime.dispose(),
+    Promise.resolve().then(() => runtime.extensionRuntime.dispose()),
   ]);
+  const errors = [...stopped, ...settled]
+    .filter((result) => result.status === 'rejected')
+    .map((result) => result.reason);
+  if (errors.length > 0) throw new AggregateError(errors, 'Runtime disposal failed.');
 }
 
 async function finishRuntime(

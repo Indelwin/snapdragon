@@ -17,7 +17,7 @@ export function uncompactedRequestMessages(input: {
     input.fallbackMessages,
     input.replacement,
   );
-  const budget = input.context?.enabled ? requestBudget(input.context, input.pressure) : undefined;
+  const budget = input.context ? requestBudget(input.context, input.pressure) : undefined;
   const tokens = estimateRequestTokens(messages, input.tools);
   if (budget !== undefined && tokens > budget) throw new ContextBudgetExceededError(tokens, budget);
   return messages;

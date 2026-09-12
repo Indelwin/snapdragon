@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { ContextReadBudgetExceededError, SessionStore } from '@snapdragon-ai/session';
+import { ContextBudgetExceededError, createAgent } from '../src/index.js';
 import { assembleProviderRequestMessages, estimateRequestTokens } from '../src/request-context.js';
 
 test('preflight exhausts smaller fresh tails after a bounded read reports pressure', async (t) => {
@@ -70,4 +71,38 @@ test('preflight surfaces bounded no-progress when no protected tail can fit', as
     (thrown) => thrown === error,
   );
   assert.equal(compactions, 3);
+});
+
+for (const enabled of [undefined, false, true]) {
+  test(`explicit no-session request budget is enforced with enabled=${enabled}`, async () => {
+    let providerCalls = 0;
+    const agent = await createAgent({
+      cwd: process.cwd(),
+      context: { maxRequestTokens: 20, enabled },
+      provider: async () => {
+        providerCalls++;
+        return { content: 'must not run' };
+      },
+    });
+    const prompt = 'preserve this canonical input '.repeat(40);
+    await assert.rejects(agent.prompt(prompt), ContextBudgetExceededError);
+    assert.equal(providerCalls, 0);
+    assert.equal(agent.messages.at(-1)?.content, prompt);
+    await agent.dispose();
+  });
+}
+
+test('compaction disabled without a hard request budget still sends full input', async () => {
+  let providerCalls = 0;
+  const agent = await createAgent({
+    cwd: process.cwd(),
+    context: { enabled: false },
+    provider: async () => {
+      providerCalls++;
+      return { content: 'done' };
+    },
+  });
+  await agent.prompt('full input '.repeat(40));
+  assert.equal(providerCalls, 1);
+  await agent.dispose();
 });

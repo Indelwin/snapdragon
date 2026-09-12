@@ -32,11 +32,20 @@ candidates for aggregate read pressure. Individual oversized records fail immedi
 These storage read limits do not alter
 provider, output, or request token budgets.
 
+An explicit `maxRequestTokens` is a hard preflight limit even without a session or when
+`enabled: false` disables compaction. Omitting that limit does not introduce a new cap.
+
 ## Runtime and Reload
 
 `stopSdRuntime` is awaitable and idempotent. Agents abort provider requests and retry sleeps,
 wait for prompt cleanup, and dispose registries they own. Caller-supplied registries remain
 borrowed. Extensions can register disposables and optional deactivation hooks.
+
+Registry disposal joins pending availability checks before disposing owned toolsets; a late
+check cannot reinstall tools. Cleanup attempts every owner and then rejects with an
+`AggregateError` if any disposer failed. Agent/runtime disposal propagates that failure and
+returns the same settled promise on later calls. A rebuild whose old cleanup fails keeps its
+successfully prepared replacement active while reporting the cleanup failure.
 
 Runtime rebuilds prepare a candidate before replacing the active runtime. Failed candidates
 dispose their resources; newly created empty candidate sessions are removed, while existing
@@ -48,6 +57,10 @@ Plain `/reload` refreshes data/configuration in process. `/reload build`, `/relo
 to replace its child, carrying session, provider, model, profile, and draft state. Library
 embedding receives the request instead of exiting its host. A no-session conversation is
 not silently discarded by executable reload.
+
+Supervised print-mode OS shutdown cancels the provider and awaits runtime cleanup before
+returning 130 for SIGINT or 143 for SIGTERM. Unrelated provider or cleanup failures remain
+errors instead of being classified as successful signal shutdown.
 
 ## Verification
 
