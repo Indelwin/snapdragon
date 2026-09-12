@@ -1,138 +1,163 @@
-use std::time::Duration;
+use std::{path::Path, sync::Arc};
 
 use serde_json::Value;
 use snapdragon_gateway_core::{GatewayWorkerProcessState, ServiceWorkerSpec};
 use tokio::{
+    fs::{self, File},
     io::AsyncReadExt,
-    process::{Child, ChildStderr, ChildStdout, Command},
+    process::Child,
 };
 
-use crate::GatewayDaemon;
+use crate::{
+    GatewayDaemon, ServiceRunControl,
+    process_tracking::WorkerStream,
+    service_worker_output::{PipeCapture, spawn_pipe_reader},
+    service_worker_paths::{WorkerOutputPaths, worker_output_paths},
+    service_worker_process::{
+        ProcessGroupGuard, WaitReason, drain_grace, exit_signal, wait_for_child, worker_command,
+    },
+};
+
+#[cfg(test)]
+use crate::service_worker_output::PREVIEW_BYTES;
+
+const COMPLETION_BYTES: usize = 256 * 1024;
 
 pub(crate) async fn run_service_worker(
     daemon: &GatewayDaemon,
     service: &str,
     worker: &ServiceWorkerSpec,
     timeout_ms: Option<u64>,
+    control: Arc<ServiceRunControl>,
 ) -> Result<Option<String>, String> {
-    let mut command = Command::new(&worker.command);
-    command.args(&worker.args);
-    command.kill_on_drop(true);
-    command.stdout(std::process::Stdio::piped());
-    command.stderr(std::process::Stdio::piped());
-    if let Some(cwd) = &worker.cwd {
-        command.current_dir(cwd);
-    }
-    for (key, value) in &worker.env {
-        command.env(key, value);
-    }
+    let paths = worker_output_paths(daemon, service);
+    fs::create_dir_all(&paths.root)
+        .await
+        .map_err(|error| error.to_string())?;
+    let mut command = worker_command(worker, &paths.completion);
     let child = command.spawn().map_err(|error| error.to_string())?;
-    let pid = child.id();
     let process_id = daemon
-        .register_worker_process(service, worker, pid, timeout_ms)
+        .register_worker_process(
+            service,
+            worker,
+            child.id(),
+            timeout_ms,
+            Some(paths.stdout.display().to_string()),
+            Some(paths.stderr.display().to_string()),
+        )
         .await;
-    let (output, timed_out) = collect_output(child, timeout_ms).await?;
-    if timed_out {
-        let message = timeout_message(timeout_ms);
-        daemon
-            .finish_worker_process(
-                &process_id,
-                GatewayWorkerProcessState::TimedOut,
-                output.status.code(),
-                exit_signal(&output.status),
-                Some(message.clone()),
-            )
-            .await;
-        return Err(message);
-    }
-    if !output.status.success() {
-        let message = worker_error(&output);
-        daemon
-            .finish_worker_process(
-                &process_id,
-                GatewayWorkerProcessState::Failed,
-                output.status.code(),
-                exit_signal(&output.status),
-                Some(message.clone()),
-            )
-            .await;
-        return Err(message);
-    }
+    let output = match collect_output(daemon, &process_id, child, timeout_ms, control, &paths).await
+    {
+        Ok(output) => output,
+        Err(error) => {
+            let _ = fs::remove_file(&paths.completion).await;
+            daemon
+                .finish_worker_process(
+                    &process_id,
+                    GatewayWorkerProcessState::Failed,
+                    None,
+                    None,
+                    Some(error.clone()),
+                )
+                .await;
+            return Err(error);
+        }
+    };
+    let (state, error) = match output.reason {
+        WaitReason::TimedOut => (
+            GatewayWorkerProcessState::TimedOut,
+            Some(timeout_message(timeout_ms)),
+        ),
+        WaitReason::Cancelled => (
+            GatewayWorkerProcessState::Cancelled,
+            Some("worker cancelled".to_string()),
+        ),
+        WaitReason::Exited if !output.status.success() => (
+            GatewayWorkerProcessState::Failed,
+            Some(worker_error(&output)),
+        ),
+        WaitReason::Exited => (GatewayWorkerProcessState::Exited, None),
+    };
     daemon
         .finish_worker_process(
             &process_id,
-            GatewayWorkerProcessState::Exited,
+            state,
             output.status.code(),
             exit_signal(&output.status),
-            None,
+            error.clone(),
         )
         .await;
-    Ok(summary_from_stdout(&String::from_utf8_lossy(
-        &output.stdout,
-    )))
+    if let Some(error) = error {
+        let _ = fs::remove_file(&paths.completion).await;
+        return Err(error);
+    }
+    Ok(summary_from_capture(&paths.completion, &output.stdout).await)
+}
+
+struct CollectedOutput {
+    status: std::process::ExitStatus,
+    stdout: PipeCapture,
+    stderr: PipeCapture,
+    reason: WaitReason,
 }
 
 async fn collect_output(
+    daemon: &GatewayDaemon,
+    process_id: &str,
     mut child: Child,
     timeout_ms: Option<u64>,
-) -> Result<(std::process::Output, bool), String> {
-    let stdout = tokio::spawn(read_stdout(child.stdout.take()));
-    let stderr = tokio::spawn(read_stderr(child.stderr.take()));
-    let (status, timed_out) = wait_with_timeout(&mut child, timeout_ms).await?;
-    Ok((
-        std::process::Output {
-            status,
-            stdout: stdout.await.map_err(|error| error.to_string())??,
-            stderr: stderr.await.map_err(|error| error.to_string())??,
-        },
-        timed_out,
-    ))
-}
-
-async fn wait_with_timeout(
-    child: &mut Child,
-    timeout_ms: Option<u64>,
-) -> Result<(std::process::ExitStatus, bool), String> {
-    let Some(ms) = timeout_ms.filter(|ms| *ms > 0) else {
-        return child
-            .wait()
-            .await
-            .map(|status| (status, false))
-            .map_err(|error| error.to_string());
-    };
-    tokio::select! {
-        result = child.wait() => result.map(|status| (status, false)).map_err(|error| error.to_string()),
-        _ = tokio::time::sleep(Duration::from_millis(ms)) => {
-            let _ = child.start_kill();
-            child.wait().await.map(|status| (status, true)).map_err(|error| error.to_string())
+    control: Arc<ServiceRunControl>,
+    paths: &WorkerOutputPaths,
+) -> Result<CollectedOutput, String> {
+    let mut guard = ProcessGroupGuard::new(child.id());
+    let mut stdout = spawn_pipe_reader(
+        daemon.clone(),
+        process_id.to_string(),
+        child.stdout.take(),
+        WorkerStream::Stdout,
+        paths.stdout.clone(),
+        true,
+    );
+    let mut stderr = spawn_pipe_reader(
+        daemon.clone(),
+        process_id.to_string(),
+        child.stderr.take(),
+        WorkerStream::Stderr,
+        paths.stderr.clone(),
+        false,
+    );
+    let (status, reason) = wait_for_child(&mut child, timeout_ms, &control).await?;
+    guard.terminate(false);
+    let mut drains = Box::pin(async { tokio::join!(&mut stdout, &mut stderr) });
+    let joined = match tokio::time::timeout(drain_grace(), &mut drains).await {
+        Ok(joined) => joined,
+        Err(_) => {
+            guard.terminate(true);
+            match tokio::time::timeout(drain_grace(), &mut drains).await {
+                Ok(joined) => joined,
+                Err(_) => {
+                    drop(drains);
+                    stdout.abort();
+                    stderr.abort();
+                    return Err("worker output pipes did not close after process-group kill".into());
+                }
+            }
         }
-    }
-}
-
-async fn read_stdout(stdout: Option<ChildStdout>) -> Result<Vec<u8>, String> {
-    read_pipe(stdout).await
-}
-
-async fn read_stderr(stderr: Option<ChildStderr>) -> Result<Vec<u8>, String> {
-    read_pipe(stderr).await
-}
-
-async fn read_pipe<T>(pipe: Option<T>) -> Result<Vec<u8>, String>
-where
-    T: tokio::io::AsyncRead + Unpin,
-{
-    let Some(mut pipe) = pipe else {
-        return Ok(Vec::new());
     };
-    let mut out = Vec::new();
-    pipe.read_to_end(&mut out)
-        .await
-        .map_err(|error| error.to_string())?;
-    Ok(out)
+    guard.disarm();
+    let (stdout, stderr) = joined;
+    Ok(CollectedOutput {
+        status,
+        stdout: stdout.map_err(|error| error.to_string())??,
+        stderr: stderr.map_err(|error| error.to_string())??,
+        reason,
+    })
 }
 
-fn worker_error(output: &std::process::Output) -> String {
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+fn worker_error(output: &CollectedOutput) -> String {
+    let stderr = String::from_utf8_lossy(&output.stderr.preview)
+        .trim()
+        .to_string();
     if !stderr.is_empty() {
         return stderr;
     }
@@ -150,77 +175,38 @@ fn timeout_message(timeout_ms: Option<u64>) -> String {
     )
 }
 
-#[cfg(unix)]
-fn exit_signal(status: &std::process::ExitStatus) -> Option<String> {
-    use std::os::unix::process::ExitStatusExt;
-    status.signal().map(|signal| signal.to_string())
+async fn summary_from_capture(path: &Path, stdout: &PipeCapture) -> Option<String> {
+    let completion = read_bounded_file(path, COMPLETION_BYTES).await;
+    let _ = fs::remove_file(path).await;
+    completion
+        .as_deref()
+        .and_then(summary_from_json)
+        .or_else(|| summary_from_json(&stdout.completion))
+        .or_else(|| {
+            let text = String::from_utf8_lossy(&stdout.preview);
+            let trimmed = text.trim();
+            (!trimmed.is_empty()).then(|| trimmed.chars().take(4_096).collect())
+        })
 }
 
-#[cfg(not(unix))]
-fn exit_signal(_status: &std::process::ExitStatus) -> Option<String> {
-    None
+async fn read_bounded_file(path: &Path, limit: usize) -> Option<Vec<u8>> {
+    let file = File::open(path).await.ok()?;
+    let mut bytes = Vec::new();
+    file.take(limit as u64 + 1)
+        .read_to_end(&mut bytes)
+        .await
+        .ok()?;
+    (bytes.len() <= limit).then_some(bytes)
 }
 
-fn summary_from_stdout(stdout: &str) -> Option<String> {
-    let trimmed = stdout.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if let Ok(value) = serde_json::from_str::<Value>(trimmed) {
-        return value
-            .get("summary")
-            .and_then(|summary| summary.as_str())
-            .map(|summary| summary.to_string());
-    }
-    Some(trimmed.chars().take(4_096).collect())
+fn summary_from_json(bytes: &[u8]) -> Option<String> {
+    let value = serde_json::from_slice::<Value>(bytes).ok()?;
+    value
+        .get("summary")
+        .and_then(|summary| summary.as_str())
+        .map(str::to_string)
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::BTreeMap;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn service_worker_extracts_json_summary() {
-        let daemon = GatewayDaemon::new();
-        let summary = run_service_worker(
-            &daemon,
-            "svc",
-            &ServiceWorkerSpec {
-                command: "sh".into(),
-                args: vec![
-                    "-c".into(),
-                    r#"printf '{"summary":"worker summary"}'"#.into(),
-                ],
-                cwd: None,
-                env: BTreeMap::new(),
-            },
-            Some(1_000),
-        )
-        .await
-        .unwrap();
-        assert_eq!(summary.as_deref(), Some("worker summary"));
-    }
-
-    #[tokio::test]
-    async fn service_worker_kills_and_records_timeout() {
-        let daemon = GatewayDaemon::new();
-        let error = run_service_worker(
-            &daemon,
-            "svc",
-            &ServiceWorkerSpec {
-                command: "sh".into(),
-                args: vec!["-c".into(), "sleep 2".into()],
-                cwd: None,
-                env: BTreeMap::new(),
-            },
-            Some(25),
-        )
-        .await
-        .unwrap_err();
-        assert!(error.contains("timed out"));
-        let [process] = daemon.worker_process_snapshot().await.try_into().unwrap();
-        assert_eq!(process.state, GatewayWorkerProcessState::TimedOut);
-    }
-}
+#[path = "service_worker_tests.rs"]
+mod tests;

@@ -6,6 +6,7 @@ import { InlineMailboxStore } from './inline-mailboxes.js';
 import { InlineCapabilityRegistry } from './inline-registry.js';
 import { InlineSandboxStore } from './inline-sandboxes.js';
 import { InlineServiceStore } from './inline-services.js';
+import { inlineId, inlineLogger } from './inline-shared.js';
 import { InlineTableStore } from './inline-tables.js';
 import { InlineWorkerStore } from './inline-workers.js';
 import type {
@@ -16,6 +17,7 @@ import type {
   GatewayJobLease,
   GatewayJobSpec,
   GatewayJobStatus,
+  GatewayLeaseFence,
   GatewayLogInput,
   GatewayLogRecord,
   GatewayReceiveFilter,
@@ -46,17 +48,13 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   #agentRuntimes = new Map<string, GatewayAgentRuntimeDescriptor>();
   #tables = new InlineTableStore();
   #logs = new InlineLogStore();
-  #events = new InlineEventStore((level, target, message, data) =>
-    this.#log(level, target, message, data),
-  );
-  #workers = new InlineWorkerStore((level, target, message, data) =>
-    this.#log(level, target, message, data),
-  );
-  #sandboxes = new InlineSandboxStore((level, target, message, data) =>
-    this.#log(level, target, message, data),
-  );
+  #logger = inlineLogger(this.#logs);
+  #events = new InlineEventStore(this.#logger);
+  #workers = new InlineWorkerStore(this.#logger);
+  #sandboxes = new InlineSandboxStore(this.#logger);
   #jobs = new InlineJobStore({
-    log: (level, target, message, data) => this.#log(level, target, message, data),
+    log: this.#logger,
+    onLeaseExpired: (lease) => this.#workers.clearLease(lease),
   });
 
   async send(envelope: GatewayEnvelope): Promise<void> {
@@ -70,10 +68,10 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   }
 
   async registerService(spec: GatewayServiceSpec, runner?: GatewayServiceRunner): Promise<void> {
-    this.#services.register(spec, runner);
+    await this.#services.register(spec, runner);
   }
   async enableService(name: string, enabled: boolean): Promise<void> {
-    this.#services.enable(name, enabled);
+    await this.#services.enable(name, enabled);
   }
   async runService(name: string, signal?: AbortSignal): Promise<GatewayServiceStatus | undefined> {
     return this.#services.run(name, signal);
@@ -115,7 +113,7 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   ): Promise<GatewayAgentRuntimeDescriptor> {
     const normalized = normalizeAgentRuntime(descriptor);
     this.#agentRuntimes.set(normalized.id, normalized);
-    this.#log('info', normalized.id, 'agent runtime registered', {
+    this.#logger('info', normalized.id, 'agent runtime registered', {
       kind: normalized.kind,
       protocol: normalized.protocol,
     });
@@ -180,20 +178,38 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
     worker: string,
     leaseMs = 300_000,
   ): Promise<GatewayJobLease | undefined> {
+    this.#workers.assertAvailable(worker);
     const lease = this.#jobs.acquire(queue, worker, leaseMs);
     if (lease) this.#workers.markLeased(worker, queue, lease.lease);
     return lease;
   }
 
-  async completeJob(id: string, result?: unknown): Promise<GatewayJobStatus | undefined> {
+  async renewJob(
+    id: string,
+    fence: GatewayLeaseFence,
+    leaseMs = 300_000,
+  ): Promise<GatewayJobLease | undefined> {
+    const renewed = this.#jobs.renew(id, fence, leaseMs);
+    if (renewed) this.#workers.renewLease(renewed.lease);
+    return renewed;
+  }
+  async completeJob(
+    id: string,
+    result: unknown,
+    fence: GatewayLeaseFence,
+  ): Promise<GatewayJobStatus | undefined> {
     const lease = this.#leaseForJob(id);
-    const job = this.#jobs.complete(id, result);
+    const job = this.#jobs.complete(id, result, fence);
     if (job) this.#workers.clearLease(lease);
     return job;
   }
-  async failJob(id: string, error: string): Promise<GatewayJobStatus | undefined> {
+  async failJob(
+    id: string,
+    error: string,
+    fence: GatewayLeaseFence,
+  ): Promise<GatewayJobStatus | undefined> {
     const lease = this.#leaseForJob(id);
-    const job = this.#jobs.fail(id, error);
+    const job = this.#jobs.fail(id, error, fence);
     if (job) this.#workers.clearLease(lease);
     return job;
   }
@@ -232,21 +248,12 @@ export class InlineGatewayClient implements GatewayOrchestrationClient {
   async worldSnapshot(options: GatewayWorldSnapshotOptions = {}): Promise<GatewayWorldSnapshot> {
     return buildGatewayWorldSnapshot(this, options);
   }
-  #log(
-    level: string,
-    target: string | undefined,
-    message: string,
-    data?: unknown,
-    atMs = Date.now(),
-  ): GatewayLogRecord {
-    return this.#logs.append({ level, target, message, data, atMs });
-  }
 
+  async close(): Promise<void> {
+    this.#jobs.close();
+    await this.#services.close();
+  }
   #leaseForJob(id: string) {
     return this.#jobs.activeLeases().find((lease) => lease.jobId === id);
   }
-}
-
-function inlineId(prefix: string): string {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }

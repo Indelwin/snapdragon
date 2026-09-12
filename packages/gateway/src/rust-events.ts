@@ -1,4 +1,5 @@
 import type { RustGatewayCall } from './rust-call.js';
+import { readAllRustPages } from './rust-pages.js';
 import { fromWireEventRecord, fromWireLogRecord, toWireLogInput } from './rust-wire-durable.js';
 import type { GatewayEventRecord, GatewayLogInput, GatewayLogRecord } from './types.js';
 
@@ -17,9 +18,7 @@ export async function appendRustEvent(
 }
 
 export async function listRustEvents(call: RustGatewayCall): Promise<GatewayEventRecord[]> {
-  return ((await call('events.list')) as unknown[])
-    .map((event) => fromWireEventRecord(event as any))
-    .filter((event): event is GatewayEventRecord => event !== undefined);
+  return readAllRustPages(call, 'events.list', (event) => fromWireEventRecord(event as any));
 }
 
 export async function cancelRustEvent(

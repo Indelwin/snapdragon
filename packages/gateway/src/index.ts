@@ -37,6 +37,7 @@ export type {
   GatewayJobState,
   GatewayJobStatus,
   GatewayLease,
+  GatewayLeaseFence,
   GatewayLogInput,
   GatewayLogRecord,
   GatewayQueueDepth,

@@ -75,6 +75,7 @@ const jobs = await gateway.listJobs();
 | `POST` | `/v1/jobs` | Enqueue a durable job. |
 | `POST` | `/v1/jobs/acquire` | Acquire the next pending job on a queue. |
 | `GET` | `/v1/jobs/:id` | Show one job. |
+| `POST` | `/v1/jobs/:id/renew` | Renew the active fenced lease. |
 | `POST` | `/v1/jobs/:id/complete` | Complete one job with an optional result. |
 | `POST` | `/v1/jobs/:id/fail` | Fail one job with a durable error. |
 | `POST` | `/v1/jobs/:id/cancel` | Cancel one job. |
@@ -97,6 +98,13 @@ runtime jobs this includes lifecycle events such as `agent_start`,
 `message_end`, tool execution boundaries, extension UI requests, and
 cancellation observation without exposing raw token deltas by default.
 
+Request and response bodies are limited to 1 MiB. Oversized requests return
+`413`; a response that cannot fit returns `507` with guidance to request a
+smaller page. `GET /v1/jobs`, `/v1/events`, `/v1/workers`, and `/v1/sandboxes`
+return `{ "items": [...], "nextCursor": "..." }`. Pass `cursor` and `limit` to
+continue; page size is capped at 100. `GatewayRestClient` follows these pages
+automatically. Log tails are capped at 100 records.
+
 ## Query Filters
 
 `GET /v1/world` and `GET /v1/stream` accept the same focused inspection query
@@ -115,7 +123,8 @@ matching subset of this vocabulary.
 | `kind` / `jobKind` / `eventKind` | jobs, events | Filter by job or event kind. |
 | `capability` | agent runtimes | Filter runtimes by capability. |
 | `enabled` | services | Filter service enablement with `true`, `false`, `1`, or `0`. |
-| `limit` / `logLimit` | logs | Bound returned log records. |
+| `cursor` / `limit` | jobs, events, workers, sandboxes | Continue a bounded list page; at most 100 items. |
+| `limit` / `logLimit` | logs | Bound returned log records, at most 100. |
 | `tables` / repeated `table` | `/world`, `/stream` | Restrict table snapshots by name. |
 
 The current snapshot shape exposes `workerProcesses` explicitly. `workers`
@@ -261,6 +270,8 @@ POST /v1/jobs/job_123/complete
 content-type: application/json
 
 {
+  "leaseId": "lease_job_123_1_1780876800000",
+  "attempt": 1,
   "result": {
     "summary": "Release checks passed."
   }
@@ -274,7 +285,22 @@ POST /v1/jobs/job_124/fail
 content-type: application/json
 
 {
+  "leaseId": "lease_job_124_2_1780876800000",
+  "attempt": 2,
   "error": "runtime exited before message_end"
+}
+```
+
+Renew a lease before its expiry:
+
+```http
+POST /v1/jobs/job_123/renew
+content-type: application/json
+
+{
+  "leaseId": "lease_job_123_1_1780876800000",
+  "attempt": 1,
+  "leaseMs": 300000
 }
 ```
 
@@ -289,8 +315,14 @@ content-type: application/json
 
 The durable gateway treats cancellation as terminal. Cooperative workers observe
 the cancelled job record, abort their runtime signal, clear active leases, and
-leave subsequent late `complete` or `fail` writes as no-ops against the
-cancelled status.
+receive a stale-fence error for subsequent `renew`, `complete`, or `fail`
+writes from the cancelled attempt.
+
+The `leaseId` and `attempt` pair returned by acquire is mandatory for all three
+fenced writes. A stale pair is rejected atomically, including when cancellation,
+expiry, retry, or a newer acquisition wins a concurrent race. One worker id can
+hold only one active job lease, and enqueue rejects a duplicate explicit job id
+instead of replacing its status or stranding its lease.
 
 Retry a failed job:
 

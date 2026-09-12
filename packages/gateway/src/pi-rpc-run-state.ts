@@ -1,81 +1,81 @@
-import {
-  assistantText,
-  stringField,
-  summarize,
-  textDelta,
-  writeOutputArtifact,
-} from './pi-rpc-output.js';
-import type { PiRpcAgentRunResult, PiRpcObservedEvent, PiRpcSession } from './pi-rpc-types.js';
+import { outputArtifactPath, writeOutputArtifact } from './pi-rpc-artifacts.js';
+import { PiRpcEventBuffer } from './pi-rpc-event-buffer.js';
+import { stringField } from './pi-rpc-output.js';
+import { buildPiRpcResult } from './pi-rpc-result.js';
+import { PiRpcRunProjection } from './pi-rpc-run-projection.js';
+import { PiRpcTraces } from './pi-rpc-traces.js';
+import type {
+  PiRpcAgentRunResult,
+  PiRpcObservedEvent,
+  PiRpcObserverContext,
+  PiRpcSession,
+  PiRpcTraceSink,
+} from './pi-rpc-types.js';
 import type { GatewayAgentRunSpec } from './types-runtime.js';
 
-const blockingExtensionUiMethods = new Set(['select', 'confirm', 'input', 'editor']);
+export {
+  MAX_PI_RESULT_EVENT_BYTES,
+  MAX_PI_RESULT_EVENTS,
+  MAX_PI_RESULT_SINGLE_EVENT_BYTES,
+} from './pi-rpc-event-buffer.js';
+export {
+  MAX_PI_RESULT_CONTENT_BYTES,
+  MAX_PI_RESULT_STATE_BYTES,
+} from './pi-rpc-run-projection.js';
 
 export class PiRpcRunState {
-  #content = '';
-  #events: PiRpcObservedEvent[] = [];
-  #extensionUiRequests = 0;
-  #latestAssistantText: string | undefined;
+  readonly #projection = new PiRpcRunProjection();
+  readonly #events = new PiRpcEventBuffer();
+  readonly #traces = new PiRpcTraces();
+  #observerErrors = 0;
+
+  async initialize(spec: GatewayAgentRunSpec, traceSink?: PiRpcTraceSink): Promise<void> {
+    await this.#traces.initialize(spec, traceSink);
+  }
 
   record(event: Record<string, unknown>, session: PiRpcSession): PiRpcObservedEvent {
-    this.#handleExtensionUi(event, session);
-    this.#appendTextDelta(event);
-    this.#captureFinalAssistantText(event);
+    this.#projection.record(event, session);
     const observed = {
       type: stringField(event.type, 'event'),
       atMs: Date.now(),
       payload: event,
     };
-    this.#events.push(observed);
+    this.#events.retain(observed);
     return observed;
   }
 
-  async result(
-    spec: GatewayAgentRunSpec,
-    state: unknown,
-    durationMs: number,
-  ): Promise<PiRpcAgentRunResult> {
-    const content = this.#latestAssistantText ?? this.#content;
-    const result = this.#baseResult(content, state, durationMs);
+  async persist(observed: PiRpcObservedEvent, context: PiRpcObserverContext): Promise<void> {
+    await this.#traces.persist(observed, context);
+  }
+
+  recordObserverError(): void {
+    this.#observerErrors += 1;
+  }
+
+  async close(context: PiRpcObserverContext): Promise<void> {
+    await this.#traces.close(context);
+  }
+
+  async result(spec: GatewayAgentRunSpec, durationMs: number): Promise<PiRpcAgentRunResult> {
+    const sinkError = this.#traces.firstError();
+    if (sinkError) throw new Error(`Pi RPC trace sink failed: ${sinkError.message}`);
+    const result = buildPiRpcResult(
+      this.#projection,
+      this.#events,
+      durationMs,
+      this.#observerErrors,
+      this.#traces.errorCount(),
+    );
+    const traces = this.#traces.artifacts();
     if (spec.outputArtifact) {
-      result.outputArtifact = await writeOutputArtifact(spec.outputArtifact, result, spec.cwd);
+      result.outputArtifact = outputArtifactPath(spec.outputArtifact, spec.cwd);
+    }
+    if (result.outputArtifact || traces.length > 0) {
+      result.artifacts = { result: result.outputArtifact, traces };
+    }
+    if (spec.outputArtifact) {
+      await writeOutputArtifact(spec.outputArtifact, result, spec.cwd);
     }
     return result;
-  }
-
-  #handleExtensionUi(event: Record<string, unknown>, session: PiRpcSession): void {
-    if (event.type !== 'extension_ui_request') return;
-    this.#extensionUiRequests += 1;
-    const id = typeof event.id === 'string' ? event.id : undefined;
-    const method = typeof event.method === 'string' ? event.method : undefined;
-    if (!id || !method || !blockingExtensionUiMethods.has(method)) return;
-    session.write({ type: 'extension_ui_response', id, cancelled: true });
-  }
-
-  #appendTextDelta(event: Record<string, unknown>): void {
-    if (event.type !== 'message_update') return;
-    const delta = textDelta(event);
-    if (delta) this.#content += delta;
-  }
-
-  #captureFinalAssistantText(event: Record<string, unknown>): void {
-    if (event.type !== 'message_end') return;
-    const text = assistantText(event.message);
-    if (!text) return;
-    this.#latestAssistantText = text;
-    this.#content = text;
-  }
-
-  #baseResult(content: string, state: unknown, durationMs: number): PiRpcAgentRunResult {
-    return {
-      summary: summarize(content),
-      content,
-      events: this.#events,
-      state,
-      metrics: {
-        duration_ms: durationMs,
-        event_count: this.#events.length,
-        extension_ui_requests: this.#extensionUiRequests,
-      },
-    };
   }
 }

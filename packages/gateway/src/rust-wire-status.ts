@@ -60,12 +60,17 @@ interface WireWorkerProcess {
   exit_code?: number | null;
   signal?: string | null;
   last_error?: string | null;
+  stdout_preview?: string;
+  stderr_preview?: string;
+  stdout_log?: string | null;
+  stderr_log?: string | null;
 }
 
 interface WireLease {
   id: string;
   job_id: string;
   worker: string;
+  attempt: number;
   acquired_at_ms: number;
   expires_at_ms: number;
 }
@@ -133,6 +138,10 @@ function fromWireWorkerProcess(value: WireWorkerProcess): GatewayWorkerProcess {
     exitCode: value.exit_code ?? undefined,
     signal: value.signal ?? undefined,
     lastError: value.last_error ?? undefined,
+    stdoutPreview: value.stdout_preview ?? '',
+    stderrPreview: value.stderr_preview ?? '',
+    stdoutLog: value.stdout_log ?? undefined,
+    stderrLog: value.stderr_log ?? undefined,
   };
 }
 
@@ -140,6 +149,7 @@ function fromWireWorkerProcessState(value: string): GatewayWorkerProcessState {
   const normalized = toSnakeCase(value);
   if (normalized === 'exited') return 'exited';
   if (normalized === 'timed_out') return 'timed_out';
+  if (normalized === 'cancelled') return 'cancelled';
   if (normalized === 'failed') return 'failed';
   return 'running';
 }
@@ -149,6 +159,7 @@ function fromWireLease(value: WireLease): GatewayLease {
     id: value.id,
     jobId: value.job_id,
     worker: value.worker,
+    attempt: Number(value.attempt ?? 0),
     acquiredAtMs: Number(value.acquired_at_ms ?? 0),
     expiresAtMs: Number(value.expires_at_ms ?? 0),
   };

@@ -6,6 +6,7 @@ import {
   acquireGatewayJob,
   completeGatewayJob,
   failGatewayJob,
+  renewGatewayJob,
 } from './gateway-command-job-lifecycle.js';
 
 type JobsHandler = (rest: string[], args: SdCliArgs) => Promise<string>;
@@ -18,6 +19,7 @@ const JOB_HANDLERS: Record<string, JobsHandler> = {
   fail: failGatewayJob,
   finish: completeGatewayJob,
   list: (_rest, args) => listJobs(args),
+  renew: renewGatewayJob,
   show: (rest, args) => showJob(rest[0], args),
   cancel: (rest, args) => cancelJob(rest[0], args),
   retry: (rest, args) => retryJob(rest[0], args),

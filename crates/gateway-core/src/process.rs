@@ -6,6 +6,7 @@ pub enum GatewayWorkerProcessState {
     Running,
     Exited,
     TimedOut,
+    Cancelled,
     Failed,
 }
 
@@ -24,4 +25,12 @@ pub struct GatewayWorkerProcess {
     pub exit_code: Option<i32>,
     pub signal: Option<String>,
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub stdout_preview: String,
+    #[serde(default)]
+    pub stderr_preview: String,
+    #[serde(default)]
+    pub stdout_log: Option<String>,
+    #[serde(default)]
+    pub stderr_log: Option<String>,
 }

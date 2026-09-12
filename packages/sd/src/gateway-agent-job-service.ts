@@ -2,11 +2,13 @@ import type { GatewayAgentRunSpec, GatewayClient, GatewayJobStatus } from '@snap
 import type { SdBackgroundService, SdBackgroundServiceResult } from './background.js';
 import type { SdConfig } from './config-schema.js';
 import { runGatewayAgentRuntime } from './gateway-agent-dispatch.js';
-import { isJobCancelled, monitorJobCancellation } from './gateway-agent-job-control.js';
+import { monitorJobCancellation } from './gateway-agent-job-control.js';
 import { appendRuntimeEventLog, safeAppendLog } from './gateway-agent-job-logs.js';
 import { configuredAgentRuntimeDescriptors } from './gateway-agent-runtime-config.js';
 import { registerSavedAgentRuntime } from './gateway-agent-runtime-resolve.js';
 import { rustGatewayClientForConfig } from './gateway-command-client.js';
+import { leaseFence, leaseFenceForJob } from './gateway-job-lease.js';
+import { isJobCancelled } from './gateway-job-status.js';
 import {
   gatewayJobWorkerId,
   heartbeatGatewayJobWorker,
@@ -40,7 +42,7 @@ export function gatewayAgentJobService(): SdBackgroundService {
       }
       if (lease.job.spec.kind !== 'agent.run') {
         const message = `unsupported job kind: ${lease.job.spec.kind}`;
-        await client.failJob(lease.job.id, message);
+        await client.failJob(lease.job.id, message, leaseFence(lease.lease));
         await heartbeatAgentJobWorker(client, workerId, 'idle', `unsupported job ${lease.job.id}`, {
           lastError: message,
         });
@@ -57,10 +59,13 @@ export async function runGatewayAgentJob(
   job: GatewayJobStatus,
   options: GatewayAgentJobRunOptions = {},
 ): Promise<SdBackgroundServiceResult> {
+  const fence = leaseFenceForJob(job);
+  const leaseMs = Math.max(1_000, (job.leaseExpiresAtMs ?? Date.now()) - job.updatedAtMs);
   const monitor = monitorJobCancellation(
     client,
     job.id,
     options.cancellationPollMs ?? DEFAULT_CANCELLATION_POLL_MS,
+    { fence, leaseMs },
   );
   try {
     const spec = job.spec.payload as GatewayAgentRunSpec;
@@ -103,13 +108,17 @@ export async function runGatewayAgentJob(
       });
       return cancelledSummary(job.id);
     }
-    await client.completeJob(job.id, {
-      runtimeId: result.runtimeId,
-      summary: result.summary,
-      content: result.content,
-      metrics: result.metrics,
-      outputArtifact: result.outputArtifact,
-    });
+    await client.completeJob(
+      job.id,
+      {
+        runtimeId: result.runtimeId,
+        summary: result.summary,
+        content: result.content,
+        metrics: result.metrics,
+        outputArtifact: result.outputArtifact,
+      },
+      fence,
+    );
     await heartbeatAgentJobWorker(client, options.workerId, 'idle', `completed ${job.id}`, {
       metadata: agentJobWorkerMetadata(config, { lastJobId: job.id, lastRuntimeId: runtimeId }),
     });
@@ -128,7 +137,7 @@ export async function runGatewayAgentJob(
       });
       return cancelledSummary(job.id);
     }
-    await client.failJob(job.id, message);
+    if (!monitor.leaseLost) await client.failJob(job.id, message, fence);
     await heartbeatAgentJobWorker(client, options.workerId, 'idle', message, {
       lastError: message,
     });

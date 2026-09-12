@@ -1,4 +1,5 @@
 import { filterEvents } from './query-filters.js';
+import { paginateRest } from './rest-page.js';
 import { worldSnapshotOptionsFromSearch } from './rest-query.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient } from './types.js';
@@ -21,7 +22,10 @@ async function listEvents(
 ): Promise<RestRouteResult> {
   if (id) return notFound();
   const options = worldSnapshotOptionsFromSearch(route.searchParams);
-  return { status: 200, body: filterEvents(await client.listEvents(), options) };
+  return {
+    status: 200,
+    body: paginateRest(filterEvents(await client.listEvents(), options), route.searchParams),
+  };
 }
 
 async function mutateEvent(

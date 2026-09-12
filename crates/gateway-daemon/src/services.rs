@@ -1,12 +1,20 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use snapdragon_gateway_core::{ServiceSpec, ServiceState, ServiceStatus};
 
-use crate::{GatewayDaemon, service_worker::run_service_worker, services_persistence::ServiceLog};
+use crate::{
+    GatewayDaemon, ServiceRunControl, service_worker::run_service_worker,
+    services_persistence::ServiceLog,
+};
 
 impl GatewayDaemon {
     pub async fn register_service(&self, spec: ServiceSpec) {
         let name = spec.name.clone();
+        let lifecycle = self.service_lifecycle_gate(&name).await;
+        let _lifecycle_guard = lifecycle.lock().await;
         {
             let mut inner = self.inner.write().await;
             let existing = inner.services.get(&name).cloned();
@@ -17,10 +25,24 @@ impl GatewayDaemon {
         }
         let status = self.service_status(&name).await;
         self.persist_service_status(Some(&spec), status.as_ref(), unix_time_ms(), None);
-        self.replace_service_task(spec).await;
+        self.replace_service_task_locked(spec).await;
     }
 
     pub async fn run_service_now(&self, name: &str) -> Option<ServiceStatus> {
+        let lifecycle = self.service_lifecycle_gate(name).await;
+        let control = {
+            let _lifecycle_guard = lifecycle.lock().await;
+            self.service_control_locked(name).await
+        };
+        self.run_service_with_control(name, control).await
+    }
+
+    pub(crate) async fn run_service_with_control(
+        &self,
+        name: &str,
+        control: Arc<ServiceRunControl>,
+    ) -> Option<ServiceStatus> {
+        let _run_guard = control.gate.lock().await;
         let spec = {
             let inner = self.inner.read().await;
             inner.service_specs.get(name).cloned()
@@ -28,7 +50,11 @@ impl GatewayDaemon {
         {
             let mut inner = self.inner.write().await;
             let status = inner.services.get_mut(name)?;
-            if !status.enabled || !spec.enabled {
+            if self.shutdown_signal.is_cancelled()
+                || control.is_cancelled()
+                || !status.enabled
+                || !spec.enabled
+            {
                 status.state = ServiceState::Stopped;
                 return Some(status.clone());
             }
@@ -41,11 +67,15 @@ impl GatewayDaemon {
                     &spec.name,
                     worker,
                     spec.budget.as_ref().and_then(|budget| budget.timeout_ms),
+                    Arc::clone(&control),
                 )
                 .await
             }
             None => Ok(None),
         };
+        if control.is_cancelled() {
+            return self.service_status(name).await;
+        }
         match result {
             Ok(summary) => self.record_service_run(name, unix_time_ms(), summary).await,
             Err(error) => self.record_service_error(name, error).await,
@@ -106,6 +136,8 @@ impl GatewayDaemon {
     }
 
     pub async fn set_service_enabled(&self, name: &str, enabled: bool) -> Option<ServiceStatus> {
+        let lifecycle = self.service_lifecycle_gate(name).await;
+        let _lifecycle_guard = lifecycle.lock().await;
         let spec = {
             let mut inner = self.inner.write().await;
             let spec = inner.service_specs.get_mut(name)?;
@@ -123,9 +155,9 @@ impl GatewayDaemon {
             spec
         };
         if enabled {
-            self.replace_service_task(spec.clone()).await;
+            self.replace_service_task_locked(spec.clone()).await;
         } else {
-            self.remove_service_task(name).await;
+            self.remove_service_task_locked(name).await;
         }
         let status = self.service_status(name).await;
         self.persist_service_status(Some(&spec), status.as_ref(), unix_time_ms(), None);
@@ -190,66 +222,5 @@ fn unix_time_ms() -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use std::collections::BTreeMap;
-
-    use snapdragon_gateway_core::{ServiceBudget, ServiceSpec, ServiceWorkerSpec};
-
-    use super::*;
-
-    #[tokio::test]
-    async fn daemon_tracks_service_runs_and_errors() {
-        let daemon = GatewayDaemon::new();
-        daemon
-            .register_service(test_service("memory-worker", None))
-            .await;
-        daemon
-            .record_service_run("memory-worker", 10, Some("ok".into()))
-            .await;
-        daemon.record_service_error("memory-worker", "boom").await;
-        let status = daemon.status().await;
-        assert_eq!(status.services[0].runs, 1);
-        assert_eq!(status.services[0].errors, 1);
-        assert_eq!(status.services[0].last_error.as_deref(), Some("boom"));
-    }
-
-    #[tokio::test]
-    async fn daemon_executes_service_worker_on_demand() {
-        let daemon = GatewayDaemon::new();
-        let worker = ServiceWorkerSpec {
-            command: "sh".into(),
-            args: vec![
-                "-c".into(),
-                r#"printf '{"summary":"indexed 2 sessions"}'"#.into(),
-            ],
-            cwd: None,
-            env: BTreeMap::new(),
-        };
-        daemon
-            .register_service(test_service("session-index", Some(worker)))
-            .await;
-
-        let status = daemon.run_service_now("session-index").await.unwrap();
-        assert_eq!(status.runs, 1);
-        assert_eq!(status.errors, 0);
-        assert_eq!(status.last_summary.as_deref(), Some("indexed 2 sessions"));
-    }
-
-    fn test_service(name: &str, worker: Option<ServiceWorkerSpec>) -> ServiceSpec {
-        ServiceSpec {
-            name: name.into(),
-            enabled: true,
-            interval_ms: None,
-            startup_delay_ms: None,
-            restart: Default::default(),
-            restart_intensity: Default::default(),
-            backoff_ms: None,
-            max_backoff_ms: None,
-            budget: Some(ServiceBudget {
-                max_fuel: None,
-                timeout_ms: Some(1_000),
-            }),
-            worker,
-        }
-    }
-}
+#[path = "services_tests.rs"]
+mod tests;

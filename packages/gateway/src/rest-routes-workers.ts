@@ -1,4 +1,5 @@
 import { filterWorkers } from './query-filters.js';
+import { paginateRest } from './rest-page.js';
 import { worldSnapshotOptionsFromSearch } from './rest-query.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient, GatewayWorkerHeartbeat, GatewayWorkerRegistration } from './types.js';
@@ -12,9 +13,12 @@ export async function dispatchWorkers(
   if (route.method === 'GET' && !id) {
     return {
       status: 200,
-      body: filterWorkers(
-        await client.listWorkers(),
-        worldSnapshotOptionsFromSearch(route.searchParams),
+      body: paginateRest(
+        filterWorkers(
+          await client.listWorkers(),
+          worldSnapshotOptionsFromSearch(route.searchParams),
+        ),
+        route.searchParams,
       ),
     };
   }

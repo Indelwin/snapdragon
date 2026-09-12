@@ -83,6 +83,14 @@ heartbeats can mark it `offline` or attach operator-facing status and metadata.
 This gives executive agents and dashboards a direct capacity surface instead of
 forcing them to infer availability from subprocess listings.
 
+SQLite acquisition uses an immediate transaction that selects one pending job,
+increments its attempt, writes the active lease id and attempt onto the job,
+creates the lease, and updates the worker before committing. Renewal,
+completion, and failure require that lease id and attempt as a fence. A worker
+from an expired or cancelled attempt receives a stale-fence error and cannot
+modify a newer attempt. Cancellation and manual retry use the same transaction
+boundary, so they cannot leave a running job without its matching lease.
+
 Failure with attempts remaining requeues the job as `pending`. Once attempts are
 exhausted, the job becomes `failed` until an operator or executive agent retries
 it explicitly. Cancellation remains terminal.
@@ -139,8 +147,8 @@ While a runtime job is active, the worker polls the durable job record. If an
 operator or executive agent cancels the job through IPC, REST, or CLI, the
 worker aborts the runtime signal and the Pi adapter sends an RPC `abort` before
 stopping the child process. Cancelled jobs are terminal: late completion or
-failure writes from a worker return the cancelled record instead of resurrecting
-the job.
+failure writes from the cancelled lease are rejected as stale instead of
+resurrecting the job.
 
 ## Executive Agents
 
@@ -170,14 +178,30 @@ Failures should be explicit and inspectable:
 
 - A crashed worker records process state, last error, and recent logs.
 - A timed-out worker is killed by the daemon and recorded as `timed_out`.
-- A stale lease expires during watchdog/status passes and clears the logical
-  worker lease.
+- A stale lease expires in the daemon-owned background watchdog, independent of
+  status reads, and clears the logical worker lease.
 - A stale sandbox lease expires during watchdog/recovery passes and disappears
   from REST/SSE/world snapshots.
 - Retry decisions are controlled by job attempts and service restart intensity.
 - Cancellation updates the durable record, removes active leases, aborts
   cooperative runtime workers, and stops future dispatch.
 - Policy or approval blocks should be represented as state, not hidden logs.
+
+Scheduled and manual invocations of one service share a single run owner and
+cannot overlap. Disable, replacement, and daemon shutdown cancel and join that
+owner before returning. Native workers run in their own process groups, so
+cancellation covers descendants as well as the direct shell. Stdout and stderr
+are drained incrementally, exposed only as 64 KiB status previews, and written
+to bounded rotating full logs. Structured completion uses a dedicated file and
+does not depend on the final stdout bytes remaining valid JSON.
+
+Mailbox capacity is bounded by both message count and serialized bytes. Busy
+and oversized sends return explicit errors without dropping queued messages.
+IPC and HTTP frames are bounded at 1 MiB, growing list resources are paged, and
+SSE writes are single-flight and wait for socket drain. Pi result traces retain
+at most 512 events and 2 MiB, while an `onEvent` sink receives the full trace
+through reader-level backpressure. These transport limits do not impose a model
+context limit or an agent-turn limit.
 
 ## AX Expectations
 

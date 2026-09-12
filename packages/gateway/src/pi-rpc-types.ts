@@ -14,15 +14,39 @@ export interface PiRpcRuntimeOptions {
   inheritEnv?: boolean;
   timeoutMs?: number;
   shutdownGraceMs?: number;
+  maxLineBytes?: number;
 }
 
 export interface PiRpcAgentJobOptions extends PiRpcRuntimeOptions {
   descriptor?: GatewayAgentRuntimeDescriptor;
   signal?: AbortSignal;
-  onEvent?: (event: PiRpcObservedEvent) => void | Promise<void>;
+  onEvent?: (event: PiRpcObservedEvent, context: PiRpcObserverContext) => void | Promise<void>;
+  traceSink?: PiRpcTraceSink;
 }
 
 export interface PiRpcObservedEvent extends GatewayAgentRuntimeObservedEvent {}
+
+export interface PiRpcObserverContext {
+  signal: AbortSignal;
+}
+
+export interface PiRpcTraceSink {
+  artifact?: string;
+  write(event: PiRpcObservedEvent, context: PiRpcObserverContext): void | Promise<void>;
+  close?(context: PiRpcObserverContext): void | Promise<void>;
+}
+
+export interface PiRpcRetentionStats {
+  truncated: boolean;
+  originalBytes: number;
+  retainedBytes: number;
+}
+
+export interface PiRpcEventRetentionStats extends PiRpcRetentionStats {
+  originalCount: number;
+  retainedCount: number;
+  projectedCount: number;
+}
 
 export interface PiRpcAgentRunResult {
   summary?: string;
@@ -31,6 +55,15 @@ export interface PiRpcAgentRunResult {
   events: PiRpcObservedEvent[];
   state?: unknown;
   outputArtifact?: string;
+  truncation?: {
+    content: PiRpcRetentionStats;
+    events: PiRpcEventRetentionStats;
+    state: PiRpcRetentionStats;
+  };
+  artifacts?: {
+    result?: string;
+    traces: string[];
+  };
 }
 
 export interface PiRpcSession {
@@ -38,7 +71,13 @@ export interface PiRpcSession {
   send(command: Record<string, unknown>): Promise<PiRpcResponse>;
   write(message: Record<string, unknown>): void;
   stop(): Promise<void>;
-  onEvent(listener: (event: Record<string, unknown>) => void): void;
+  onEvent(
+    listener: (
+      event: Record<string, unknown>,
+      context?: PiRpcObserverContext,
+    ) => void | Promise<void>,
+  ): undefined | (() => void);
+  onError?(listener: (error: Error) => void): undefined | (() => void);
 }
 
 export interface PiRpcResponse {
@@ -60,3 +99,4 @@ export const DEFAULT_PI_COMMAND = 'pi';
 export const DEFAULT_RPC_ARGS = ['--mode', 'rpc'];
 export const DEFAULT_TIMEOUT_MS = 120_000;
 export const DEFAULT_SHUTDOWN_GRACE_MS = 1_000;
+export const DEFAULT_PI_MAX_LINE_BYTES = 8 * 1024 * 1024;

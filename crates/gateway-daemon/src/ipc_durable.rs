@@ -1,15 +1,15 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use serde_json::{Value, json};
-use snapdragon_gateway_core::{GatewayEventRecord, GatewayEventState, GatewayJobSpec};
+use snapdragon_gateway_core::{GatewayEventRecord, GatewayEventState};
 
 use crate::{
     GatewayDaemon,
     ipc::{ok_json, parse},
+    ipc_durable_helpers::{generated_id, normalize_job_spec, unix_time_ms},
+    ipc_paging::paged,
     ipc_params::{
         EventRecordParams, JobAcquireParams, JobCompleteParams, JobFailParams, JobIdParams,
-        JobSpecParams, LogAppendParams, LogTailParams, SandboxLeaseIdParams, SandboxLeaseParams,
-        WorkerHeartbeatParams, WorkerIdParams, WorkerRegistrationParams,
+        JobRenewParams, JobSpecParams, LogAppendParams, LogTailParams, SandboxLeaseIdParams,
+        SandboxLeaseParams, WorkerHeartbeatParams, WorkerIdParams, WorkerRegistrationParams,
     },
 };
 
@@ -20,7 +20,7 @@ pub(crate) async fn dispatch_jobs(
 ) -> Result<Value, String> {
     match method {
         "jobs.enqueue" => enqueue_job(daemon, params).await,
-        "jobs.list" => ok_json(daemon.list_jobs().await?),
+        "jobs.list" => paged(params, daemon.list_jobs().await?),
         "jobs.show" => {
             let params = parse::<JobIdParams>(params)?;
             ok_json(daemon.job(&params.id).await?)
@@ -34,10 +34,26 @@ pub(crate) async fn dispatch_jobs(
             ok_json(require_store(daemon)?.retry_job(&params.id, unix_time_ms())?)
         }
         "jobs.acquire" => acquire_job(daemon, params),
+        "jobs.renew" => renew_job(daemon, params),
         "jobs.complete" => finish_job(daemon, params, FinishKind::Complete),
         "jobs.fail" => finish_job(daemon, params, FinishKind::Fail),
         _ => Err(format!("unknown gateway method: {method}")),
     }
+}
+
+fn renew_job(daemon: &GatewayDaemon, params: Value) -> Result<Value, String> {
+    let params = parse::<JobRenewParams>(params)?;
+    ok_json(
+        require_store(daemon)?
+            .renew_job(
+                &params.id,
+                &params.lease_id,
+                params.attempt,
+                params.lease_ms.unwrap_or(300_000),
+                unix_time_ms(),
+            )?
+            .map(|(job, lease)| json!({ "job": job, "lease": lease })),
+    )
 }
 
 pub(crate) async fn dispatch_events(
@@ -47,7 +63,7 @@ pub(crate) async fn dispatch_events(
 ) -> Result<Value, String> {
     match method {
         "events.append" => append_event(daemon, params),
-        "events.list" => ok_json(require_store(daemon)?.list_events()?),
+        "events.list" => paged(params, require_store(daemon)?.list_events()?),
         "events.cancel" => {
             let params = parse::<JobIdParams>(params)?;
             ok_json(require_store(daemon)?.cancel_event(&params.id, unix_time_ms())?)
@@ -67,7 +83,10 @@ pub(crate) async fn dispatch_logs(
             let params = parse::<LogTailParams>(params)?;
             ok_json(
                 daemon
-                    .tail_logs(params.target.as_deref(), params.limit.unwrap_or(20))
+                    .tail_logs(
+                        params.target.as_deref(),
+                        params.limit.unwrap_or(20).clamp(1, 100),
+                    )
                     .await?,
             )
         }
@@ -97,7 +116,7 @@ pub(crate) async fn dispatch_workers(
                     .await?,
             )
         }
-        "workers.list" => ok_json(daemon.list_workers().await?),
+        "workers.list" => paged(params, daemon.list_workers().await?),
         "workers.show" => {
             let params = parse::<WorkerIdParams>(params)?;
             ok_json(daemon.worker(&params.id).await?)
@@ -120,7 +139,7 @@ pub(crate) async fn dispatch_sandboxes(
                     .await?,
             )
         }
-        "sandboxes.list" => ok_json(daemon.list_sandbox_leases().await?),
+        "sandboxes.list" => paged(params, daemon.list_sandbox_leases().await?),
         "sandboxes.show" => {
             let params = parse::<SandboxLeaseIdParams>(params)?;
             ok_json(daemon.sandbox_lease(&params.id).await?)
@@ -170,11 +189,23 @@ fn finish_job(daemon: &GatewayDaemon, params: Value, kind: FinishKind) -> Result
     match kind {
         FinishKind::Complete => {
             let params = parse::<JobCompleteParams>(params)?;
-            ok_json(store.complete_job(&params.id, params.result, now)?)
+            ok_json(store.complete_job(
+                &params.id,
+                &params.lease_id,
+                params.attempt,
+                params.result,
+                now,
+            )?)
         }
         FinishKind::Fail => {
             let params = parse::<JobFailParams>(params)?;
-            ok_json(store.fail_job(&params.id, params.error, now)?)
+            ok_json(store.fail_job(
+                &params.id,
+                &params.lease_id,
+                params.attempt,
+                params.error,
+                now,
+            )?)
         }
     }
 }
@@ -213,29 +244,4 @@ fn require_store(daemon: &GatewayDaemon) -> Result<&crate::GatewayStore, String>
     daemon
         .store()
         .ok_or_else(|| "gateway durable store is not configured".to_string())
-}
-
-fn normalize_job_spec(mut spec: GatewayJobSpec) -> GatewayJobSpec {
-    if spec.queue.is_empty() {
-        spec.queue = "default".into();
-    }
-    if spec.max_attempts == 0 {
-        spec.max_attempts = 1;
-    }
-    spec
-}
-
-fn generated_id(prefix: &str) -> String {
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    format!("{prefix}_{nanos}")
-}
-
-fn unix_time_ms() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as u64
 }

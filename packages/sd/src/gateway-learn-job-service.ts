@@ -6,15 +6,20 @@ import {
   type RolloutTrace,
 } from '@snapdragon-ai/learn';
 import type { SdBackgroundService, SdBackgroundServiceResult } from './background.js';
+import { monitorJobCancellation } from './gateway-agent-job-control.js';
 import { rustGatewayClientForConfig } from './gateway-command-client.js';
+import { leaseFence, leaseFenceForJob } from './gateway-job-lease.js';
+import { isJobCancelled } from './gateway-job-status.js';
 import {
   gatewayJobWorkerId,
   heartbeatGatewayJobWorker,
   registerGatewayJobWorker,
 } from './gateway-job-worker-registry.js';
+import { settleLearnJobFailure } from './gateway-learn-job-failure.js';
 
 const LEARN_JOB_QUEUE = 'learn';
 const LEARN_JOB_SERVICE = 'learn-jobs';
+const LEASE_POLL_MS = 1_000;
 
 export function gatewayLearnJobService(): SdBackgroundService {
   return {
@@ -34,7 +39,7 @@ export function gatewayLearnJobService(): SdBackgroundService {
       }
       if (lease.job.spec.kind !== 'learn.eval') {
         const message = `unsupported learn job kind: ${lease.job.spec.kind}`;
-        await client.failJob(lease.job.id, message);
+        await client.failJob(lease.job.id, message, leaseFence(lease.lease));
         await heartbeatLearnJobWorker(
           client,
           workerId,
@@ -60,6 +65,9 @@ export async function runLearnEvalJob(
   job: GatewayJobStatus,
   options: GatewayLearnJobRunOptions = {},
 ): Promise<SdBackgroundServiceResult> {
+  const fence = leaseFenceForJob(job);
+  const leaseMs = Math.max(1_000, (job.leaseExpiresAtMs ?? Date.now()) - job.updatedAtMs);
+  const monitor = monitorJobCancellation(client, job.id, LEASE_POLL_MS, { fence, leaseMs });
   try {
     const payload = assertEvalPayload(job.spec.payload);
     await heartbeatLearnJobWorker(
@@ -77,7 +85,11 @@ export async function runLearnEvalJob(
       antiGamingRubric(),
       rolloutFromMetadata,
     );
-    await client.completeJob(job.id, result);
+    if (monitor.cancelled || (await isJobCancelled(client, job.id))) {
+      return cancelledLearnJob(client, job.id, options.workerId);
+    }
+    const completed = await client.completeJob(job.id, result, fence);
+    if (!completed) throw new Error(`gateway job ${job.id} disappeared during completion`);
     await heartbeatLearnJobWorker(
       client,
       options.workerId,
@@ -93,13 +105,26 @@ export async function runLearnEvalJob(
     );
     return summary(1, 0, `learn eval ${payload.job.id} score=${result.score.toFixed(3)}`);
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    await client.failJob(job.id, message);
-    await heartbeatLearnJobWorker(client, options.workerId, 'idle', message, {
-      lastError: message,
+    const failure = await settleLearnJobFailure(client, job, fence, monitor, error);
+    if (failure.cancelled) {
+      return cancelledLearnJob(client, job.id, options.workerId);
+    }
+    await heartbeatLearnJobWorker(client, options.workerId, 'idle', failure.message, {
+      lastError: failure.message,
     });
-    return summary(0, 1, message);
+    return summary(0, 1, failure.message);
+  } finally {
+    monitor.stop();
   }
+}
+
+async function cancelledLearnJob(
+  client: GatewayClient,
+  jobId: string,
+  workerId: string | undefined,
+): Promise<SdBackgroundServiceResult> {
+  await heartbeatLearnJobWorker(client, workerId, 'idle', `cancelled learn eval ${jobId}`);
+  return summary(0, 0, `cancelled learn eval ${jobId}`);
 }
 
 export function learnJobWorkerId(pid = process.pid): string {

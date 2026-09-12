@@ -11,6 +11,8 @@ impl GatewayDaemon {
         worker: &ServiceWorkerSpec,
         pid: Option<u32>,
         timeout_ms: Option<u64>,
+        stdout_log: Option<String>,
+        stderr_log: Option<String>,
     ) -> String {
         let now = unix_time_ms();
         let id = format!("worker_{now}_{service}");
@@ -28,6 +30,10 @@ impl GatewayDaemon {
             exit_code: None,
             signal: None,
             last_error: None,
+            stdout_preview: String::new(),
+            stderr_preview: String::new(),
+            stdout_log,
+            stderr_log,
         };
         self.inner
             .write()
@@ -56,6 +62,20 @@ impl GatewayDaemon {
         trim_finished_processes(&mut inner.worker_processes);
     }
 
+    pub(crate) async fn update_worker_preview(
+        &self,
+        id: &str,
+        stream: WorkerStream,
+        preview: String,
+    ) {
+        if let Some(process) = self.inner.write().await.worker_processes.get_mut(id) {
+            match stream {
+                WorkerStream::Stdout => process.stdout_preview = preview,
+                WorkerStream::Stderr => process.stderr_preview = preview,
+            }
+        }
+    }
+
     #[cfg(test)]
     pub(crate) async fn worker_process_snapshot(&self) -> Vec<GatewayWorkerProcess> {
         self.inner
@@ -66,6 +86,12 @@ impl GatewayDaemon {
             .cloned()
             .collect()
     }
+}
+
+#[derive(Clone, Copy)]
+pub(crate) enum WorkerStream {
+    Stdout,
+    Stderr,
 }
 
 fn trim_finished_processes(
@@ -115,7 +141,7 @@ mod tests {
             env: BTreeMap::new(),
         };
         let id = daemon
-            .register_worker_process("svc", &worker, Some(123), Some(500))
+            .register_worker_process("svc", &worker, Some(123), Some(500), None, None)
             .await;
         daemon
             .finish_worker_process(

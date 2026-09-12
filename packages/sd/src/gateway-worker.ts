@@ -7,6 +7,7 @@ import { ensureFirstPartyExtensionsForConfig, ensureFirstPartyProfile } from './
 import { gatewayAgentJobService } from './gateway-agent-job-service.js';
 import { runHeadlessGatewayAgent } from './gateway-headless-agent.js';
 import { gatewayLearnJobService } from './gateway-learn-job-service.js';
+import { writeGatewayWorkerCompletion } from './gateway-worker-completion.js';
 import type { SdProfileInfo } from './profile.js';
 import { SdProfileStore } from './profile.js';
 import { resolveSdRuntimeConfig } from './profile-runtime.js';
@@ -36,7 +37,9 @@ export async function gatewayWorkerCommand(
   if (action !== 'run') return `Unknown gateway worker command: ${action}\n`;
   const service = rest[0];
   if (!service) throw new Error('gateway worker run requires a service name');
-  return `${JSON.stringify(await runGatewayWorkerService(service, args))}\n`;
+  const output = await runGatewayWorkerService(service, args);
+  await writeGatewayWorkerCompletion(output);
+  return `${JSON.stringify(output)}\n`;
 }
 
 export async function runGatewayWorkerService(

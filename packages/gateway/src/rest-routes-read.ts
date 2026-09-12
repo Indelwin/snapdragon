@@ -1,3 +1,4 @@
+import { MAX_REST_PAGE_ITEMS } from './rest-page.js';
 import { type RestRequest, type RestRoute, type RestRouteResult, readJson } from './rest-types.js';
 import type { GatewayClient, GatewayLogInput } from './types.js';
 
@@ -42,5 +43,5 @@ export async function dispatchCapabilities(
 
 function parseLimit(value: string | null): number {
   const limit = Number(value ?? 20);
-  return Number.isFinite(limit) ? limit : 20;
+  return Number.isSafeInteger(limit) && limit > 0 ? Math.min(limit, MAX_REST_PAGE_ITEMS) : 20;
 }

@@ -59,8 +59,9 @@ sd gateway jobs enqueue agent.run '{"prompt":"check the repo"}'
 sd gateway jobs list
 sd gateway jobs retry job_123
 sd gateway jobs acquire default worker-1
-sd gateway jobs complete job_123 '{"ok":true}'
-sd gateway jobs fail job_124 "worker failed clearly"
+sd gateway jobs renew job_123 --lease-id lease_job_123_1_1780876800000 --attempt 1 --lease-ms 300000
+sd gateway jobs complete job_123 --lease-id lease_job_123_1_1780876800000 --attempt 1 '{"ok":true}'
+sd gateway jobs fail job_124 --lease-id lease_job_124_2_1780876800000 --attempt 2 "worker failed clearly"
 sd gateway agents enqueue "run the release checks"
 sd gateway agents register-pi
 sd gateway agents register-pi --save --agent-dir ~/.pi-agent
@@ -102,6 +103,11 @@ sessions, skills, memory, and TODOs without starting Ink. Jobs with attempts
 remaining return to `pending` after a worker failure; `sd gateway jobs retry
 <job_id>` requeues terminal failed jobs for operator or executive-agent
 recovery.
+
+`jobs acquire` prints both the lease id and attempt. Pass that exact fence to
+`jobs renew`, `complete`, or `fail`; the CLI does not infer a newer fence from
+current status. Expired, cancelled, completed, or superseded attempts return a
+stale-lease error and cannot change the durable job or its current worker.
 
 `sd gateway rest serve` starts the local REST/SSE facade over the configured
 Rust gateway. It binds to `127.0.0.1:8787` with the `/v1` prefix by default,
