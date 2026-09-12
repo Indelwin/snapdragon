@@ -80,6 +80,24 @@ Release verification must also include `check:push`, `build`, `pack:dry`, native
 and the session/WASM/gateway-specific failure tests. Do not increase quality baselines to
 make these checks pass. Publishing packages requires separate approval.
 
+## Local Verification Record
+
+On Node 22.22.3, Darwin arm64, the production-renderer mock soak completed 63,115 frames
+in 3,600.064 seconds under a 512 MiB heap, including 63 resume/reload mount cycles.
+Peak retained-heap growth after warm-up was 991,336 bytes (0.95 MiB), below the 32 MiB gate.
+The final sample reported 23.1 MiB heap and 155.1 MiB RSS. External memory stayed near
+19.65 MiB and ArrayBuffers near 82.4 KiB. After disposal, heap was 22.3 MiB and only the
+two pre-existing pipe resources remained; input/process listeners returned to baseline.
+User Timing entries stayed at zero. This fixture does not load webtools WASM, so its WASM
+page field is explicitly unavailable rather than zero; the separate WASM probe measures it.
+
+That soak began before the final diagnostics-retention and input-flow restoration refinements.
+The final source at `e66e153` separately passed the complete `check:push` gate, including the
+10,000-frame renderer test, focused lifecycle tests, native Rust tests, and coverage gates.
+`pack:dry` and fresh local/global-prefix installs passed help/version/doctor/mock prompt,
+actual Ink mount, TUI import, single renderer/React identity, and packaged WASM extraction.
+Install scripts were disabled. No live-provider or user-session replay was performed.
+
 ## Interpretation
 
 Record the branch/commit, Node version, renderer identity, exact workload, elapsed time,
