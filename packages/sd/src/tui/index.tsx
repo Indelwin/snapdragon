@@ -1,7 +1,8 @@
 import type { UiWorldSnapshot } from '@snapdragon-ai/ui';
 import { Box, render, useApp, useWindowSize } from 'ink';
 import { useEffect, useMemo, useState } from 'react';
-import { defaultIo, type SdIo } from '../repl.js';
+import type { SdRestartRequest } from '../reload.js';
+import { defaultIo, type SdIo } from '../repl-io.js';
 import type { SdRuntime } from '../runtime.js';
 import { createDefaultInkRendererRegistry } from './components.js';
 import { useSdTuiInput } from './input-controller.js';
@@ -17,13 +18,19 @@ export interface SdTuiOptions {
   registry?: InkRendererRegistry;
   controller?: SdUiController;
   clearScreen?: boolean;
+  initialDraft?: string;
+  signal?: AbortSignal;
 }
 
-export async function runTui(runtime: SdRuntime, options: SdTuiOptions = {}): Promise<void> {
+export async function runTui(
+  runtime: SdRuntime,
+  options: SdTuiOptions = {},
+): Promise<SdRestartRequest | undefined> {
   const controller = options.controller ?? new SdUiController(runtime);
   const registry = options.registry ?? createDefaultInkRendererRegistry();
   const io = options.io ?? defaultIo;
   if (options.clearScreen !== false) io.output.write('\x1b[2J\x1b[3J\x1b[H');
+  let restart: SdRestartRequest | undefined;
   const mouseSettings = resolveMouseSettings(runtime);
   const mouseInput = createMouseInputAdapter({
     enabled: mouseSettings.enabled,
@@ -37,6 +44,7 @@ export async function runTui(runtime: SdRuntime, options: SdTuiOptions = {}): Pr
   const unsubscribeError = mouseInput?.subscribeError(rejectInputError);
   let instance: ReturnType<typeof render> | undefined;
   let exited: Promise<unknown> | undefined;
+  const abort = () => instance?.unmount();
   try {
     instance = render(
       <SdTuiApp
@@ -44,6 +52,10 @@ export async function runTui(runtime: SdRuntime, options: SdTuiOptions = {}): Pr
         controller={controller}
         registry={registry}
         mouseInput={mouseInput}
+        initialDraft={options.initialDraft}
+        onRestart={(request) => {
+          restart = request;
+        }}
       />,
       {
         stdin: (mouseInput ?? io.input) as NodeJS.ReadStream,
@@ -52,16 +64,20 @@ export async function runTui(runtime: SdRuntime, options: SdTuiOptions = {}): Pr
       },
     );
     exited = instance.waitUntilExit();
+    options.signal?.addEventListener('abort', abort, { once: true });
+    if (options.signal?.aborted) abort();
     await Promise.race([exited, inputError]);
   } catch (error) {
     instance?.unmount();
     await exited?.catch(() => undefined);
     throw error;
   } finally {
+    options.signal?.removeEventListener('abort', abort);
     unsubscribeError?.();
     mouseInput?.dispose();
     controller.dispose();
   }
+  return restart;
 }
 
 export function SdTuiApp({
@@ -69,11 +85,15 @@ export function SdTuiApp({
   controller,
   registry,
   mouseInput,
+  initialDraft,
+  onRestart,
 }: {
   runtime: SdRuntime;
   controller: SdUiController;
   registry?: InkRendererRegistry;
   mouseInput?: SdMouseInputAdapter;
+  initialDraft?: string;
+  onRestart?: (request: SdRestartRequest) => void;
 }) {
   const { exit } = useApp();
   const rendererRegistry = useMemo(
@@ -94,7 +114,7 @@ export function SdTuiApp({
     controller.loadSplashArt();
     return () => controller.dispose();
   }, [controller]);
-  useSdTuiInput({ runtime, controller, exit });
+  useSdTuiInput({ runtime, controller, exit, initialDraft, restart: onRestart });
   const mouseSettings = resolveMouseSettings(runtime);
 
   return (

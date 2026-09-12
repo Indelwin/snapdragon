@@ -53,6 +53,8 @@ export interface SdSkillBuilderConfig {
   interval_ms?: number;
   startup_delay_ms?: number;
   lookback_sessions?: number;
+  max_records_per_pass?: number;
+  max_bytes_per_pass?: number;
   min_pattern_count?: number;
   min_distinct_sessions?: number;
   min_pattern_count_for_draft?: number;
@@ -74,6 +76,8 @@ export interface SdMemoryWorkerConfig {
   enabled?: boolean;
   interval_ms?: number;
   lookback_sessions?: number;
+  max_records_per_pass?: number;
+  max_bytes_per_pass?: number;
   include_assistant?: boolean;
 }
 

@@ -28,11 +28,12 @@ export function sessionTranscriptEntries(
   if (!session) return [];
   const recent = session.recentMessages(maxEntries);
   const omittedFromRecent = Math.max(0, recent.omitted);
-  const visibleLimit = omittedFromRecent > 0 ? Math.max(1, maxEntries - 1) : maxEntries;
+  const hasMetadata = omittedFromRecent > 0 || recent.oversizedLines > 0;
+  const visibleLimit = hasMetadata ? Math.max(1, maxEntries - 1) : maxEntries;
   const visible = recent.messages.slice(-visibleLimit);
   const entries = visible.map(messageToEntry);
   const omitted = omittedFromRecent + Math.max(0, recent.messages.length - visible.length);
-  if (omitted > 0) entries.unshift(omittedTranscriptEntry(omitted));
+  if (hasMetadata) entries.unshift(omittedTranscriptEntry(omitted, recent.oversizedLines));
   return entries;
 }
 
@@ -50,10 +51,18 @@ export function messageToEntry(message: Message): ChatEntry {
   };
 }
 
-function omittedTranscriptEntry(count: number): ChatEntry {
+function omittedTranscriptEntry(count: number, oversizedLines = 0): ChatEntry {
+  const hidden =
+    count > 0
+      ? `${count} earlier message(s) hidden from the live transcript; session context remains available through compaction and tools.`
+      : '';
+  const oversized =
+    oversizedLines > 0
+      ? `${oversizedLines} oversized or incomplete session record(s) skipped during transcript loading.`
+      : '';
   return {
-    id: `history_omitted_${count}`,
+    id: `history_omitted_${count}_${oversizedLines}`,
     role: 'system',
-    content: `${count} earlier message(s) hidden from the live transcript; session context remains available through compaction and tools.`,
+    content: [hidden, oversized].filter(Boolean).join(' '),
   };
 }

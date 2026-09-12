@@ -298,8 +298,8 @@ export class SdUiController {
     this.#activeAbort = undefined;
     ac.abort();
     this.world.applyMany([
-      this.#eventEntryEvent('info', 'run cancelled by user (esc)', 'agent'),
-      logEvent('info', 'run cancelled by user (esc)', 'agent'),
+      this.#eventEntryEvent('info', 'run cancelled by user', 'agent'),
+      logEvent('info', 'run cancelled by user', 'agent'),
     ]);
     return true;
   }

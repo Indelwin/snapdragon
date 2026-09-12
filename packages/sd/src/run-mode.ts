@@ -8,7 +8,9 @@ import {
 import type { SdDiagnosticsHandle, SdDiagnosticsOptions } from './diagnostics-types.js';
 import { registerSdWebtoolsWasmPages } from './diagnostics-webtools.js';
 import { writeExitSummary } from './exit-summary.js';
-import { runInteractive, runOneShot } from './repl.js';
+import type { SdRestartRequest } from './reload.js';
+import { runInteractive } from './repl-interactive.js';
+import { runOneShot } from './repl-run-once.js';
 import type { SdRuntime } from './runtime.js';
 import { runtimeWarningLines } from './runtime-warnings.js';
 
@@ -16,6 +18,8 @@ export type SdSelectedRunMode = 'tui' | 'repl' | 'print';
 
 export interface SdSelectedRunModeOptions {
   diagnostics?: Omit<SdDiagnosticsOptions, 'enabled'> & { enabled?: boolean };
+  draft?: string;
+  signal?: AbortSignal;
 }
 
 export async function runSelectedMode(
@@ -23,7 +27,7 @@ export async function runSelectedMode(
   runtime: SdRuntime,
   prompt: string | undefined,
   options: SdSelectedRunModeOptions = {},
-): Promise<void> {
+): Promise<SdRestartRequest | undefined> {
   const diagnosticsEnabled =
     (options.diagnostics?.enabled ?? runtime.options.diagnostics === true) &&
     !options.diagnostics?.signal?.aborted;
@@ -34,7 +38,7 @@ export async function runSelectedMode(
     try {
       await diagnostics.flush();
       if (diagnostics.enabled) phaseBinding = bindSdDiagnosticsAgentPhases(runtime, diagnostics);
-      await executeSelectedMode(mode, runtime, prompt);
+      return await executeSelectedMode(mode, runtime, prompt, options);
     } finally {
       phaseBinding?.dispose();
       await stopRunDiagnostics(diagnostics);
@@ -48,20 +52,25 @@ async function executeSelectedMode(
   mode: SdSelectedRunMode,
   runtime: SdRuntime,
   prompt: string | undefined,
-): Promise<void> {
+  options: SdSelectedRunModeOptions,
+): Promise<SdRestartRequest | undefined> {
+  const { draft, signal } = options;
   if (mode === 'print') {
     if (!prompt) throw new Error('Print mode requires a prompt.');
     writeRuntimeWarnings(runtime);
-    await runOneShot(runtime, prompt);
-    return;
+    await runOneShot(runtime, prompt, [], undefined, { signal });
+    return undefined;
   }
+  let restart: SdRestartRequest | undefined;
   if (mode === 'repl') {
-    await runInteractive(runtime);
+    restart = await runInteractive(runtime, undefined, signal);
   } else {
     const { runTui } = await import('./tui/index.js');
-    await runTui(runtime);
+    restart = await runTui(runtime, { initialDraft: draft, signal });
   }
+  if (restart) return restart;
   await writeExitSummary(runtime, stdout, { command: invokedCommand() });
+  return undefined;
 }
 
 function startRunDiagnostics(

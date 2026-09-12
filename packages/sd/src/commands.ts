@@ -7,6 +7,7 @@ import {
   readClipboardText,
   unsupportedPlatformMessage,
 } from './clipboard.js';
+import type { CommandResult, SdCommandHooks } from './command-types.js';
 import { configuredModelsForProvider, discoverSdModels, listSdProviders } from './provider.js';
 import { switchSdModel, switchSdProvider } from './provider-switch.js';
 import {
@@ -15,7 +16,7 @@ import {
   type ReloadShellRunner,
   reloadSdRuntime,
 } from './reload.js';
-import type { SdIo } from './repl.js';
+import type { SdIo } from './repl-io.js';
 import type { SdRuntime } from './runtime.js';
 import {
   currentProfileName,
@@ -34,14 +35,10 @@ import {
   readSkillDraft,
   rejectSkillDraft,
 } from './skill-builder.js';
-import { buildSkillInvocation, type SkillInvocation, skillForSlashCommand } from './skills.js';
+import { buildSkillInvocation, skillForSlashCommand } from './skills.js';
 import { formatSdStatus, gatherSdStatus } from './status.js';
 
-export interface CommandResult {
-  quit: boolean;
-  attachments: PendingAttachment[];
-  prompt?: SkillInvocation;
-}
+export type { CommandResult, SdCommandHooks } from './command-types.js';
 
 export const BUILTIN_SLASH_COMMANDS = [
   '/help',
@@ -74,15 +71,6 @@ export const BUILTIN_SLASH_COMMANDS = [
   '/tools-panel',
   '/palette',
 ];
-
-export interface SdCommandHooks {
-  /**
-   * Progress reporter for long-running slash commands. Called with a
-   * short human-readable label before each step starts. The TUI wires
-   * this to the running-spinner label; non-interactive callers ignore it.
-   */
-  progress?: (label: string) => void;
-}
 
 export async function handleCommand(
   line: string,
@@ -713,8 +701,12 @@ async function reloadCommand(
     build: parsed.build,
     runner: reloadRunnerOverride,
     progress: hooks.progress,
+    draft: hooks.draft,
   });
-  return writeResult(io, formatReloadReport(report), attachments);
+  return {
+    ...writeResult(io, formatReloadReport(report), attachments),
+    restart: report.restart,
+  };
 }
 
 let reloadRunnerOverride: ReloadShellRunner | undefined;
