@@ -42,13 +42,13 @@ export function openaiCompatibleProvider(
   options: OpenAICompatibleProviderOptions,
 ): StreamingChatHandler {
   return async (request, context) => {
-    const body = openAIChatBody(options.model, request);
     const response = await fetchImpl(options.fetch)(
       `${options.baseUrl ?? 'https://api.openai.com/v1'}/chat/completions`,
       {
         method: 'POST',
         headers: requestHeaders(options),
-        body: JSON.stringify(body),
+        body: JSON.stringify(openAIChatBody(options.model, request)),
+        signal: context.signal,
       },
     );
 
@@ -139,7 +139,7 @@ async function readChatStream(
   let tokensIn: number | undefined;
   let tokensOut: number | undefined;
 
-  for await (const payload of sseLines(body)) {
+  for await (const payload of sseLines(body, context.signal)) {
     if (payload === '[DONE]') break;
     const event = safeJson<OpenAIStreamEvent>(payload);
     if (!event) continue;

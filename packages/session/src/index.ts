@@ -16,8 +16,13 @@ export {
   readMessagePreviews,
   type SessionMessagePreview,
 } from './message-preview.js';
+export {
+  type MessagePreviewBatch,
+  type ReadMessagePreviewBatchOptions,
+  readMessagePreviewBatch,
+} from './message-preview-batch.js';
 export { type SessionMetadata, sessionMetadata } from './metadata.js';
-export { readMetadataRecords } from './metadata-records.js';
+export { readMetadataRecords, readSessionMetadata } from './metadata-records.js';
 export { type RecentMessageRecords, readRecentMessageRecords } from './recent-records.js';
 export {
   appendRecord,
@@ -25,6 +30,7 @@ export {
   readRecords,
   SESSION_SCHEMA_VERSION,
   type SessionContextChunkRecord,
+  type SessionContextChunkReference,
   type SessionMessageRecord,
   type SessionMetaRecord,
   type SessionOpenRecord,
@@ -48,6 +54,7 @@ export {
   type SessionSearchMode,
   type SessionSearchOptions,
 } from './session-index/index.js';
+export { readSessionSummaryStats, type SessionSummaryStats } from './session-stats.js';
 export {
   DEFAULT_SESSION_ROOT,
   type SessionInfo,

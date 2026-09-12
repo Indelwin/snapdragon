@@ -1,7 +1,9 @@
 import { appendFileSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Message } from '@snapdragon-ai/host';
+import { hasRecordTypePrefix } from './record-envelope.js';
 import { forEachRecordLine } from './record-line-reader.js';
+import { projectedRecordIdentity, validRecordId } from './record-stats-envelope.js';
 
 export const SESSION_SCHEMA_VERSION = 1;
 
@@ -31,6 +33,12 @@ export interface SessionMetaRecord {
   meta: Record<string, unknown>;
 }
 
+export interface SessionContextChunkReference {
+  chunk_id: number;
+  range_start: number;
+  range_end: number;
+}
+
 export interface SessionContextChunkRecord {
   type: 'context_chunk';
   chunk_id: number;
@@ -41,6 +49,9 @@ export interface SessionContextChunkRecord {
   summary_token_count: number;
   created_at: number;
   level?: 'deterministic' | 'summary';
+  kind?: 'leaf' | 'rollup';
+  depth?: number;
+  child_chunks?: SessionContextChunkReference[];
   created_by_model?: string | null;
   meta?: Record<string, unknown>;
 }
@@ -64,7 +75,10 @@ export function appendRecord(path: string, record: SessionRecord): void {
 
 export function readRecordStats(path: string): SessionRecordStats {
   const stats: SessionRecordStats = { nextStoreId: 1, nextChunkId: 1, messageCount: 0 };
-  forEachRecordLine(path, (line) => updateStats(stats, line));
+  forEachRecordLine(path, (line, truncated) => updateStats(stats, line, truncated), {
+    maxLineChars: 4_096,
+    tailLineChars: 1,
+  });
   return stats;
 }
 
@@ -85,17 +99,19 @@ export function parseRecord(line: string): SessionRecord | undefined {
   }
 }
 
-function updateStats(stats: SessionRecordStats, line: string): void {
-  if (isMessageLine(line)) {
+function updateStats(stats: SessionRecordStats, line: string, truncated: boolean): void {
+  if (!line.endsWith('}')) return;
+  const record = truncated ? projectedRecordIdentity(line) : parseRecord(line);
+  if (record?.type === 'message' && validRecordId(record.store_id)) {
     stats.messageCount += 1;
-    stats.nextStoreId = Math.max(stats.nextStoreId, numberField(line, 'store_id') + 1);
-  } else if (line.includes('"type":"context_chunk"') || line.includes('"type": "context_chunk"')) {
-    stats.nextChunkId = Math.max(stats.nextChunkId, numberField(line, 'chunk_id') + 1);
+    stats.nextStoreId = Math.max(stats.nextStoreId, record.store_id + 1);
+  } else if (record?.type === 'context_chunk' && validRecordId(record.chunk_id)) {
+    stats.nextChunkId = Math.max(stats.nextChunkId, record.chunk_id + 1);
   }
 }
 
 export function isMessageLine(line: string): boolean {
-  return line.includes('"type":"message"') || line.includes('"type": "message"');
+  return hasRecordTypePrefix(line, 'message');
 }
 
 export function numberField(line: string, field: string): number {
