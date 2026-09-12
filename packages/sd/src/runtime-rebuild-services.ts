@@ -8,6 +8,7 @@ import { resolveSdRuntimeConfig, type SdRuntimeCliOverrides } from './profile-ru
 import { makeSdProvider } from './provider.js';
 import type { SdRuntime } from './runtime.js';
 import { createSdAgent } from './runtime.js';
+import { notifySdRuntimeAgentChanged } from './runtime-agent-events.js';
 import { replaceRuntimeBackground } from './runtime-background.js';
 import { sessionRoot } from './runtime-session.js';
 import { ensureRuntimeSessionMeta } from './runtime-session-meta-record.js';
@@ -97,6 +98,7 @@ export async function applyRuntimeRebuild(
   });
   runtime.sessionRoot = request.session ? sessionRoot(config) : undefined;
   ensureRuntimeSessionMeta(request.session, runtime.options, provider, request.profile);
+  notifySdRuntimeAgentChanged(runtime);
 }
 
 export function sessionIndexForRebuild(

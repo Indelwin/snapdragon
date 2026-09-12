@@ -7,6 +7,7 @@ const booleanFlags = new Map<FlagName, keyof PickBooleanArgs>([
   ['--no-profile', 'noProfile'],
   ['--no-background', 'noBackground'],
   ['--no-memory-worker', 'noMemoryWorker'],
+  ['--diagnostics', 'diagnostics'],
 ]);
 
 type FlagName =
@@ -15,11 +16,18 @@ type FlagName =
   | '--resume'
   | '--no-profile'
   | '--no-background'
-  | '--no-memory-worker';
+  | '--no-memory-worker'
+  | '--diagnostics';
 
 type PickBooleanArgs = Pick<
   SdCliArgs,
-  'newSession' | 'noSession' | 'resume' | 'noProfile' | 'noBackground' | 'noMemoryWorker'
+  | 'newSession'
+  | 'noSession'
+  | 'resume'
+  | 'noProfile'
+  | 'noBackground'
+  | 'noMemoryWorker'
+  | 'diagnostics'
 >;
 
 export function applyBooleanFlag(out: SdCliArgs, flag: string): boolean {

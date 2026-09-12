@@ -1,4 +1,4 @@
-import { DEFAULT_SD_CONFIG_PATH, DEFAULT_SD_ENV_PATH } from './config.js';
+import { DEFAULT_SD_CONFIG_PATH, DEFAULT_SD_ENV_PATH } from './config-constants.js';
 
 export const helpText = `sd
 
@@ -8,6 +8,7 @@ Usage:
   sd [options]
   sd repl [options]
   sd tui [options]
+  sd doctor [--json]
   sd daemon [run|start|stop|status|run-once] [options]
   sd gateway <command> [options]
   sd [options] "prompt"
@@ -36,6 +37,7 @@ Options:
   --config <path>      Config file path
   --background <mode>  Background mode (daemon|inline|off)
   --no-background      Disable background services for this run
+  --diagnostics        Write bounded process metrics for this run
   --session <id>       Resume or create a named session
   --resume             Resume --session <id> or the most recent session
   --list-sessions      Print persisted sessions and exit
@@ -46,6 +48,7 @@ Options:
   --no-profile         Ignore sticky/default profile
   --list-profiles      Print available profiles and exit
   --setup              Create default config and env template if missing
+  --json               Print doctor output as JSON
   -v, --version        Print version
   -h, --help           Print help
 
