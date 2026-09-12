@@ -1,5 +1,5 @@
 import type { SdCliArgs, SdCliMode } from './args-types.js';
-import { DEFAULT_SD_CONFIG_PATH } from './config.js';
+import { DEFAULT_SD_CONFIG_PATH } from './config-constants.js';
 import { isRunMode } from './modes.js';
 
 const modeFlags = new Map<string, SdCliMode>([
@@ -7,6 +7,7 @@ const modeFlags = new Map<string, SdCliMode>([
   ['-h', 'help'],
   ['--version', 'version'],
   ['-v', 'version'],
+  ['--doctor', 'doctor'],
   ['--setup', 'setup'],
   ['--repl', 'repl'],
   ['--tui', 'tui'],
@@ -56,7 +57,9 @@ export function takeValue(
 
 export function addPromptPart(raw: string, out: SdCliArgs, promptParts: string[]): void {
   if (raw.startsWith('-')) throw new Error(`Unknown option: ${raw}`);
-  if (promptParts.length === 0 && isRunMode(raw)) {
+  if (promptParts.length === 0 && out.mode === 'tui' && raw === 'doctor') {
+    out.mode = 'doctor';
+  } else if (promptParts.length === 0 && isRunMode(raw)) {
     out.mode = raw;
   } else {
     promptParts.push(raw);

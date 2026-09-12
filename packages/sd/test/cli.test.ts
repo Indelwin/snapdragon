@@ -61,6 +61,17 @@ test('parseArgs handles TUI and REPL modes', () => {
   assert.throws(() => parseArgs(['--mode', 'unknown']), /Invalid --mode/);
 });
 
+test('parseArgs handles doctor JSON and opt-in diagnostics', () => {
+  const doctor = parseArgs(['doctor', '--json']);
+  assert.equal(doctor.mode, 'doctor');
+  assert.equal(doctor.json, true);
+  const runtime = parseArgs(['--diagnostics', '--print', 'hello']);
+  assert.equal(runtime.mode, 'print');
+  assert.equal(runtime.diagnostics, true);
+  assert.equal(runtime.prompt, 'hello');
+  assert.throws(() => parseArgs(['--json']), /Unknown option/);
+});
+
 test('parseArgs handles background and daemon controls', () => {
   const daemon = parseArgs(['daemon', 'status', '--background', 'inline', '--no-background']);
   assert.equal(daemon.mode, 'daemon');
@@ -107,4 +118,6 @@ test('help text documents the minimal REPL surface', () => {
   assert.match(helpText, /daemon/);
   assert.match(helpText, /gateway/);
   assert.match(helpText, /--background/);
+  assert.match(helpText, /doctor/);
+  assert.match(helpText, /--diagnostics/);
 });

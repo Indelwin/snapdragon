@@ -162,8 +162,8 @@ export class SdUiController {
    * Resolve the user's `splash.png` (profile-level first, then the
    * sd-root override) and patch the file path into splash component
    * state. The `<SplashBanner>` renderer hands that path to
-   * `ink-picture`'s `<Image>` component, which handles scaling and
-   * ASCII rendering inline. We only do path resolution here so the
+   * `ColoredBrailleImage` for scaling and braille rendering.
+   * We only do path resolution here so the
    * controller stays sync — there's nothing async to fail or wait on.
    * If neither candidate exists the splash keeps showing the ASCII
    * cat banner.
