@@ -6,6 +6,7 @@ import {
   MAX_HTML_INPUT_BYTES,
 } from './resource-limits.js';
 import { loadWebtools, type WebtoolsCore } from './wasm.js';
+import { disposeOwnedCore, type WebtoolsCoreOwnership } from './wasm-ownership.js';
 
 export interface LinkInfo {
   href: string;
@@ -39,10 +40,13 @@ export interface SelectorExtractionResult {
 }
 
 export class Extractor {
-  constructor(private readonly core: WebtoolsCore) {}
+  constructor(
+    private readonly core: WebtoolsCore,
+    private readonly ownership: WebtoolsCoreOwnership,
+  ) {}
 
   dispose(): void {
-    this.core.dispose();
+    disposeOwnedCore(this.core, this.ownership);
   }
 
   extract(html: string, maxChars = 50_000): ExtractionResult {
@@ -76,7 +80,7 @@ export class Extractor {
 }
 
 export async function extractor(): Promise<Extractor> {
-  return new Extractor(await loadWebtools());
+  return new Extractor(await loadWebtools(), 'owned');
 }
 
 function validateHtml(html: string): void {

@@ -49,6 +49,7 @@ export async function processCrawlItem(args: ProcessCrawlItemArgs): Promise<void
       args.scheduled,
     );
   } catch (error) {
+    if (args.options.signal?.aborted) throw error;
     if (isResourceLimitError(error)) throw error;
     args.status.errors.push(boundedError(`${args.item.url}: ${errorMessage(error)}`));
   }

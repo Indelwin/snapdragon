@@ -49,8 +49,9 @@ export async function fetchPage(
   );
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), timeoutMs);
-  const onAbort = () => ac.abort();
+  const onAbort = () => ac.abort(options.signal?.reason);
   options.signal?.addEventListener('abort', onAbort, { once: true });
+  if (options.signal?.aborted) onAbort();
   try {
     const res = await fetch(url, {
       redirect: 'follow',
@@ -112,12 +113,7 @@ export async function readLimitedText(
 ): Promise<{ text: string; truncated: boolean; bytesRead: number }> {
   const reader = res.body?.getReader();
   if (!reader) {
-    const bytes = new TextEncoder().encode(await res.text());
-    return {
-      text: new TextDecoder().decode(bytes.slice(0, maxBytes)),
-      truncated: bytes.byteLength > maxBytes,
-      bytesRead: bytes.byteLength,
-    };
+    return { text: '', truncated: false, bytesRead: 0 };
   }
   const chunks: Uint8Array[] = [];
   let total = 0;

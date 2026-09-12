@@ -70,7 +70,8 @@ export class CrawlRetention {
   }
 
   delete(id: string): boolean {
-    if (!(this.#removeCompleted(id) || this.#markers.delete(id))) return false;
+    if (!this.#removeCompleted(id)) return false;
+    this.#markers.delete(id);
     this.#markers.remember(id, 'deleted');
     return true;
   }

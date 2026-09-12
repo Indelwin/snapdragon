@@ -1,4 +1,5 @@
 import { CrawlRetention } from './crawl-retention.js';
+import { CrawlRuns } from './crawl-runs.js';
 import type { CrawlLookupResult, CrawlStatus } from './crawl-types.js';
 import { assertByteLength, boundedInteger, WebtoolsResourceLimitError } from './resource-limits.js';
 
@@ -30,7 +31,7 @@ export class CrawlStore {
   readonly maxConcurrentCrawls: number;
 
   readonly #now: () => number;
-  readonly #running = new Map<string, CrawlStatus>();
+  readonly #running = new CrawlRuns();
   readonly #deleted = new Set<string>();
   readonly #retention: CrawlRetention;
   #disposed = false;
@@ -88,8 +89,16 @@ export class CrawlStore {
       throw new Error(`crawl id already exists: ${id}`);
     }
     const status = createCrawlStatus(id, this.#now());
-    this.#running.set(id, status);
+    this.#running.add(status);
     return status;
+  }
+
+  run<Result>(
+    status: CrawlStatus,
+    operation: (signal: AbortSignal) => Promise<Result>,
+  ): Promise<Result> {
+    this.#assertUsable();
+    return this.#running.run(status, operation);
   }
 
   complete(status: CrawlStatus): void {
@@ -119,6 +128,7 @@ export class CrawlStore {
     this.#assertUsable();
     this.#retention.prune();
     if (this.#running.has(id)) {
+      if (this.#deleted.has(id)) return false;
       this.#deleted.add(id);
       this.#retention.remember(id, 'deleted');
       return true;
@@ -137,13 +147,13 @@ export class CrawlStore {
     };
   }
 
-  dispose(): void {
-    if (this.#disposed) return;
-    for (const status of this.#running.values()) markNotRetained(status, 'store-disposed');
-    this.#running.clear();
-    this.#retention.clear();
-    this.#deleted.clear();
-    this.#disposed = true;
+  dispose(): Promise<void> {
+    if (!this.#disposed) {
+      this.#disposed = true;
+      this.#retention.clear();
+      this.#deleted.clear();
+    }
+    return this.#running.dispose();
   }
 
   #assertUsable(): void {
