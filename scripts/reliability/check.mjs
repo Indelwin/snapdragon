@@ -4,7 +4,7 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
-await run(['run', 'build', '--workspaces', '--if-present']);
+await run(['run', 'build']);
 const manifest = JSON.parse(await readFile(resolve(root, 'package.json'), 'utf8'));
 let checks = 0;
 for (const workspace of manifest.workspaces) {
