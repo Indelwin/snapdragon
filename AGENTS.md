@@ -1,5 +1,10 @@
 # Snapdragon Agent Guidance
 
+## Pull Requests
+
+- Use one PR against updated `main` for a coherent user-requested change. Do not split it into stacked PRs unless the user explicitly requests that workflow.
+- Integrate concurrent implementation slices and resolve conflicts before handing the PR back. The user should not have to manage branch retargeting or integration conflicts.
+
 ## Quality Gates
 
 - Treat quality failures as design feedback, not paperwork.

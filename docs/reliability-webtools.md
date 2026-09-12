@@ -44,5 +44,5 @@ compiled artifact rather than a substitute JavaScript implementation.
 ## Remaining Limits
 
 HTTP tests use deterministic fixtures, not a live Camofox/network soak. Mutation testing was
-not run. The independent foreground PR supplies the patched renderer and its long-duration
-TUI soak; this PR alone does not replace Ink. No packages were published.
+not run. Foreground reliability work merged in PR #104; the remaining session/runtime,
+webtools/WASM, and gateway work is consolidated in PR #107. No packages were published.
