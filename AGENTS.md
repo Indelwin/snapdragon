@@ -1,5 +1,15 @@
 # Snapdragon Agent Guidance
 
+## Pull Requests
+
+- Use branch names following the `feature/<feature>` convention.
+- Use one PR against updated `main` for a coherent user-requested change. Do not split it into stacked PRs unless the user explicitly requests that workflow.
+- Integrate concurrent implementation slices and resolve conflicts before handing the PR back. The user should not have to manage branch retargeting or integration conflicts.
+
+## Privacy
+
+- Treat this as a pseudonymous project. Do not include personal names, email addresses, or home-directory paths in commits, documentation, or repository metadata.
+
 ## Quality Gates
 
 - Treat quality failures as design feedback, not paperwork.

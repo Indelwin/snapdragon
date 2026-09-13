@@ -44,6 +44,7 @@
     "build:wasm": "bash ../../scripts/build-webtools-wasm.sh",
     "clean": "rm -rf dist/*.js dist/*.d.ts dist/*.map dist/*.tsbuildinfo",
     "test": "npm run build:wasm && node --test --import tsx test/*.test.ts",
+    "test:reliability:wasm": "npm run build:wasm && node --test --import tsx test/wasm-runtime.test.ts test/wasm-memory-stats.test.ts test/wasm-artifact.test.ts test/crawl-state.test.ts test/crawl.test.ts test/extract-page.test.ts test/extractor.test.ts test/content-filter.test.ts",
     "test:coverage:prepare": "npm run build:wasm",
     "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },

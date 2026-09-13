@@ -1,5 +1,5 @@
 import { Writable } from 'node:stream';
-import { defaultIo, type SdIo } from '../repl.js';
+import { defaultIo, type SdIo } from '../repl-io.js';
 
 export function memoryIo(): { io: SdIo; output(): string; error(): string } {
   let output = '';

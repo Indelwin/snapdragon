@@ -14,6 +14,7 @@ pub(crate) fn pending_job_status(
         created_at_ms: now_ms,
         updated_at_ms: now_ms,
         lease_id: None,
+        lease_attempt: None,
         lease_expires_at_ms: None,
         last_error: None,
         result: None,

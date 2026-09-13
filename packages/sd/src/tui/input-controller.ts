@@ -1,6 +1,7 @@
 import { useInput } from 'ink';
 import { useCallback, useEffect, useMemo, useRef } from 'react';
 import type { PendingAttachment } from '../attachments.js';
+import type { SdRestartRequest } from '../reload.js';
 import type { SdRuntime } from '../runtime.js';
 import { scrollChatToBottom } from './chat-scroll.js';
 import { commandDescriptors, type SdTuiCommand } from './commands.js';
@@ -21,10 +22,18 @@ export interface SdTuiInputOptions {
   runtime: SdRuntime;
   controller: SdUiController;
   exit: () => void;
+  initialDraft?: string;
+  restart?: (request: SdRestartRequest) => void;
 }
 
-export function useSdTuiInput({ runtime, controller, exit }: SdTuiInputOptions): void {
-  const draftRef = useRef('');
+export function useSdTuiInput({
+  runtime,
+  controller,
+  exit,
+  initialDraft,
+  restart,
+}: SdTuiInputOptions): void {
+  const draftRef = useRef(initialDraft ?? '');
   const cursorRef = useRef(0);
   const attachmentsRef = useRef<PendingAttachment[]>([]);
   const historyRef = useRef<string[]>([]);
@@ -85,9 +94,11 @@ export function useSdTuiInput({ runtime, controller, exit }: SdTuiInputOptions):
         setAttachments,
         setPalette,
         openSelection: setDraft,
+        restart,
+        restartDraft: draftRef.current,
       });
     },
-    [controller, exit, runtime, setAttachments, setDraft, setPalette],
+    [controller, exit, restart, runtime, setAttachments, setDraft, setPalette],
   );
 
   const commands = useMemo<SdTuiCommand[]>(
@@ -111,6 +122,10 @@ export function useSdTuiInput({ runtime, controller, exit }: SdTuiInputOptions):
     );
     controller.setPromptCompletion(completionRef.current);
   }, [commands, controller, runtime]);
+
+  useEffect(() => {
+    if (initialDraft) setDraft(initialDraft);
+  }, [initialDraft, setDraft]);
 
   const submit = useCallback(
     async (rawLine: string) => {

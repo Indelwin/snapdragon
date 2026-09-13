@@ -32,7 +32,8 @@
     "clean": "rm -rf dist tsconfig.build.tsbuildinfo",
     "typecheck": "tsc -b tsconfig.build.json --pretty false",
     "test": "node --test --import tsx test/*.test.ts",
-    "test:reliability:tui": "node ../../scripts/reliability/run.mjs"
+    "test:reliability:tui": "node ../../scripts/reliability/run.mjs",
+    "test:reliability:sessions": "npm --prefix ../.. test --workspace @snapdragon-ai/session && npm --prefix ../.. test --workspace @snapdragon-ai/agent && node --test --import tsx test/cli.test.ts test/cli-shutdown.test.ts test/memory-worker.test.ts test/reliability-sessions.test.ts test/reload.test.ts test/runtime.test.ts test/skill-builder.test.ts && node --max-old-space-size=128 --expose-gc ../../scripts/reliability/session-archive.mjs && node --max-old-space-size=128 --expose-gc ../../scripts/reliability/session-context-archive.mjs"
   },
   "dependencies": {
     "@snapdragon-ai/agent": "0.1.1",

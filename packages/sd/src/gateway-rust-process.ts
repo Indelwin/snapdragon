@@ -1,22 +1,23 @@
-import { spawn } from 'node:child_process';
-import { closeSync, openSync, rmSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { RustGatewayClient } from '@snapdragon-ai/gateway';
 import type { SdCliArgs } from './args-types.js';
 import type { SdConfig } from './config.js';
 import { daemonPathsForConfig } from './daemon-paths.js';
 import { daemonPid, isPidAlive } from './daemon-status.js';
-import { rustGatewayCommand } from './gateway-rust-command.js';
 import { configuredRustGatewayServices } from './gateway-rust-config.js';
+import {
+  registerConfiguredServices,
+  spawnRustGatewayProcess,
+  waitForRustGateway,
+  waitForRustGatewayExit,
+} from './gateway-rust-lifecycle.js';
 import { formatRustGatewayStatus } from './gateway-rust-status.js';
-
-const STARTUP_TIMEOUT_MS = 8_000;
 
 export async function startRustGateway(args: SdCliArgs, config: SdConfig): Promise<string> {
   const paths = daemonPathsForConfig(config);
   const pid = daemonPid(paths);
   if (pid && isPidAlive(pid)) return `rust gateway already running (${pid})`;
 
-  rmSync(paths.gatewaySocket, { force: true });
   const child = spawnRustGatewayProcess(args, paths.gatewaySocket, paths.gatewayDb, paths.log);
   writeFileSync(paths.pid, `${child.pid}\n`, 'utf8');
   await waitForRustGateway(paths.gatewaySocket);
@@ -28,11 +29,10 @@ export async function stopRustGateway(config: SdConfig): Promise<string> {
   const paths = daemonPathsForConfig(config);
   const pid = daemonPid(paths);
   if (!pid || !isPidAlive(pid)) {
-    cleanupRustGateway(paths.gatewaySocket);
     return 'rust gateway is not running';
   }
   process.kill(pid, 'SIGTERM');
-  cleanupRustGateway(paths.gatewaySocket);
+  await waitForRustGatewayExit(pid);
   return `stopping rust gateway (${pid})`;
 }
 
@@ -67,61 +67,6 @@ export async function restartRustGateway(args: SdCliArgs, config: SdConfig): Pro
   const stopped = await stopRustGateway(config);
   const started = await startRustGateway(args, config);
   return `${stopped}\n${started}`;
-}
-
-function spawnRustGatewayProcess(
-  _args: SdCliArgs,
-  socketPath: string,
-  storePath: string,
-  logPath: string,
-) {
-  const command = rustGatewayCommand();
-  const log = openSync(logPath, 'a');
-  const child = spawn(
-    command.bin,
-    [...command.args, '--socket', socketPath, '--store', storePath],
-    {
-      cwd: command.cwd,
-      detached: true,
-      stdio: ['ignore', log, log],
-    },
-  );
-  closeSync(log);
-  if (!child.pid) throw new Error('failed to spawn rust gateway daemon');
-  child.unref();
-  return child;
-}
-
-async function waitForRustGateway(socketPath: string): Promise<void> {
-  const started = Date.now();
-  while (Date.now() - started < STARTUP_TIMEOUT_MS) {
-    try {
-      await new RustGatewayClient({ socketPath, timeoutMs: 500 }).status();
-      return;
-    } catch {
-      await sleep(50);
-    }
-  }
-  throw new Error(`rust gateway did not open ${socketPath}`);
-}
-
-async function registerConfiguredServices(
-  socketPath: string,
-  config: SdConfig,
-  configPath?: string,
-): Promise<void> {
-  const client = new RustGatewayClient({ socketPath });
-  for (const service of configuredRustGatewayServices(config, configPath)) {
-    await client.registerService(service);
-  }
-}
-
-function cleanupRustGateway(socketPath: string): void {
-  rmSync(socketPath, { force: true });
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function errorMessage(error: unknown): string {

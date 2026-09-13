@@ -9,6 +9,7 @@ import {
   optionalStringArg,
   schema,
   stringArg,
+  withDisposable,
 } from './toolset-helpers.js';
 
 export function contentFilterChunkTool(): Tool {
@@ -27,17 +28,21 @@ export function contentFilterChunkTool(): Tool {
     ),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
-      const cf = await loadContentFilter();
-      const chunks = cf.chunkAndFilter(stringArg(input, 'markdown'), {
-        query: optionalStringArg(input, 'query'),
-        maxChunks: optionalNumberArg(input, 'maxChunks'),
-        minChars: optionalNumberArg(input, 'minChars'),
+      return withDisposable(loadContentFilter, (filter) => {
+        const chunks = filter.chunkAndFilter(stringArg(input, 'markdown'), {
+          query: optionalStringArg(input, 'query'),
+          maxChunks: optionalNumberArg(input, 'maxChunks'),
+          minChars: optionalNumberArg(input, 'minChars'),
+        });
+        const summary =
+          chunks
+            .map(
+              (chunk) =>
+                `[${chunk.index} score=${chunk.score.toFixed(3)} tokens=${chunk.token_count}]\n${chunk.text}`,
+            )
+            .join('\n\n') || '(no chunks)';
+        return { content: summary, data: jsonData({ chunks }) };
       });
-      const summary =
-        chunks
-          .map((c) => `[${c.index} score=${c.score.toFixed(3)} tokens=${c.token_count}]\n${c.text}`)
-          .join('\n\n') || '(no chunks)';
-      return { content: summary, data: jsonData({ chunks }) };
     },
   };
 }
@@ -50,12 +55,16 @@ export function contentFilterBestTool(): Tool {
     parameters: schema({ markdown: { type: 'string' }, query: { type: 'string' } }, ['markdown']),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
-      const cf = await loadContentFilter();
-      const best = cf.bestChunk(stringArg(input, 'markdown'), optionalStringArg(input, 'query'));
-      return {
-        content: best ? best.text : '(no chunks)',
-        data: jsonData({ chunk: best }),
-      };
+      return withDisposable(loadContentFilter, (filter) => {
+        const best = filter.bestChunk(
+          stringArg(input, 'markdown'),
+          optionalStringArg(input, 'query'),
+        );
+        return {
+          content: best ? best.text : '(no chunks)',
+          data: jsonData({ chunk: best }),
+        };
+      });
     },
   };
 }

@@ -1,4 +1,4 @@
-use rusqlite::{OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, params};
 use snapdragon_gateway_core::{
     GatewayLease, GatewayWorkerHeartbeat, GatewayWorkerRecord, GatewayWorkerRegistration,
     GatewayWorkerState, validate_worker_id,
@@ -12,15 +12,19 @@ impl GatewayStore {
         registration: GatewayWorkerRegistration,
         now_ms: u64,
     ) -> Result<GatewayWorkerRecord, String> {
-        let mut record = registration.into_record(now_ms)?;
-        if let Some(existing) = self.worker(&record.id)? {
-            record.registered_at_ms = existing.registered_at_ms;
-            record.current_job_id = existing.current_job_id;
-            record.current_lease_id = existing.current_lease_id;
-            record.lease_expires_at_ms = existing.lease_expires_at_ms;
-            record.last_error = existing.last_error;
-        }
-        self.upsert_worker(&record)?;
+        let record = self.with_immediate_transaction(|transaction| {
+            let mut record = registration.into_record(now_ms)?;
+            if let Some(existing) = worker_on(transaction, &record.id)? {
+                record.state = existing.state;
+                record.registered_at_ms = existing.registered_at_ms;
+                record.current_job_id = existing.current_job_id;
+                record.current_lease_id = existing.current_lease_id;
+                record.lease_expires_at_ms = existing.lease_expires_at_ms;
+                record.last_error = existing.last_error;
+            }
+            upsert_worker_on(transaction, &record)?;
+            Ok(record)
+        })?;
         self.append_log(now_ms, "info", Some(&record.id), "worker registered", None)?;
         Ok(record)
     }
@@ -30,21 +34,28 @@ impl GatewayStore {
         heartbeat: GatewayWorkerHeartbeat,
         now_ms: u64,
     ) -> Result<Option<GatewayWorkerRecord>, String> {
-        let Some(mut record) = self.worker(&heartbeat.id)? else {
-            return Ok(None);
-        };
-        if let Some(state) = heartbeat.state {
-            record.state = state;
-        }
-        if let Some(queue) = heartbeat.queue {
-            record.queue = worker_field("queue", &queue)?;
-        }
-        record.status = heartbeat.status.or(record.status);
-        record.last_error = heartbeat.last_error.or(record.last_error);
-        record.metadata = heartbeat.metadata.or(record.metadata);
-        record.heartbeat_at_ms = now_ms;
-        self.upsert_worker(&record)?;
-        Ok(Some(record))
+        let id = validate_worker_id(&heartbeat.id)?;
+        self.with_immediate_transaction(|transaction| {
+            let Some(mut record) = worker_on(transaction, &id)? else {
+                return Ok(None);
+            };
+            if record.current_lease_id.is_none() {
+                if let Some(state) = heartbeat.state {
+                    record.state = state;
+                }
+            } else {
+                record.state = GatewayWorkerState::Running;
+            }
+            if let Some(queue) = heartbeat.queue {
+                record.queue = worker_field("queue", &queue)?;
+            }
+            record.status = heartbeat.status.or(record.status);
+            record.last_error = heartbeat.last_error.or(record.last_error);
+            record.metadata = heartbeat.metadata.or(record.metadata);
+            record.heartbeat_at_ms = now_ms;
+            upsert_worker_on(transaction, &record)?;
+            Ok(Some(record))
+        })
     }
 
     pub fn list_workers(&self) -> Result<Vec<GatewayWorkerRecord>, String> {
@@ -64,79 +75,111 @@ impl GatewayStore {
 
     pub fn worker(&self, id: &str) -> Result<Option<GatewayWorkerRecord>, String> {
         let id = validate_worker_id(id)?;
-        self.with_conn(|conn| {
-            conn.query_row(
-                "select worker_json from gateway_workers where id=?1",
-                params![id],
-                |row| row.get::<_, String>(0),
-            )
-            .optional()
-            .map_err(|error| error.to_string())?
-            .map(|json| json_parse(&json))
-            .transpose()
-        })
+        self.with_conn(|conn| worker_on(conn, &id))
     }
+}
 
-    pub(crate) fn mark_worker_leased(
-        &self,
-        worker: &str,
-        queue: &str,
-        lease: &GatewayLease,
-        now_ms: u64,
-    ) -> Result<(), String> {
-        let mut record = self
-            .worker(worker)?
-            .unwrap_or_else(|| worker_from_lease(worker, queue, now_ms));
-        record.queue = worker_field("queue", queue)?;
-        record.state = GatewayWorkerState::Running;
-        record.current_job_id = Some(lease.job_id.clone());
-        record.current_lease_id = Some(lease.id.clone());
-        record.lease_expires_at_ms = Some(lease.expires_at_ms);
-        record.heartbeat_at_ms = now_ms;
-        self.upsert_worker(&record)
+pub(crate) fn ensure_worker_available_on(conn: &Connection, worker: &str) -> Result<(), String> {
+    let lease = conn
+        .query_row(
+            "select id from gateway_leases where worker=?1 order by acquired_at_ms limit 1",
+            params![worker],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(|error| error.to_string())?;
+    match lease {
+        Some(lease) => Err(format!(
+            "gateway worker {worker} is busy with active lease {lease}"
+        )),
+        None => Ok(()),
     }
+}
 
-    pub(crate) fn clear_worker_lease(
-        &self,
-        lease: &GatewayLease,
-        now_ms: u64,
-    ) -> Result<(), String> {
-        let Some(mut record) = self.worker(&lease.worker)? else {
-            return Ok(());
-        };
-        if record.current_lease_id.as_deref() != Some(&lease.id) {
-            return Ok(());
-        }
-        record.state = GatewayWorkerState::Idle;
-        record.current_job_id = None;
-        record.current_lease_id = None;
-        record.lease_expires_at_ms = None;
-        record.heartbeat_at_ms = now_ms;
-        self.upsert_worker(&record)
-    }
+pub(crate) fn worker_on(
+    conn: &Connection,
+    id: &str,
+) -> Result<Option<GatewayWorkerRecord>, String> {
+    conn.query_row(
+        "select worker_json from gateway_workers where id=?1",
+        params![id],
+        |row| row.get::<_, String>(0),
+    )
+    .optional()
+    .map_err(|error| error.to_string())?
+    .map(|json| json_parse(&json))
+    .transpose()
+}
 
-    fn upsert_worker(&self, record: &GatewayWorkerRecord) -> Result<(), String> {
-        self.with_conn(|conn| {
-            conn.execute(
-                "insert into gateway_workers(id, queue, state, worker_json, heartbeat_at_ms)
-                 values(?1, ?2, ?3, ?4, ?5)
-                 on conflict(id) do update set
-                   queue=excluded.queue,
-                   state=excluded.state,
-                   worker_json=excluded.worker_json,
-                   heartbeat_at_ms=excluded.heartbeat_at_ms",
-                params![
-                    record.id,
-                    record.queue,
-                    worker_state(&record.state),
-                    json_string(record)?,
-                    record.heartbeat_at_ms
-                ],
-            )
-            .map(|_| ())
-            .map_err(|error| error.to_string())
-        })
+pub(crate) fn mark_worker_leased_on(
+    conn: &Connection,
+    worker: &str,
+    queue: &str,
+    lease: &GatewayLease,
+    now_ms: u64,
+) -> Result<(), String> {
+    let mut record =
+        worker_on(conn, worker)?.unwrap_or_else(|| worker_from_lease(worker, queue, now_ms));
+    if record
+        .current_lease_id
+        .as_deref()
+        .is_some_and(|id| id != lease.id)
+    {
+        return Err(format!(
+            "gateway worker {worker} is busy with active lease {}",
+            record.current_lease_id.as_deref().unwrap_or_default()
+        ));
     }
+    record.queue = worker_field("queue", queue)?;
+    record.state = GatewayWorkerState::Running;
+    record.current_job_id = Some(lease.job_id.clone());
+    record.current_lease_id = Some(lease.id.clone());
+    record.lease_expires_at_ms = Some(lease.expires_at_ms);
+    record.heartbeat_at_ms = now_ms;
+    upsert_worker_on(conn, &record)
+}
+
+pub(crate) fn clear_worker_lease_on(
+    conn: &Connection,
+    lease: &GatewayLease,
+    now_ms: u64,
+) -> Result<(), String> {
+    let Some(mut record) = worker_on(conn, &lease.worker)? else {
+        return Ok(());
+    };
+    if record.current_lease_id.as_deref() != Some(&lease.id) {
+        return Ok(());
+    }
+    record.state = GatewayWorkerState::Idle;
+    record.current_job_id = None;
+    record.current_lease_id = None;
+    record.lease_expires_at_ms = None;
+    record.heartbeat_at_ms = now_ms;
+    upsert_worker_on(conn, &record)
+}
+
+pub(crate) fn upsert_worker_on(
+    conn: &Connection,
+    record: &GatewayWorkerRecord,
+) -> Result<(), String> {
+    conn.execute(
+        "insert into gateway_workers(id, queue, state, worker_json, heartbeat_at_ms)
+         values(?1, ?2, ?3, ?4, ?5)
+         on conflict(id) do update set
+           queue=excluded.queue,
+           state=excluded.state,
+           worker_json=excluded.worker_json,
+           heartbeat_at_ms=excluded.heartbeat_at_ms",
+        params![
+            record.id,
+            record.queue,
+            worker_state(&record.state),
+            json_string(record)?,
+            record.heartbeat_at_ms
+        ],
+    )
+    .map(|_| ())
+    .map_err(|error| error.to_string())
 }
 
 fn worker_from_lease(worker: &str, queue: &str, now_ms: u64) -> GatewayWorkerRecord {

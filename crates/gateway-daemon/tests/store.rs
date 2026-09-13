@@ -1,6 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use serde_json::Value;
+use rusqlite::{Connection, params};
+use serde_json::{Value, json};
 use snapdragon_gateway_core::{
     GatewayAgentRuntimeDescriptor, GatewayAgentRuntimeKind, GatewayAgentRuntimeProtocol,
     GatewayEventRecord, GatewayEventState, GatewayJobSpec, GatewayJobState, GatewayProjectRef,
@@ -34,7 +35,7 @@ fn store_persists_jobs_events_logs_and_services() {
         .unwrap();
     assert_eq!(job.state, GatewayJobState::Pending);
     assert_eq!(store.list_jobs().unwrap().len(), 1);
-    let (running, _) = store
+    let (running, first_lease) = store
         .acquire_job("default", "worker-1", 1_000, 11)
         .unwrap()
         .unwrap();
@@ -52,21 +53,29 @@ fn store_persists_jobs_events_logs_and_services() {
         GatewayWorkerState::Idle
     );
     assert!(store.active_leases(12).unwrap().is_empty());
-    assert_eq!(
+    assert!(
         store
-            .complete_job("job_1", Some(serde_json::json!({"late": true})), 13)
-            .unwrap()
-            .unwrap()
-            .state,
-        GatewayJobState::Cancelled
+            .complete_job(
+                "job_1",
+                &first_lease.id,
+                first_lease.attempt,
+                Some(serde_json::json!({"late": true})),
+                13,
+            )
+            .unwrap_err()
+            .contains("stale lease fence")
     );
-    assert_eq!(
+    assert!(
         store
-            .fail_job("job_1", "late failure".into(), 14)
-            .unwrap()
-            .unwrap()
-            .state,
-        GatewayJobState::Cancelled
+            .fail_job(
+                "job_1",
+                &first_lease.id,
+                first_lease.attempt,
+                "late failure".into(),
+                14,
+            )
+            .unwrap_err()
+            .contains("stale lease fence")
     );
 
     let retried = store
@@ -84,19 +93,37 @@ fn store_persists_jobs_events_logs_and_services() {
         )
         .unwrap();
     assert_eq!(retried.state, GatewayJobState::Pending);
-    store.acquire_job("default", "worker-1", 1_000, 16).unwrap();
+    let (_, retry_lease) = store
+        .acquire_job("default", "worker-1", 1_000, 16)
+        .unwrap()
+        .unwrap();
     assert_eq!(
         store
-            .fail_job("job_retry", "try again".into(), 17)
+            .fail_job(
+                "job_retry",
+                &retry_lease.id,
+                retry_lease.attempt,
+                "try again".into(),
+                17,
+            )
             .unwrap()
             .unwrap()
             .state,
         GatewayJobState::Pending
     );
-    store.acquire_job("default", "worker-1", 1_000, 18).unwrap();
+    let (_, final_lease) = store
+        .acquire_job("default", "worker-1", 1_000, 18)
+        .unwrap()
+        .unwrap();
     assert_eq!(
         store
-            .fail_job("job_retry", "out of tries".into(), 19)
+            .fail_job(
+                "job_retry",
+                &final_lease.id,
+                final_lease.attempt,
+                "out of tries".into(),
+                19,
+            )
             .unwrap()
             .unwrap()
             .state,
@@ -205,5 +232,93 @@ fn store_persists_jobs_events_logs_and_services() {
         Some("job_1")
     );
     assert!(!store.tail_logs(None, 10).unwrap().is_empty());
+    let _ = std::fs::remove_file(path);
+}
+
+#[test]
+fn store_migrates_active_pre_fence_leases() {
+    let path = std::env::temp_dir().join(format!(
+        "snapdragon-gateway-legacy-lease-{}.sqlite",
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos()
+    ));
+    let connection = Connection::open(&path).unwrap();
+    connection
+        .execute_batch(
+            "create table gateway_jobs(
+               id text primary key,
+               kind text not null,
+               queue text not null,
+               state text not null,
+               priority integer not null default 0,
+               status_json text not null,
+               updated_at_ms integer not null
+             );
+             create table gateway_leases(
+               id text primary key,
+               job_id text not null,
+               worker text not null,
+               acquired_at_ms integer not null,
+               expires_at_ms integer not null
+             );",
+        )
+        .unwrap();
+    let status = json!({
+        "id": "legacy-job",
+        "spec": {
+            "kind": "agent.run",
+            "queue": "default",
+            "payload": {},
+            "priority": 0,
+            "max_attempts": 3,
+            "timeout_ms": null
+        },
+        "state": "Running",
+        "attempts": 2,
+        "created_at_ms": 1,
+        "updated_at_ms": 2,
+        "lease_id": "legacy-lease",
+        "lease_expires_at_ms": 1_000,
+        "last_error": null,
+        "result": null
+    });
+    connection
+        .execute(
+            "insert into gateway_jobs values (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            params![
+                "legacy-job",
+                "agent.run",
+                "default",
+                "running",
+                0,
+                status.to_string(),
+                2
+            ],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "insert into gateway_leases values (?1, ?2, ?3, ?4, ?5)",
+            params!["legacy-lease", "legacy-job", "legacy-worker", 2, 1_000],
+        )
+        .unwrap();
+    drop(connection);
+
+    let store = GatewayStore::open(&path).unwrap();
+    let migrated = store.job("legacy-job").unwrap().unwrap();
+    assert_eq!(migrated.lease_attempt, Some(2));
+    let lease = store.active_leases(10).unwrap().pop().unwrap();
+    assert_eq!(lease.attempt, 2);
+    assert_eq!(
+        store
+            .complete_job("legacy-job", "legacy-lease", 2, None, 10)
+            .unwrap()
+            .unwrap()
+            .state,
+        GatewayJobState::Completed
+    );
+    drop(store);
     let _ = std::fs::remove_file(path);
 }

@@ -23,8 +23,14 @@ fn extract(args: Value) -> Value {
     let max_chars = args
         .get("max_chars")
         .and_then(Value::as_u64)
-        .unwrap_or(50_000) as usize;
-    ok(json!(html_to_markdown(html, max_chars)))
+        .unwrap_or(50_000);
+    let Ok(max_chars) = usize::try_from(max_chars) else {
+        return err("extract: max_chars is too large");
+    };
+    match html_to_markdown(html, max_chars) {
+        Ok(value) => ok(json!(value)),
+        Err(error) => err(&error),
+    }
 }
 
 fn selector(args: Value) -> Value {
@@ -44,7 +50,10 @@ fn detect(args: Value) -> Value {
     let Some(html) = args.get("html").and_then(Value::as_str) else {
         return err("detect_js_only: missing html");
     };
-    ok(json!(detect_js_only(html)))
+    match detect_js_only(html) {
+        Ok(value) => ok(json!(value)),
+        Err(error) => err(&error),
+    }
 }
 
 fn ok(value: Value) -> Value {

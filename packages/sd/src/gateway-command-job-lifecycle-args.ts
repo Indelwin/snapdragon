@@ -5,6 +5,10 @@ export interface GatewayJobAcquireOptions {
   error?: string;
 }
 
+import { positiveInt } from './gateway-command-number.js';
+
+export { fenceOptionsFromParts } from './gateway-command-job-fence-args.js';
+
 export function acquireOptionsFromParts(parts: string[]): GatewayJobAcquireOptions {
   const positionals: string[] = [];
   const options = collectAcquireParts(parts, positionals);
@@ -44,9 +48,4 @@ function collectAcquireParts(
     }
   }
   return options;
-}
-
-function positiveInt(value: string | undefined): number | undefined {
-  const parsed = value ? Number(value) : NaN;
-  return Number.isInteger(parsed) && parsed > 0 ? parsed : undefined;
 }

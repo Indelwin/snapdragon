@@ -64,7 +64,9 @@ pub(crate) async fn dispatch_envelopes(
 ) -> Result<Value, String> {
     match method {
         "envelope.send" => {
-            daemon.send(parse::<EnvelopeParams>(params)?.envelope).await;
+            daemon
+                .send(parse::<EnvelopeParams>(params)?.envelope)
+                .await?;
             Ok(json!(true))
         }
         "envelope.receive" => {

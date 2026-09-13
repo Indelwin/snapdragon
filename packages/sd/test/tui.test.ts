@@ -940,6 +940,39 @@ test('escape aborts an in-flight run without exiting', async () => {
   }
 });
 
+test('raw TUI Ctrl-C aborts an active run without requesting process exit', async () => {
+  const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-tui-ctrl-c-'));
+  try {
+    const runtime = await createMockRuntime(workspace);
+    const controller = new SdUiController(runtime);
+    const abort = new AbortController();
+    let exitCalled = false;
+    controller.acceptAgentEvent({ type: 'run_start', runId: 'run_ctrl_c' });
+    controller.setActiveAbortController(abort);
+
+    const consumed = handleGlobalInput(
+      '\x03',
+      { ctrl: true },
+      {
+        controller,
+        exit: () => {
+          exitCalled = true;
+        },
+        setDraft: () => undefined,
+        setPalette: () => undefined,
+        paletteRef: { current: { open: false, query: '', selectedIndex: 0 } },
+        historyIndexRef: { current: -1 },
+      },
+    );
+
+    assert.equal(consumed, true);
+    assert.equal(abort.signal.aborted, true);
+    assert.equal(exitCalled, false);
+  } finally {
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
 test('beginTask/updateTask/endTask drive the prompt running spinner', async () => {
   const workspace = await mkdtemp(join(tmpdir(), 'snapdragon-sd-task-spinner-'));
   try {

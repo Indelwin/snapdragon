@@ -1,56 +1,92 @@
-import type { WebtoolsExports, WebtoolsOp } from './wasm-types.js';
+import {
+  asWasmResponseError,
+  asWasmRuntimeError,
+  type WebtoolsExports,
+  type WebtoolsOp,
+  webtoolsExportFor,
+} from './wasm-types.js';
+import {
+  assertWasmAllocation,
+  assertWasmResponseRange,
+  assertWebtoolsResponse,
+  encodeWasmRequest,
+  isWasmMemoryRange,
+} from './wasm-validate.js';
 
-const TEXT_ENCODER = new TextEncoder();
 const TEXT_DECODER = new TextDecoder('utf-8', { fatal: true });
+
+export const MAX_ABI_REQUEST_BYTES = 8 * 1024 * 1024;
+export const MAX_ABI_RESPONSE_BYTES = 16 * 1024 * 1024;
 
 export function callWasmExport(
   exports: WebtoolsExports,
   op: WebtoolsOp,
   request: unknown,
 ): unknown {
-  return dispatch(exports, exportFor(exports, op), request);
+  const bytes = encodeWasmRequest(request, MAX_ABI_REQUEST_BYTES);
+  const packed = invokeExport(exports, webtoolsExportFor(exports, op), bytes);
+  return parseResponse(exports, packed);
 }
 
-function dispatch(
+function invokeExport(
   exports: WebtoolsExports,
   fn: (ptr: number, len: number) => bigint,
-  request: unknown,
-): unknown {
-  const bytes = TEXT_ENCODER.encode(JSON.stringify(request));
-  const inPtr = allocRequest(exports, bytes);
-  new Uint8Array(exports.memory.buffer, inPtr, bytes.byteLength).set(bytes);
-  const packed = callExportAndFreeRequest(exports, fn, inPtr, bytes.byteLength);
-  const { ptr, len } = unpackResult(packed);
-  return parseResponse(exports, ptr, len);
+  bytes: Uint8Array,
+): bigint {
+  let inPtr: number | undefined;
+  let failure: unknown;
+  let failureKind: 'allocation' | 'trap' = 'allocation';
+  let packed = 0n;
+  try {
+    inPtr = allocRequest(exports, bytes.byteLength);
+    failureKind = 'trap';
+    new Uint8Array(exports.memory.buffer, inPtr, bytes.byteLength).set(bytes);
+    packed = fn(inPtr, bytes.byteLength);
+  } catch (error) {
+    failure = asWasmRuntimeError(error, failureKind);
+  } finally {
+    if (inPtr !== undefined) {
+      try {
+        exports.wt_dealloc(inPtr, bytes.byteLength);
+      } catch (error) {
+        if (failure === undefined) failure = asWasmRuntimeError(error, 'trap');
+      }
+    }
+  }
+  if (failure !== undefined) throw failure;
+  return packed;
 }
 
-function allocRequest(exports: WebtoolsExports, bytes: Uint8Array): number {
-  const ptr = exports.wt_alloc(bytes.byteLength);
-  if (ptr === 0 && bytes.byteLength > 0) throw new Error('wt_alloc returned null pointer');
+function allocRequest(exports: WebtoolsExports, size: number): number {
+  const ptr = exports.wt_alloc(size) >>> 0;
+  assertWasmAllocation(ptr);
   return ptr;
 }
 
-function parseResponse(exports: WebtoolsExports, ptr: number, len: number): unknown {
-  if (ptr === 0 || len === 0) throw new Error('webtools call returned an empty response');
+function parseResponse(exports: WebtoolsExports, packed: bigint): unknown {
+  let output: { ptr: number; len: number } | undefined;
+  let outputCanBeFreed = false;
+  let failure: unknown;
+  let parsed: unknown;
   try {
-    const view = new Uint8Array(exports.memory.buffer, ptr, len);
-    return JSON.parse(TEXT_DECODER.decode(view.slice())) as unknown;
+    output = unpackResult(packed);
+    outputCanBeFreed = isWasmMemoryRange(exports.memory, output.ptr, output.len);
+    assertWasmResponseRange(exports.memory, output.ptr, output.len, MAX_ABI_RESPONSE_BYTES);
+    const view = new Uint8Array(exports.memory.buffer, output.ptr, output.len);
+    parsed = assertWebtoolsResponse(JSON.parse(TEXT_DECODER.decode(view.slice())) as unknown);
+  } catch (error) {
+    failure = asWasmResponseError(error);
   } finally {
-    exports.wt_dealloc(ptr, len);
+    if (output !== undefined && outputCanBeFreed) {
+      try {
+        exports.wt_dealloc(output.ptr, output.len);
+      } catch (error) {
+        if (failure === undefined) failure = asWasmRuntimeError(error, 'trap');
+      }
+    }
   }
-}
-
-function callExportAndFreeRequest(
-  exports: WebtoolsExports,
-  fn: (ptr: number, len: number) => bigint,
-  inPtr: number,
-  len: number,
-): bigint {
-  try {
-    return fn(inPtr, len);
-  } finally {
-    exports.wt_dealloc(inPtr, len);
-  }
+  if (failure !== undefined) throw failure;
+  return parsed;
 }
 
 function unpackResult(packed: bigint): { ptr: number; len: number } {
@@ -58,17 +94,4 @@ function unpackResult(packed: bigint): { ptr: number; len: number } {
     ptr: Number(packed >> 32n) >>> 0,
     len: Number(packed & 0xffff_ffffn) >>> 0,
   };
-}
-
-function exportFor(exports: WebtoolsExports, op: WebtoolsOp): (ptr: number, len: number) => bigint {
-  switch (op) {
-    case 'url_util':
-      return exports.wt_url_util;
-    case 'robots':
-      return exports.wt_robots;
-    case 'content_filter':
-      return exports.wt_content_filter;
-    case 'extractor':
-      return exports.wt_extractor;
-  }
 }

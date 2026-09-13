@@ -6,6 +6,7 @@ import type {
   PiRpcAgentRunResult,
   PiRpcRuntimeOptions,
 } from './pi-rpc-types.js';
+import { DEFAULT_TIMEOUT_MS } from './pi-rpc-types.js';
 import type { GatewayAgentRuntimeDescriptor } from './types.js';
 import type { GatewayAgentRunSpec } from './types-runtime.js';
 
@@ -13,8 +14,12 @@ export { createPiRpcRuntimeDescriptor } from './pi-rpc-descriptor.js';
 export type {
   PiRpcAgentJobOptions,
   PiRpcAgentRunResult,
+  PiRpcEventRetentionStats,
   PiRpcObservedEvent,
+  PiRpcObserverContext,
+  PiRpcRetentionStats,
   PiRpcRuntimeOptions,
+  PiRpcTraceSink,
 } from './pi-rpc-types.js';
 
 export async function probePiRpcRuntime(
@@ -22,16 +27,29 @@ export async function probePiRpcRuntime(
 ): Promise<GatewayAgentRuntimeDescriptor> {
   const startedAtMs = Date.now();
   const session = startPiRpcSession(options);
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(
+      () => reject(new Error(`Pi RPC probe timed out after ${timeoutMs}ms`)),
+      timeoutMs,
+    );
+  });
   try {
-    const state = await session.send({ type: 'get_state' });
-    const commands = await session.send({ type: 'get_commands' });
+    const state = await Promise.race([session.send({ type: 'get_state' }), deadline]);
+    const commands =
+      state.success === false
+        ? state
+        : await Promise.race([session.send({ type: 'get_commands' }), deadline]);
+    const failure =
+      state.success === false ? state : commands.success === false ? commands : undefined;
     const descriptor = createPiRpcRuntimeDescriptor(options);
     return {
       ...descriptor,
       health: {
-        state: state.success === false ? 'unhealthy' : 'ok',
+        state: failure ? 'unhealthy' : 'ok',
         checkedAtMs: Date.now(),
-        message: state.success === false ? state.error : 'Pi RPC responded',
+        message: failure ? failure.error : 'Pi RPC responded',
       },
       metadata: {
         ...descriptor.metadata,
@@ -41,6 +59,7 @@ export async function probePiRpcRuntime(
       },
     };
   } finally {
+    if (timer) clearTimeout(timer);
     await session.stop();
   }
 }

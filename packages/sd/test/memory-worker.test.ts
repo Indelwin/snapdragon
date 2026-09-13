@@ -124,6 +124,74 @@ test('worker is idempotent across runs via watermark and dedupe hashing', async 
   }
 });
 
+test('worker advances byte watermarks across record-budgeted passes', async () => {
+  const fx = await makeFixture();
+  try {
+    fx.config.memory = {
+      ...fx.config.memory,
+      worker: {
+        enabled: false,
+        lookback_sessions: 10,
+        max_records_per_pass: 2,
+        max_bytes_per_pass: 64 * 1024,
+      },
+    };
+    await writeJsonlSession(fx.sessionsRoot, 'sess-budget', [
+      { role: 'user', text: 'remember first budgeted item', created_at: 700 },
+      { role: 'user', text: 'remember second budgeted item', created_at: 700 },
+    ]);
+
+    const first = await runSdMemoryWorkerOnce({ config: fx.config, memory: fx.memory });
+    const statePath = join(fx.workspace, 'memory', '.worker-state.json');
+    const firstOffset = readMemoryWorkerState(statePath).sessions['sess-budget']?.byte_offset;
+    const second = await runSdMemoryWorkerOnce({ config: fx.config, memory: fx.memory });
+    const secondOffset = readMemoryWorkerState(statePath).sessions['sess-budget']?.byte_offset;
+
+    assert.equal(first.scanned_records, 2, 'session_open and first message exhaust the pass');
+    assert.equal(first.captured, 1);
+    assert.equal(second.scanned_records, 1);
+    assert.equal(second.captured, 1, 'equal timestamps remain visible through byte offsets');
+    assert.ok((secondOffset ?? 0) > (firstOffset ?? 0));
+    const memoryRaw = await readFile(fx.memoryPath, 'utf8');
+    assert.match(memoryRaw, /first budgeted item/);
+    assert.match(memoryRaw, /second budgeted item/);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
+test('worker rotates the session frontier when a pass exhausts the global budget', async () => {
+  const fx = await makeFixture();
+  try {
+    fx.config.memory = {
+      ...fx.config.memory,
+      worker: {
+        enabled: false,
+        lookback_sessions: 10,
+        max_records_per_pass: 2,
+        max_bytes_per_pass: 64 * 1024,
+      },
+    };
+    await writeJsonlSession(fx.sessionsRoot, 'sess-fair-a', [
+      { role: 'user', text: 'remember fair item alpha', created_at: 800 },
+    ]);
+    await writeJsonlSession(fx.sessionsRoot, 'sess-fair-b', [
+      { role: 'user', text: 'remember fair item beta', created_at: 801 },
+    ]);
+
+    const first = await runSdMemoryWorkerOnce({ config: fx.config, memory: fx.memory });
+    const second = await runSdMemoryWorkerOnce({ config: fx.config, memory: fx.memory });
+
+    assert.equal(first.scanned_records, 2);
+    assert.equal(second.scanned_records, 2);
+    const memoryRaw = await readFile(fx.memoryPath, 'utf8');
+    assert.match(memoryRaw, /fair item alpha/);
+    assert.match(memoryRaw, /fair item beta/);
+  } finally {
+    await fx.cleanup();
+  }
+});
+
 test('worker ignores assistant turns and untriggered user turns', async () => {
   const fx = await makeFixture();
   try {

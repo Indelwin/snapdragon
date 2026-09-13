@@ -31,6 +31,7 @@ export async function runAgentPrompt(
         { visible: userMessage, request: requestUserMessage },
         tools,
         runId,
+        options.signal,
       );
 
       const done = await appendAssistantResponse(state, response, runId);

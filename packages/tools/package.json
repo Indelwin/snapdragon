@@ -39,6 +39,7 @@
     "build": "tsc -p tsconfig.build.json",
     "clean": "rm -rf dist",
     "test": "node --test --import tsx test/*.test.ts",
+    "test:reliability:ownership": "node --test --import tsx test/registry.test.ts",
     "typecheck": "tsc -b tsconfig.build.json --pretty false"
   },
   "dependencies": {

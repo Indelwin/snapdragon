@@ -1,13 +1,15 @@
+import { readAllRestPages } from './rest-client-pages.js';
 import {
   normalizeBaseUrl,
+  type QueryValue,
   type RequestOptions,
   requestBody,
   requestHeaders,
   restUrl,
   worldSearch,
 } from './rest-client-request.js';
-import { readRestJson } from './rest-client-response.js';
-import { readGatewaySnapshotStream } from './rest-client-sse.js';
+import { readRestJson, readRestJsonOptional } from './rest-client-response.js';
+import { streamGatewayWorldSnapshots } from './rest-client-stream.js';
 import type {
   GatewayRestClientOptions,
   GatewayRestHealth,
@@ -21,6 +23,7 @@ import type {
   GatewayJobLease,
   GatewayJobSpec,
   GatewayJobStatus,
+  GatewayLeaseFence,
   GatewayLogInput,
   GatewayLogRecord,
   GatewayRegistrySnapshot,
@@ -88,7 +91,7 @@ export class GatewayRestClient {
   }
 
   listWorkers(options: GatewayWorldSnapshotOptions = {}): Promise<GatewayWorkerRecord[]> {
-    return this.#get('workers', { search: worldSearch(options) });
+    return this.#getAllPages('workers', worldSearch(options));
   }
 
   registerWorker(worker: GatewayWorkerRegistration): Promise<GatewayWorkerRecord> {
@@ -104,7 +107,7 @@ export class GatewayRestClient {
   }
 
   listJobs(options: GatewayWorldSnapshotOptions = {}): Promise<GatewayJobStatus[]> {
-    return this.#get('jobs', { search: worldSearch(options) });
+    return this.#getAllPages('jobs', worldSearch(options));
   }
 
   enqueueJob(spec: GatewayJobSpec, id?: string): Promise<GatewayJobStatus> {
@@ -136,16 +139,32 @@ export class GatewayRestClient {
     return lease ?? undefined;
   }
 
-  completeJob(id: string, result?: unknown): Promise<GatewayJobStatus | undefined> {
-    return this.#postOptional(`jobs/${encodeURIComponent(id)}/complete`, { result });
+  renewJob(
+    id: string,
+    fence: GatewayLeaseFence,
+    leaseMs?: number,
+  ): Promise<GatewayJobLease | undefined> {
+    return this.#postOptional(`jobs/${encodeURIComponent(id)}/renew`, { ...fence, leaseMs });
   }
 
-  failJob(id: string, error: string): Promise<GatewayJobStatus | undefined> {
-    return this.#postOptional(`jobs/${encodeURIComponent(id)}/fail`, { error });
+  completeJob(
+    id: string,
+    result: unknown,
+    fence: GatewayLeaseFence,
+  ): Promise<GatewayJobStatus | undefined> {
+    return this.#postOptional(`jobs/${encodeURIComponent(id)}/complete`, { result, ...fence });
+  }
+
+  failJob(
+    id: string,
+    error: string,
+    fence: GatewayLeaseFence,
+  ): Promise<GatewayJobStatus | undefined> {
+    return this.#postOptional(`jobs/${encodeURIComponent(id)}/fail`, { error, ...fence });
   }
 
   listEvents(options: GatewayWorldSnapshotOptions = {}): Promise<GatewayEventRecord[]> {
-    return this.#get('events', { search: worldSearch(options) });
+    return this.#getAllPages('events', worldSearch(options));
   }
 
   appendEvent(input: Parameters<GatewayClient['appendEvent']>[0]): Promise<GatewayEventRecord> {
@@ -173,7 +192,7 @@ export class GatewayRestClient {
   }
 
   listSandboxLeases(): Promise<GatewaySandboxLease[]> {
-    return this.#get('sandboxes');
+    return this.#getAllPages('sandboxes');
   }
 
   registerSandboxLease(lease: GatewaySandboxLease): Promise<GatewaySandboxLease> {
@@ -191,13 +210,7 @@ export class GatewayRestClient {
   async *streamWorldSnapshots(
     options: GatewayRestStreamOptions = {},
   ): AsyncIterable<GatewayWorldSnapshot> {
-    const { signal, ...worldOptions } = options;
-    const response = await this.#request('stream', {
-      headers: { accept: 'text/event-stream' },
-      search: worldSearch(worldOptions),
-      signal,
-    });
-    yield* readGatewaySnapshotStream(response);
+    yield* streamGatewayWorldSnapshots((path, request) => this.#request(path, request), options);
   }
 
   #get<T>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -225,12 +238,11 @@ export class GatewayRestClient {
   }
 
   async #jsonOptional<T>(path: string, options: RequestOptions): Promise<T | undefined> {
-    const response = await this.#request(path, options);
-    if (response.status === 404) {
-      await response.text();
-      return undefined;
-    }
-    return readRestJson<T>(response);
+    return readRestJsonOptional<T>(await this.#request(path, options));
+  }
+
+  #getAllPages<T>(path: string, search: Record<string, QueryValue> = {}): Promise<T[]> {
+    return readAllRestPages<T>((pagePath, options) => this.#get(pagePath, options), path, search);
   }
 
   #request(path: string, options: RequestOptions = {}): Promise<Response> {

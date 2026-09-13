@@ -12,6 +12,7 @@ export interface StreamContext {
   runId: string;
   profile?: Profile;
   emit: StreamEmit;
+  signal?: AbortSignal;
 }
 
 export type StreamingChatHandler = (
@@ -23,6 +24,7 @@ export interface LocalCapabilityOptions {
   runId?: string;
   profile?: Profile;
   silent?: boolean;
+  signal?: AbortSignal;
 }
 
 export class Registry {
@@ -126,6 +128,7 @@ export class Registry {
       runId,
       profile: options.profile ?? this.#currentProfile,
       emit,
+      signal: options.signal,
     });
     if (!sawDone) {
       emit({ kind: 'done', run_id: runId, provider: 'unknown', response });

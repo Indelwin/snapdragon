@@ -32,6 +32,9 @@ export interface RestRequestContext {
 export type RestRequest = IncomingMessage;
 export type RestResponse = ServerResponse;
 
+export const MAX_GATEWAY_HTTP_REQUEST_BYTES = 1024 * 1024;
+export const MAX_GATEWAY_HTTP_RESPONSE_BYTES = 1024 * 1024;
+
 export class RestHttpError extends Error {
   constructor(
     readonly status: number,
@@ -44,8 +47,19 @@ export class RestHttpError extends Error {
 
 export async function readJson<T>(request: IncomingMessage): Promise<T> {
   const chunks: Buffer[] = [];
+  let bytes = 0;
+  let oversized = false;
   for await (const chunk of request) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+    const buffer = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
+    bytes += buffer.length;
+    if (bytes > MAX_GATEWAY_HTTP_REQUEST_BYTES) {
+      oversized = true;
+      continue;
+    }
+    chunks.push(buffer);
+  }
+  if (oversized) {
+    throw new RestHttpError(413, `request body exceeds ${MAX_GATEWAY_HTTP_REQUEST_BYTES} bytes`);
   }
   const body = Buffer.concat(chunks).toString('utf8').trim();
   try {
@@ -56,8 +70,20 @@ export async function readJson<T>(request: IncomingMessage): Promise<T> {
 }
 
 export function sendJson(response: ServerResponse, status: number, body: unknown): void {
-  response.writeHead(status, { 'content-type': 'application/json' });
-  response.end(JSON.stringify(body));
+  let encoded = Buffer.from(JSON.stringify(body));
+  if (encoded.length > MAX_GATEWAY_HTTP_RESPONSE_BYTES) {
+    status = 507;
+    encoded = Buffer.from(
+      JSON.stringify({
+        error: `response body exceeds ${MAX_GATEWAY_HTTP_RESPONSE_BYTES} bytes; request a smaller page`,
+      }),
+    );
+  }
+  response.writeHead(status, {
+    'content-length': encoded.length,
+    'content-type': 'application/json',
+  });
+  response.end(encoded);
 }
 
 export function normalizePrefix(prefix: string): string {

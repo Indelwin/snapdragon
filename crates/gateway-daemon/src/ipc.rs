@@ -1,10 +1,10 @@
-use std::io;
-use std::path::Path;
+use std::{io, path::Path};
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::task::JoinSet;
 
 use crate::{
     GatewayDaemon,
@@ -14,7 +14,14 @@ use crate::{
     ipc_durable::{
         dispatch_events, dispatch_jobs, dispatch_logs, dispatch_sandboxes, dispatch_workers,
     },
+    ipc_frame::{Frame, read_frame},
+    ipc_ownership::SocketOwnership,
 };
+
+pub const MAX_IPC_FRAME_BYTES: usize = 1024 * 1024;
+pub const MAX_IPC_RESPONSE_BYTES: usize = 1024 * 1024;
+const MAX_IPC_CLIENTS: usize = 128;
+const BUSY_RESPONSE_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 
 #[derive(Debug, Deserialize)]
 struct IpcRequest {
@@ -35,40 +42,89 @@ struct IpcResponse {
 }
 
 pub async fn serve_unix_socket(daemon: GatewayDaemon, path: impl AsRef<Path>) -> io::Result<()> {
-    let path = path.as_ref();
-    let _ = std::fs::remove_file(path);
-    let listener = UnixListener::bind(path)?;
+    let ownership = SocketOwnership::acquire(path.as_ref()).await?;
+    let listener = UnixListener::bind(ownership.socket_path())?;
+    let mut clients = JoinSet::new();
     loop {
-        let (stream, _) = listener.accept().await?;
-        let daemon = daemon.clone();
-        tokio::spawn(async move {
-            let _ = handle_client(daemon, stream).await;
-        });
+        tokio::select! {
+            _ = daemon.shutdown_signal.cancelled() => break,
+            completed = clients.join_next(), if !clients.is_empty() => {
+                let _ = completed;
+            },
+            accepted = listener.accept() => {
+                let (stream, _) = accepted?;
+                if clients.len() >= MAX_IPC_CLIENTS {
+                    reject_busy(stream).await;
+                    continue;
+                }
+                let daemon = daemon.clone();
+                clients.spawn(async move {
+                    let _ = handle_client(daemon, stream).await;
+                });
+            }
+        }
     }
+    drop(listener);
+    while clients.join_next().await.is_some() {}
+    Ok(())
 }
 
 async fn handle_client(daemon: GatewayDaemon, stream: UnixStream) -> io::Result<()> {
     let (reader, mut writer) = stream.into_split();
-    let mut lines = BufReader::new(reader).lines();
-    while let Some(line) = lines.next_line().await? {
-        let response = handle_line(&daemon, &line).await;
-        writer
-            .write_all(serde_json::to_string(&response)?.as_bytes())
-            .await?;
-        writer.write_all(b"\n").await?;
+    let mut reader = BufReader::new(reader);
+    loop {
+        let frame = tokio::select! {
+            _ = daemon.shutdown_signal.cancelled() => return Ok(()),
+            frame = read_frame(&mut reader, MAX_IPC_FRAME_BYTES) => frame?,
+        };
+        let response = match frame {
+            Frame::End => return Ok(()),
+            Frame::Oversized => error_response(
+                0,
+                format!("gateway IPC frame exceeds {MAX_IPC_FRAME_BYTES} bytes"),
+            ),
+            Frame::Data(frame) => tokio::select! {
+                _ = daemon.shutdown_signal.cancelled() => return Ok(()),
+                response = handle_line(&daemon, &frame) => response,
+            },
+        };
+        tokio::select! {
+            _ = daemon.shutdown_signal.cancelled() => return Ok(()),
+            written = write_response(&mut writer, response) => written?,
+        }
     }
-    Ok(())
 }
 
-async fn handle_line(daemon: &GatewayDaemon, line: &str) -> IpcResponse {
-    match serde_json::from_str::<IpcRequest>(line) {
+async fn reject_busy(mut stream: UnixStream) {
+    let response = error_response(
+        0,
+        format!("gateway IPC is busy (maximum {MAX_IPC_CLIENTS} clients)"),
+    );
+    let mut encoded = serde_json::to_vec(&response).unwrap_or_default();
+    encoded.push(b'\n');
+    let _ = tokio::time::timeout(BUSY_RESPONSE_TIMEOUT, stream.write_all(&encoded)).await;
+}
+
+async fn write_response(
+    writer: &mut tokio::net::unix::OwnedWriteHalf,
+    response: IpcResponse,
+) -> io::Result<()> {
+    let id = response.id;
+    let mut encoded = serde_json::to_vec(&response)?;
+    if encoded.len() > MAX_IPC_RESPONSE_BYTES {
+        encoded = serde_json::to_vec(&error_response(
+            id,
+            format!("gateway IPC response exceeds {MAX_IPC_RESPONSE_BYTES} bytes"),
+        ))?;
+    }
+    encoded.push(b'\n');
+    writer.write_all(&encoded).await
+}
+
+async fn handle_line(daemon: &GatewayDaemon, line: &[u8]) -> IpcResponse {
+    match serde_json::from_slice::<IpcRequest>(line) {
         Ok(request) => handle_request(daemon, request).await,
-        Err(error) => IpcResponse {
-            id: 0,
-            ok: false,
-            result: None,
-            error: Some(error.to_string()),
-        },
+        Err(error) => error_response(0, format!("malformed gateway IPC request: {error}")),
     }
 }
 
@@ -80,12 +136,16 @@ async fn handle_request(daemon: &GatewayDaemon, request: IpcRequest) -> IpcRespo
             result: Some(result),
             error: None,
         },
-        Err(error) => IpcResponse {
-            id: request.id,
-            ok: false,
-            result: None,
-            error: Some(error),
-        },
+        Err(error) => error_response(request.id, error),
+    }
+}
+
+fn error_response(id: u64, error: String) -> IpcResponse {
+    IpcResponse {
+        id,
+        ok: false,
+        result: None,
+        error: Some(error),
     }
 }
 
@@ -118,4 +178,23 @@ fn namespace(method: &str) -> &str {
     method
         .split_once('.')
         .map_or(method, |(namespace, _)| namespace)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn limited_frame_reader_drains_oversized_frames_and_continues() {
+        let input = b"123456789\nok\n";
+        let mut reader = BufReader::new(&input[..]);
+        assert!(matches!(
+            read_frame(&mut reader, 4).await.unwrap(),
+            Frame::Oversized
+        ));
+        let Frame::Data(next) = read_frame(&mut reader, 4).await.unwrap() else {
+            panic!("expected following frame");
+        };
+        assert_eq!(next, b"ok");
+    }
 }

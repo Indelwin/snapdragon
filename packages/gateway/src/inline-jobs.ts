@@ -1,30 +1,37 @@
+import { expireInlineJob } from './inline-job-expiry.js';
 import {
   finalJobState,
   finishMessage,
   logLevel,
   nextPendingJob,
   queueDepthsFromJobs,
-  sortLeases,
 } from './inline-job-helpers.js';
+import { InlineJobLeases } from './inline-job-leases.js';
+import { cloneJob, cloneLease, cloneOptional } from './inline-job-snapshots.js';
 import type {
   GatewayJobLease,
   GatewayJobSpec,
   GatewayJobState,
   GatewayJobStatus,
   GatewayLease,
+  GatewayLeaseFence,
 } from './types.js';
 
 interface InlineLogger {
   log(level: string, target: string | undefined, message: string, data?: unknown): void;
+  onLeaseExpired?(lease: GatewayLease): void;
 }
 
 export class InlineJobStore {
   #jobs = new Map<string, GatewayJobStatus>();
-  #leases = new Map<string, GatewayLease>();
+  #leases = new InlineJobLeases((lease) =>
+    expireInlineJob(this.#jobs.get(lease.jobId), lease, this.logger),
+  );
 
   constructor(private readonly logger: InlineLogger) {}
 
   enqueue(spec: GatewayJobSpec, id = inlineId('job')): GatewayJobStatus {
+    if (this.#jobs.has(id)) throw new Error(`gateway job id already exists: ${id}`);
     const now = Date.now();
     const status: GatewayJobStatus = {
       id,
@@ -43,15 +50,15 @@ export class InlineJobStore {
     };
     this.#jobs.set(id, status);
     this.logger.log('info', id, 'job enqueued', { kind: status.spec.kind });
-    return status;
+    return cloneJob(status);
   }
 
   list(): GatewayJobStatus[] {
-    return [...this.#jobs.values()].sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+    return [...this.#jobs.values()].sort((a, b) => b.updatedAtMs - a.updatedAtMs).map(cloneJob);
   }
 
   show(id: string): GatewayJobStatus | undefined {
-    return this.#jobs.get(id);
+    return cloneOptional(this.#jobs.get(id), cloneJob);
   }
 
   cancel(id: string): GatewayJobStatus | undefined {
@@ -61,9 +68,10 @@ export class InlineJobStore {
     job.state = 'cancelled';
     job.updatedAtMs = Date.now();
     job.leaseId = undefined;
+    job.leaseAttempt = undefined;
     job.leaseExpiresAtMs = undefined;
     this.logger.log('warn', id, 'job cancelled');
-    return job;
+    return cloneJob(job);
   }
 
   acquire(queue: string, worker: string, leaseMs = 300_000): GatewayJobLease | undefined {
@@ -71,9 +79,10 @@ export class InlineJobStore {
     if (!job) return undefined;
     const now = Date.now();
     const lease = {
-      id: `lease_${job.id}`,
+      id: `lease_${job.id}_${job.attempts + 1}_${now}`,
       jobId: job.id,
       worker,
+      attempt: job.attempts + 1,
       acquiredAtMs: now,
       expiresAtMs: now + leaseMs,
     };
@@ -82,35 +91,46 @@ export class InlineJobStore {
       attempts: job.attempts + 1,
       updatedAtMs: now,
       leaseId: lease.id,
+      leaseAttempt: lease.attempt,
       leaseExpiresAtMs: lease.expiresAtMs,
     });
-    this.#leases.set(lease.id, lease);
+    this.#leases.add(lease);
     this.logger.log('info', job.id, 'job leased');
-    return { job, lease };
+    return { job: cloneJob(job), lease: cloneLease(lease) };
   }
 
-  complete(id: string, result?: unknown): GatewayJobStatus | undefined {
-    return this.#finish(id, 'completed', result);
+  renew(id: string, fence: GatewayLeaseFence, leaseMs = 300_000): GatewayJobLease | undefined {
+    const job = this.#jobs.get(id);
+    if (!job) return undefined;
+    const lease = this.#leases.renew(job, fence, leaseMs);
+    job.updatedAtMs = Date.now();
+    job.leaseExpiresAtMs = lease.expiresAtMs;
+    return { job: cloneJob(job), lease: cloneLease(lease) };
   }
 
-  fail(id: string, error: string): GatewayJobStatus | undefined {
-    return this.#finish(id, 'failed', undefined, error);
+  complete(id: string, result: unknown, fence: GatewayLeaseFence): GatewayJobStatus | undefined {
+    return this.#finish(id, fence, 'completed', result);
+  }
+
+  fail(id: string, error: string, fence: GatewayLeaseFence): GatewayJobStatus | undefined {
+    return this.#finish(id, fence, 'failed', undefined, error);
   }
 
   retry(id: string): GatewayJobStatus | undefined {
     const job = this.#jobs.get(id);
     if (!job) return undefined;
-    if (job.state !== 'failed') return job;
+    if (job.state !== 'failed') return cloneJob(job);
     this.#clearLease(job);
     Object.assign(job, {
       state: 'pending',
       result: undefined,
       updatedAtMs: Date.now(),
       leaseId: undefined,
+      leaseAttempt: undefined,
       leaseExpiresAtMs: undefined,
     });
     this.logger.log('info', id, 'job retry requested');
-    return job;
+    return cloneJob(job);
   }
 
   count(state: GatewayJobState): number {
@@ -118,11 +138,15 @@ export class InlineJobStore {
   }
 
   activeLeases(): GatewayLease[] {
-    return sortLeases(this.#leases.values());
+    return this.#leases.active();
   }
 
   queueDepths() {
     return queueDepthsFromJobs(this.#jobs.values());
+  }
+
+  close(): void {
+    this.#leases.close();
   }
 
   #nextPendingJob(queue: string): GatewayJobStatus | undefined {
@@ -131,13 +155,14 @@ export class InlineJobStore {
 
   #finish(
     id: string,
+    fence: GatewayLeaseFence,
     state: GatewayJobState,
     result?: unknown,
     error?: string,
   ): GatewayJobStatus | undefined {
     const job = this.#jobs.get(id);
     if (!job) return undefined;
-    if (job.state === 'cancelled') return job;
+    this.#leases.assert(job, fence);
     const finalState = finalJobState(job, state);
     this.#clearLease(job);
     Object.assign(job, {
@@ -146,16 +171,15 @@ export class InlineJobStore {
       lastError: error,
       updatedAtMs: Date.now(),
       leaseId: undefined,
+      leaseAttempt: undefined,
       leaseExpiresAtMs: undefined,
     });
     this.logger.log(logLevel(finalState), id, finishMessage(finalState, error));
-    return job;
+    return cloneJob(job);
   }
 
   #clearLease(job: GatewayJobStatus): GatewayLease | undefined {
-    const lease = job.leaseId ? this.#leases.get(job.leaseId) : undefined;
-    if (job.leaseId) this.#leases.delete(job.leaseId);
-    return lease;
+    return this.#leases.clear(job);
   }
 }
 

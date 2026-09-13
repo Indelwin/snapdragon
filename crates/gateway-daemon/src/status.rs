@@ -28,7 +28,6 @@ pub struct GatewayStatusSnapshot {
 
 impl GatewayDaemon {
     pub async fn status(&self) -> GatewayStatusSnapshot {
-        let _ = self.run_watchdogs().await;
         let now = unix_time_ms();
         let inner = self.inner.read().await;
         let worker_processes: Vec<_> = inner.worker_processes.values().cloned().collect();

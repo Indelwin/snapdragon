@@ -48,6 +48,7 @@ export function openaiResponsesProvider(
       method: 'POST',
       headers: requestHeaders(options),
       body: JSON.stringify(body),
+      signal: context.signal,
     });
     if (!response.ok) await throwProviderError(response);
     if (!response.body) throw new Error('openai responses: missing response body');

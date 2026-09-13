@@ -7,6 +7,7 @@ import { ensureFirstPartyExtensionsForConfig, ensureFirstPartyProfile } from './
 import { gatewayAgentJobService } from './gateway-agent-job-service.js';
 import { runHeadlessGatewayAgent } from './gateway-headless-agent.js';
 import { gatewayLearnJobService } from './gateway-learn-job-service.js';
+import { writeGatewayWorkerCompletion } from './gateway-worker-completion.js';
 import type { SdProfileInfo } from './profile.js';
 import { SdProfileStore } from './profile.js';
 import { resolveSdRuntimeConfig } from './profile-runtime.js';
@@ -36,7 +37,9 @@ export async function gatewayWorkerCommand(
   if (action !== 'run') return `Unknown gateway worker command: ${action}\n`;
   const service = rest[0];
   if (!service) throw new Error('gateway worker run requires a service name');
-  return `${JSON.stringify(await runGatewayWorkerService(service, args))}\n`;
+  const output = await runGatewayWorkerService(service, args);
+  await writeGatewayWorkerCompletion(output);
+  return `${JSON.stringify(output)}\n`;
 }
 
 export async function runGatewayWorkerService(
@@ -63,15 +66,17 @@ export async function runGatewayWorkerService(
     runtimeOptions: options,
     env,
   });
-  const stores = createIndexedRuntimeStores(config, profile, extensionRuntime);
-  const logs: string[] = [];
-
-  const sessionIndexResolution = resolveSessionIndexForWorker(name, config);
-  if (sessionIndexResolution.disabled) {
-    return { service: name, summary: `${name} disabled`, metrics: {}, logs };
-  }
-  const sessionIndex = sessionIndexResolution.index;
+  let searchIndex: ReturnType<typeof createIndexedRuntimeStores>['searchIndex'];
+  let sessionIndex: SdSessionIndex | undefined;
   try {
+    const stores = createIndexedRuntimeStores(config, profile, extensionRuntime);
+    searchIndex = stores.searchIndex;
+    const logs: string[] = [];
+    const sessionIndexResolution = resolveSessionIndexForWorker(name, config);
+    if (sessionIndexResolution.disabled) {
+      return { service: name, summary: `${name} disabled`, metrics: {}, logs };
+    }
+    sessionIndex = sessionIndexResolution.index;
     const service = serviceByName(name, config, sessionIndex);
     if (!service) throw new Error(`Unknown gateway service: ${name}`);
     const chat = tryBackgroundChat(config, args);
@@ -97,6 +102,8 @@ export async function runGatewayWorkerService(
     };
   } finally {
     sessionIndex?.close();
+    searchIndex?.close();
+    await extensionRuntime.dispose();
   }
 }
 

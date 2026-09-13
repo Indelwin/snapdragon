@@ -6,6 +6,14 @@ export async function readRestJson<T>(response: Response): Promise<T> {
   return body as T;
 }
 
+export async function readRestJsonOptional<T>(response: Response): Promise<T | undefined> {
+  if (response.status === 404) {
+    await response.text();
+    return undefined;
+  }
+  return readRestJson<T>(response);
+}
+
 export async function assertRestOk(response: Response): Promise<void> {
   if (response.ok) return;
   throw restError(response.status, await readBody(response));

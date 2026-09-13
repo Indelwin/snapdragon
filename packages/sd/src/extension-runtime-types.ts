@@ -48,11 +48,19 @@ export interface SdExtensionActivationContext {
   registerProvider(id: string, provider: SdExtensionProviderFactory): void;
   registerGatewayService(service: GatewayServiceSpec): void;
   registerAppliance(appliance: ExtensionApplianceManifest): void;
+  registerDisposable(disposable: SdExtensionDisposable): void;
   log(message: string): void;
 }
 
+export type SdExtensionDisposable =
+  | (() => void | Promise<void>)
+  | { dispose(): void | Promise<void> };
+
 export interface SdExtensionModule {
-  activate?(context: SdExtensionActivationContext): void | Promise<void>;
+  activate?(
+    context: SdExtensionActivationContext,
+  ): void | SdExtensionDisposable | Promise<void> | Promise<SdExtensionDisposable>;
+  deactivate?(context: SdExtensionActivationContext): void | Promise<void>;
 }
 
 export interface SdExtensionRuntime {
@@ -64,4 +72,5 @@ export interface SdExtensionRuntime {
   appliances: ExtensionApplianceManifest[];
   logs: Array<{ extensionId: string; message: string }>;
   errors: Array<{ extensionId: string; message: string }>;
+  dispose(): Promise<void>;
 }

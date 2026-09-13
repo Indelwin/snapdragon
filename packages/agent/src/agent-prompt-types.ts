@@ -22,6 +22,7 @@ export interface AgentPromptState {
     replacement: { visible: Message; request: Message },
     tools: ToolDefinition[],
     runId: string,
+    signal?: AbortSignal,
   ): Promise<LlmChatResponse>;
 }
 

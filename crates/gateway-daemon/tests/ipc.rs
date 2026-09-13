@@ -2,7 +2,10 @@ use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde_json::{Value, json};
-use snapdragon_gateway_daemon::{GatewayDaemon, GatewayStore, ipc::serve_unix_socket};
+use snapdragon_gateway_daemon::{
+    GatewayDaemon, GatewayStore,
+    ipc::{MAX_IPC_FRAME_BYTES, serve_unix_socket},
+};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixStream;
 
@@ -106,6 +109,24 @@ async fn ipc_serves_status_and_service_registration() {
 }
 
 #[tokio::test]
+async fn ipc_shutdown_cancels_and_joins_active_partial_frame_clients() {
+    let daemon = GatewayDaemon::new();
+    let path = socket_path();
+    let server = tokio::spawn(serve_unix_socket(daemon.clone(), path.clone()));
+    wait_for_socket(&path).await;
+    let mut stream = UnixStream::connect(&path).await.unwrap();
+    stream.write_all(b"{\"id\":1").await.unwrap();
+
+    daemon.shutdown().await;
+    tokio::time::timeout(std::time::Duration::from_secs(2), server)
+        .await
+        .expect("IPC server should join active clients on shutdown")
+        .unwrap()
+        .unwrap();
+    assert!(!path.exists());
+}
+
+#[tokio::test]
 async fn ipc_persists_jobs_events_and_logs() {
     let db = socket_path().with_extension("sqlite");
     let daemon = GatewayDaemon::with_store(GatewayStore::open(&db).unwrap())
@@ -145,6 +166,8 @@ async fn ipc_persists_jobs_events_and_logs() {
     )
     .await;
     assert_eq!(lease["result"]["lease"]["worker"], "worker");
+    let lease_id = lease["result"]["lease"]["id"].as_str().unwrap();
+    let lease_attempt = lease["result"]["lease"]["attempt"].as_u64().unwrap();
     let worker = request(
         &path,
         json!({
@@ -162,7 +185,12 @@ async fn ipc_persists_jobs_events_and_logs() {
         json!({
             "id": 3,
             "method": "jobs.complete",
-            "params": { "id": "job_1", "result": { "ok": true } }
+            "params": {
+                "id": "job_1",
+                "lease_id": lease_id,
+                "attempt": lease_attempt,
+                "result": { "ok": true }
+            }
         }),
     )
     .await;
@@ -184,7 +212,7 @@ async fn ipc_persists_jobs_events_and_logs() {
     .await;
     assert_eq!(worker["result"]["status"], "waiting");
     let workers = request(&path, json!({ "id": 22, "method": "workers.list" })).await;
-    assert_eq!(workers["result"][0]["id"], "worker");
+    assert_eq!(workers["result"]["items"][0]["id"], "worker");
 
     request(
         &path,
@@ -204,7 +232,7 @@ async fn ipc_persists_jobs_events_and_logs() {
         }),
     )
     .await;
-    request(
+    let retry_lease = request(
         &path,
         json!({
             "id": 24,
@@ -218,7 +246,12 @@ async fn ipc_persists_jobs_events_and_logs() {
         json!({
             "id": 25,
             "method": "jobs.fail",
-            "params": { "id": "job_retry", "error": "needs another try" }
+            "params": {
+                "id": "job_retry",
+                "lease_id": retry_lease["result"]["lease"]["id"],
+                "attempt": retry_lease["result"]["lease"]["attempt"],
+                "error": "needs another try"
+            }
         }),
     )
     .await;
@@ -256,7 +289,10 @@ async fn ipc_persists_jobs_events_and_logs() {
     .await;
     assert_eq!(sandbox["result"]["id"], "lease_test");
     let sandboxes = request(&path, json!({ "id": 28, "method": "sandboxes.list" })).await;
-    assert_eq!(sandboxes["result"][0]["sandbox_id"], "sandbox_test");
+    assert_eq!(
+        sandboxes["result"]["items"][0]["sandbox_id"],
+        "sandbox_test"
+    );
     let sandbox = request(
         &path,
         json!({
@@ -315,6 +351,57 @@ async fn ipc_persists_jobs_events_and_logs() {
     server.abort();
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_file(db);
+}
+
+#[tokio::test]
+async fn oversized_ipc_frame_is_rejected_without_poisoning_the_connection() {
+    let daemon = GatewayDaemon::new();
+    let path = socket_path();
+    let server = tokio::spawn(serve_unix_socket(daemon.clone(), path.clone()));
+    wait_for_socket(&path).await;
+    let mut stream = UnixStream::connect(&path).await.unwrap();
+    stream
+        .write_all(&vec![b'x'; MAX_IPC_FRAME_BYTES + 1])
+        .await
+        .unwrap();
+    stream
+        .write_all(b"\n{\"id\":2,\"method\":\"status\"}\n")
+        .await
+        .unwrap();
+    let mut lines = BufReader::new(stream).lines();
+    let oversized: Value =
+        serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+    assert_eq!(oversized["ok"], false);
+    assert!(oversized["error"].as_str().unwrap().contains("exceeds"));
+    let status: Value = serde_json::from_str(&lines.next_line().await.unwrap().unwrap()).unwrap();
+    assert_eq!(status["id"], 2);
+    assert_eq!(status["ok"], true);
+    daemon.shutdown().await;
+    server.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn live_socket_ownership_cannot_be_stolen_and_shutdown_cleans_it() {
+    let owner = GatewayDaemon::new();
+    let path = socket_path();
+    let lock = std::path::PathBuf::from(format!("{}.lock", path.display()));
+    let server = tokio::spawn(serve_unix_socket(owner.clone(), path.clone()));
+    wait_for_socket(&path).await;
+    let error = serve_unix_socket(GatewayDaemon::new(), path.clone())
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), std::io::ErrorKind::AddrInUse);
+    assert!(path.exists());
+    owner.shutdown().await;
+    server.await.unwrap().unwrap();
+    assert!(!path.exists());
+    assert!(lock.exists());
+    let replacement = GatewayDaemon::new();
+    let replacement_server = tokio::spawn(serve_unix_socket(replacement.clone(), path.clone()));
+    wait_for_socket(&path).await;
+    replacement.shutdown().await;
+    replacement_server.await.unwrap().unwrap();
+    let _ = std::fs::remove_file(lock);
 }
 
 fn socket_path() -> std::path::PathBuf {

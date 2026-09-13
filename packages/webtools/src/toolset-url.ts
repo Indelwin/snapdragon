@@ -1,7 +1,7 @@
 // URL utility tools — all pure (no network).
 
 import type { Tool, ToolResult } from '@snapdragon-ai/tools';
-import { jsonData, objectArg, schema, stringArg } from './toolset-helpers.js';
+import { jsonData, objectArg, schema, stringArg, withDisposable } from './toolset-helpers.js';
 import { urlUtils as loadUrlUtils } from './url.js';
 
 type UrlUtils = Awaited<ReturnType<typeof loadUrlUtils>>;
@@ -44,9 +44,10 @@ export function urlResolveTool(): Tool {
     parameters: schema({ base: { type: 'string' }, href: { type: 'string' } }, ['base', 'href']),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
-      const utils = await loadUrlUtils();
-      const v = utils.resolve(stringArg(input, 'base'), stringArg(input, 'href'));
-      return { content: v ?? '(null)', data: jsonData({ value: v }) };
+      return withDisposable(loadUrlUtils, (utils) => {
+        const value = utils.resolve(stringArg(input, 'base'), stringArg(input, 'href'));
+        return { content: value ?? '(null)', data: jsonData({ value }) };
+      });
     },
   };
 }
@@ -60,9 +61,10 @@ export function urlSameOrSubdomainTool(): Tool {
     parameters: schema({ host: { type: 'string' }, root: { type: 'string' } }, ['host', 'root']),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
-      const utils = await loadUrlUtils();
-      const v = utils.sameOrSubdomain(stringArg(input, 'host'), stringArg(input, 'root'));
-      return { content: String(v), data: jsonData({ value: v }) };
+      return withDisposable(loadUrlUtils, (utils) => {
+        const value = utils.sameOrSubdomain(stringArg(input, 'host'), stringArg(input, 'root'));
+        return { content: String(value), data: jsonData({ value }) };
+      });
     },
   };
 }
@@ -78,9 +80,10 @@ export function urlPatternMatchTool(): Tool {
     ]),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
-      const utils = await loadUrlUtils();
-      const v = utils.patternMatch(stringArg(input, 'url'), stringArg(input, 'pattern'));
-      return { content: String(v), data: jsonData({ value: v }) };
+      return withDisposable(loadUrlUtils, (utils) => {
+        const value = utils.patternMatch(stringArg(input, 'url'), stringArg(input, 'pattern'));
+        return { content: String(value), data: jsonData({ value }) };
+      });
     },
   };
 }
@@ -98,9 +101,10 @@ function urlStringTool(
     parameters: schema({ [argKey]: { type: 'string' } }, [argKey]),
     async run(args): Promise<ToolResult> {
       const input = objectArg(args);
-      const utils = await loadUrlUtils();
-      const v = await run(utils, stringArg(input, argKey));
-      return { content: v ?? '(null)', data: jsonData({ value: v }) };
+      return withDisposable(loadUrlUtils, async (utils) => {
+        const value = await run(utils, stringArg(input, argKey));
+        return { content: value ?? '(null)', data: jsonData({ value }) };
+      });
     },
   };
 }
